@@ -65,7 +65,6 @@ Supabase 本地 Spike：
 函数运行环境变量：
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
 
 当前 Phase 0 页面已包含：
 - PWA 注册与安装状态卡片
@@ -74,6 +73,7 @@ Supabase 本地 Spike：
 - `workspace-create` / `workspace-join` 调用入口
 
 当前远端 Supabase 项目状态：
-- Phase 0 migration 已应用
+- Phase 0 / Phase 1 migration 已应用
 - `workspace-create` 与 `workspace-join` 已部署
-- 当前项目的 Anonymous sign-ins 仍为禁用状态，需要在 Supabase Dashboard 中开启后，前端匿名登录和工作区接入流程才能真正跑通
+- 已完成匿名登录、工作区创建/加入、PWA 注册与安装验证
+- `categories`、`todos`、`events` 已作为 Phase 1 远端 schema 基线创建

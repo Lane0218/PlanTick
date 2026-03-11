@@ -101,7 +101,7 @@ begin
     raise exception 'Passphrase must be at least 6 characters.';
   end if;
 
-  v_lookup_hash := encode(digest(trim(p_passphrase), 'sha256'), 'hex');
+  v_lookup_hash := encode(extensions.digest(trim(p_passphrase), 'sha256'), 'hex');
 
   select id
     into v_workspace_id

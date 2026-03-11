@@ -1,8 +1,25 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
+import { NavLink, Route, Routes } from 'react-router-dom'
 import './App.css'
-import { loadWorkspaceId, runIndexedDbProbe, saveWorkspaceId } from './lib/db'
+import {
+  loadWorkspaceId,
+  runIndexedDbProbe,
+  saveCurrentWorkspaceMeta,
+  saveWorkspaceId,
+  upsertCategory,
+  upsertEvent,
+  upsertTodo,
+} from './lib/db'
+import type { CategoryRecord, EventRecord, TodoRecord } from './lib/local-types'
 import { envSummary, isSupabaseConfigured } from './lib/env'
+import {
+  createCategorySeed,
+  createEventSeed,
+  createTodoSeed,
+  enqueueRecordMutation,
+  loadPhaseOneSnapshot,
+} from './lib/sync'
 import { ensureAnonymousSession, invokeWorkspaceFunction } from './lib/supabase'
 
 type StatusTone = 'idle' | 'ok' | 'warn' | 'error'
@@ -14,6 +31,8 @@ type StatusItem = {
 }
 
 type WorkspaceMode = 'create' | 'join'
+
+type PhaseOneSnapshot = Awaited<ReturnType<typeof loadPhaseOneSnapshot>>
 
 const initialStatus: StatusItem[] = [
   {
@@ -72,20 +91,25 @@ function App() {
   const [busy, setBusy] = useState(false)
   const [installPrompt, setInstallPrompt] =
     useState<BeforeInstallPromptEvent | null>(null)
+  const [phaseOneSnapshot, setPhaseOneSnapshot] = useState<PhaseOneSnapshot>(null)
+
+  const updateStatus = (
+    label: StatusItem['label'],
+    detail: string,
+    tone: StatusItem['tone'],
+  ) => {
+    setStatuses((current) =>
+      current.map((item) =>
+        item.label === label ? { ...item, detail, tone } : item,
+      ),
+    )
+  }
+
+  const refreshPhaseOneSnapshot = async () => {
+    setPhaseOneSnapshot(await loadPhaseOneSnapshot())
+  }
 
   useEffect(() => {
-    const updateStatus = (
-      label: StatusItem['label'],
-      detail: string,
-      tone: StatusItem['tone'],
-    ) => {
-      setStatuses((current) =>
-        current.map((item) =>
-          item.label === label ? { ...item, detail, tone } : item,
-        ),
-      )
-    }
-
     void runIndexedDbProbe()
       .then(async (probeId) => {
         updateStatus('IndexedDB', `探针写入成功：${probeId}`, 'ok')
@@ -94,6 +118,7 @@ function App() {
           setWorkspaceId(restoredWorkspaceId)
           setResultMessage(`已从本地恢复 workspaceId：${restoredWorkspaceId}`)
         }
+        await refreshPhaseOneSnapshot()
       })
       .catch((error) => {
         updateStatus(
@@ -103,9 +128,7 @@ function App() {
         )
       })
 
-    const handlePwaReady = (
-      event: WindowEventMap['plantick:pwa-ready'],
-    ) => {
+    const handlePwaReady = (event: WindowEventMap['plantick:pwa-ready']) => {
       updateStatus(
         'PWA 注册',
         event.detail.registered ? 'service worker 已注册' : 'service worker 注册失败',
@@ -149,18 +172,6 @@ function App() {
     return `${completed}/${statuses.length}`
   }, [statuses])
 
-  const updateStatus = (
-    label: StatusItem['label'],
-    detail: string,
-    tone: StatusItem['tone'],
-  ) => {
-    setStatuses((current) =>
-      current.map((item) =>
-        item.label === label ? { ...item, detail, tone } : item,
-      ),
-    )
-  }
-
   const handleAnonymousSignIn = async () => {
     if (!isSupabaseConfigured) {
       updateStatus(
@@ -179,6 +190,12 @@ function App() {
       )
       updateStatus('匿名会话', '匿名登录成功，可调用受限 Edge Function', 'ok')
       setResultMessage('匿名登录成功，可以继续创建或加入工作区')
+
+      if (workspaceId) {
+        await saveCurrentWorkspaceMeta(workspaceId, session.user.id)
+      }
+
+      await refreshPhaseOneSnapshot()
     } catch (error) {
       const detail = error instanceof Error ? error.message : '匿名登录失败'
       updateStatus('匿名会话', detail, 'error')
@@ -200,11 +217,12 @@ function App() {
 
     setBusy(true)
     try {
-      await ensureAnonymousSession()
+      const session = await ensureAnonymousSession()
       updateStatus('匿名会话', '匿名登录成功，可调用受限 Edge Function', 'ok')
 
       const response = await invokeWorkspaceFunction(workspaceMode, passphrase)
       await saveWorkspaceId(response.workspaceId)
+      await saveCurrentWorkspaceMeta(response.workspaceId, session.user.id)
       setWorkspaceId(response.workspaceId)
       setResultMessage(
         `${workspaceMode === 'create' ? '创建' : '加入'}成功，workspaceId = ${response.workspaceId}`,
@@ -214,6 +232,7 @@ function App() {
         `${workspaceMode === 'create' ? '创建' : '加入'}工作区成功`,
         'ok',
       )
+      await refreshPhaseOneSnapshot()
     } catch (error) {
       const detail = error instanceof Error ? error.message : '工作区请求失败'
       updateStatus('工作区 Spike', detail, 'error')
@@ -237,30 +256,69 @@ function App() {
     )
   }
 
+  const enqueueSeed = async () => {
+    if (!workspaceId) {
+      setResultMessage('请先创建或加入工作区，再生成本地样本数据。')
+      return
+    }
+
+    setBusy(true)
+    try {
+      const category = createCategorySeed(workspaceId)
+      const todo = createTodoSeed(workspaceId, category.id)
+      const event = createEventSeed(workspaceId)
+
+      await Promise.all([
+        upsertCategory(category),
+        upsertTodo(todo),
+        upsertEvent(event),
+      ])
+
+      await Promise.all([
+        enqueueRecordMutation('categories', 'upsert', toSyncCategory(category)),
+        enqueueRecordMutation('todos', 'upsert', toSyncTodo(todo)),
+        enqueueRecordMutation('events', 'upsert', toSyncEvent(event)),
+      ])
+
+      setResultMessage('已写入本地 categories/todos/events 样本，并加入 outbox。')
+      await refreshPhaseOneSnapshot()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const shellMetrics = [
+    {
+      label: '验证完成度',
+      value: completionRatio,
+    },
+    {
+      label: '网络状态',
+      value: navigator.onLine ? '在线' : '离线',
+    },
+    {
+      label: '环境',
+      value: envSummary,
+    },
+  ]
+
   return (
     <main className="shell">
       <section className="hero">
         <div className="hero-copy">
-          <p className="eyebrow">PlanTick / Phase 0 Spike</p>
-          <h1>把 Web、PWA、本地存储和工作区接入一次打通。</h1>
+          <p className="eyebrow">PlanTick / Phase 1 Foundation</p>
+          <h1>把第 0 阶段验证壳升级成可持续开发的应用骨架。</h1>
           <p className="hero-body">
-            这是第 0 阶段的验证壳，不追求完整产品，而是验证路线是否可靠：
-            浏览器可访问、PWA 可安装、IndexedDB 可写入、Supabase 匿名会话可建立、
-            `workspace-create` / `workspace-join` 可以形成最小闭环。
+            当前页面不再只验证连通性，而是开始承担第 1 阶段职责：
+            建立本地数据库 schema、同步契约、工作区恢复上下文和最小路由壳。
           </p>
           <div className="hero-metrics">
-            <div>
-              <span>验证完成度</span>
-              <strong>{completionRatio}</strong>
-            </div>
-            <div>
-              <span>网络状态</span>
-              <strong>{navigator.onLine ? '在线' : '离线'}</strong>
-            </div>
-            <div>
-              <span>环境</span>
-              <strong>{envSummary}</strong>
-            </div>
+            {shellMetrics.map((metric) => (
+              <div key={metric.label}>
+                <span>{metric.label}</span>
+                <strong>{metric.value}</strong>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -274,117 +332,304 @@ function App() {
         </aside>
       </section>
 
-      <section className="grid">
-        <article className="card card-status">
-          <div className="card-heading">
-            <p>环境状态</p>
-            <h2>6 个关键信号</h2>
-          </div>
-          <div className="status-list">
-            {statuses.map((item) => (
-              <div className={`status-item tone-${item.tone}`} key={item.label}>
-                <div>
-                  <strong>{item.label}</strong>
-                  <span>{item.detail}</span>
-                </div>
-                <b>{item.tone}</b>
-              </div>
-            ))}
-          </div>
-        </article>
+      <nav className="app-nav">
+        <NavLink end to="/">
+          总览
+        </NavLink>
+        <NavLink to="/todos">待办骨架</NavLink>
+        <NavLink to="/calendar">月历骨架</NavLink>
+      </nav>
 
-        <article className="card">
-          <div className="card-heading">
-            <p>Step A</p>
-            <h2>云端匿名会话</h2>
-          </div>
-          <p className="card-body">
-            Phase 0 的工作区函数依赖匿名用户上下文。先匿名登录，再调用
-            `workspace-create` 或 `workspace-join`。
-          </p>
-          <button className="primary-button" onClick={handleAnonymousSignIn} disabled={busy}>
-            {busy ? '处理中...' : '匿名登录并检查 Supabase'}
-          </button>
-          <div className="inline-note">{sessionLabel}</div>
-        </article>
-
-        <article className="card">
-          <div className="card-heading">
-            <p>Step B</p>
-            <h2>工作区接入 Spike</h2>
-          </div>
-          <form className="workspace-form" onSubmit={handleWorkspaceSubmit}>
-            <div className="segmented">
-              <button
-                type="button"
-                className={workspaceMode === 'create' ? 'active' : ''}
-                onClick={() => setWorkspaceMode('create')}
-              >
-                创建工作区
-              </button>
-              <button
-                type="button"
-                className={workspaceMode === 'join' ? 'active' : ''}
-                onClick={() => setWorkspaceMode('join')}
-              >
-                加入口令工作区
-              </button>
-            </div>
-
-            <label>
-              <span>工作区口令</span>
-              <input
-                value={passphrase}
-                onChange={(event) => setPassphrase(event.target.value)}
-                placeholder="至少 6 个字符"
-                minLength={6}
-              />
-            </label>
-
-            <button className="secondary-button" type="submit" disabled={busy}>
-              {busy
-                ? '提交中...'
-                : workspaceMode === 'create'
-                  ? '调用 workspace-create'
-                  : '调用 workspace-join'}
-            </button>
-          </form>
-        </article>
-
-        <article className="card">
-          <div className="card-heading">
-            <p>Step C</p>
-            <h2>PWA 安装验证</h2>
-          </div>
-          <p className="card-body">
-            当前已经注册 `vite-plugin-pwa`。如果浏览器允许安装，将在这里触发安装提示。
-          </p>
-          <button
-            className="ghost-button"
-            onClick={() => void handleInstall()}
-            disabled={!installPrompt}
-          >
-            {installPrompt ? '触发安装提示' : '等待浏览器提供安装入口'}
-          </button>
-        </article>
-
-        <article className="card card-checklist">
-          <div className="card-heading">
-            <p>Phase 0 退出条件</p>
-            <h2>交付清单</h2>
-          </div>
-          <ul>
-            <li>Windows 浏览器可访问开发服务</li>
-            <li>手机浏览器可访问开发服务</li>
-            <li>PWA 可以安装并进入独立窗口</li>
-            <li>IndexedDB 探针写入成功</li>
-            <li>匿名登录成功</li>
-            <li>工作区创建 / 加入闭环成立</li>
-          </ul>
-        </article>
-      </section>
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <OverviewRoute
+              statuses={statuses}
+              sessionLabel={sessionLabel}
+              busy={busy}
+              workspaceMode={workspaceMode}
+              setWorkspaceMode={setWorkspaceMode}
+              passphrase={passphrase}
+              setPassphrase={setPassphrase}
+              handleAnonymousSignIn={handleAnonymousSignIn}
+              handleWorkspaceSubmit={handleWorkspaceSubmit}
+              handleInstall={handleInstall}
+              installPrompt={installPrompt}
+              phaseOneSnapshot={phaseOneSnapshot}
+              enqueueSeed={enqueueSeed}
+            />
+          }
+        />
+        <Route
+          path="/todos"
+          element={
+            <ModuleRoute
+              eyebrow="Todo Route"
+              title="待办模块骨架已建好，业务列表下一阶段接入。"
+              detail="当前路由用于承接分类、待办列表和编辑表单。Phase 1 已经把 local store、outbox 和 workspace 上下文准备好了。"
+              snapshot={phaseOneSnapshot}
+            />
+          }
+        />
+        <Route
+          path="/calendar"
+          element={
+            <ModuleRoute
+              eyebrow="Calendar Route"
+              title="月历模块骨架已建好，事件映射和投影下一阶段接入。"
+              detail="当前路由用于承接月视图、单日展开和事件编辑。Phase 1 已把 events 表、本地 store 和同步契约预留好。"
+              snapshot={phaseOneSnapshot}
+            />
+          }
+        />
+      </Routes>
     </main>
   )
+}
+
+function OverviewRoute({
+  statuses,
+  sessionLabel,
+  busy,
+  workspaceMode,
+  setWorkspaceMode,
+  passphrase,
+  setPassphrase,
+  handleAnonymousSignIn,
+  handleWorkspaceSubmit,
+  handleInstall,
+  installPrompt,
+  phaseOneSnapshot,
+  enqueueSeed,
+}: {
+  statuses: StatusItem[]
+  sessionLabel: string
+  busy: boolean
+  workspaceMode: WorkspaceMode
+  setWorkspaceMode: (mode: WorkspaceMode) => void
+  passphrase: string
+  setPassphrase: (value: string) => void
+  handleAnonymousSignIn: () => Promise<void>
+  handleWorkspaceSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>
+  handleInstall: () => Promise<void>
+  installPrompt: BeforeInstallPromptEvent | null
+  phaseOneSnapshot: PhaseOneSnapshot
+  enqueueSeed: () => Promise<void>
+}) {
+  return (
+    <section className="grid">
+      <article className="card card-status">
+        <div className="card-heading">
+          <p>环境状态</p>
+          <h2>6 个关键信号</h2>
+        </div>
+        <div className="status-list">
+          {statuses.map((item) => (
+            <div className={`status-item tone-${item.tone}`} key={item.label}>
+              <div>
+                <strong>{item.label}</strong>
+                <span>{item.detail}</span>
+              </div>
+              <b>{item.tone}</b>
+            </div>
+          ))}
+        </div>
+      </article>
+
+      <article className="card card-checklist">
+        <div className="card-heading">
+          <p>Phase 1 状态</p>
+          <h2>本地数据与同步契约</h2>
+        </div>
+        {phaseOneSnapshot ? (
+          <ul>
+            <li>当前工作区：{phaseOneSnapshot.workspaceId}</li>
+            <li>匿名用户：{phaseOneSnapshot.anonymousUserId ?? '尚未写入本地 meta'}</li>
+            <li>本地分类数：{phaseOneSnapshot.localCounts.categories}</li>
+            <li>本地待办数：{phaseOneSnapshot.localCounts.todos}</li>
+            <li>本地事件数：{phaseOneSnapshot.localCounts.events}</li>
+            <li>待同步 outbox：{phaseOneSnapshot.localCounts.pendingOutbox}</li>
+            <li>同步状态：{phaseOneSnapshot.syncStatus}</li>
+          </ul>
+        ) : (
+          <p className="card-body">尚未建立工作区上下文，本地 schema 已初始化但还没有业务数据。</p>
+        )}
+      </article>
+
+      <article className="card">
+        <div className="card-heading">
+          <p>Step A</p>
+          <h2>云端匿名会话</h2>
+        </div>
+        <p className="card-body">
+          当前匿名会话用于调用受限 Edge Function，同时也是后续按 workspace 成员隔离访问业务表的前提。
+        </p>
+        <button className="primary-button" onClick={() => void handleAnonymousSignIn()} disabled={busy}>
+          {busy ? '处理中...' : '匿名登录并检查 Supabase'}
+        </button>
+        <div className="inline-note">{sessionLabel}</div>
+      </article>
+
+      <article className="card">
+        <div className="card-heading">
+          <p>Step B</p>
+          <h2>工作区接入 Spike</h2>
+        </div>
+        <form className="workspace-form" onSubmit={handleWorkspaceSubmit}>
+          <div className="segmented">
+            <button
+              type="button"
+              className={workspaceMode === 'create' ? 'active' : ''}
+              onClick={() => setWorkspaceMode('create')}
+            >
+              创建工作区
+            </button>
+            <button
+              type="button"
+              className={workspaceMode === 'join' ? 'active' : ''}
+              onClick={() => setWorkspaceMode('join')}
+            >
+              加入口令工作区
+            </button>
+          </div>
+
+          <label>
+            <span>工作区口令</span>
+            <input
+              value={passphrase}
+              onChange={(event) => setPassphrase(event.target.value)}
+              placeholder="至少 6 个字符"
+              minLength={6}
+            />
+          </label>
+
+          <button className="secondary-button" type="submit" disabled={busy}>
+            {busy
+              ? '提交中...'
+              : workspaceMode === 'create'
+                ? '调用 workspace-create'
+                : '调用 workspace-join'}
+          </button>
+        </form>
+      </article>
+
+      <article className="card">
+        <div className="card-heading">
+          <p>Step C</p>
+          <h2>PWA 安装验证</h2>
+        </div>
+        <p className="card-body">
+          第 0 阶段已验证通过，这里保留安装入口，方便在不同设备和浏览器环境下反复检查。
+        </p>
+        <button
+          className="ghost-button"
+          onClick={() => void handleInstall()}
+          disabled={!installPrompt}
+        >
+          {installPrompt ? '触发安装提示' : '等待浏览器提供安装入口'}
+        </button>
+      </article>
+
+      <article className="card">
+        <div className="card-heading">
+          <p>Step D</p>
+          <h2>Phase 1 本地样本</h2>
+        </div>
+        <p className="card-body">
+          这个动作不会写远端数据，只会往 `categories / todos / events / outbox`
+          写入最小样本，用来验证第 1 阶段的数据层已经准备好。
+        </p>
+        <button className="primary-button" onClick={() => void enqueueSeed()} disabled={busy}>
+          {busy ? '处理中...' : '写入本地样本并加入 outbox'}
+        </button>
+      </article>
+    </section>
+  )
+}
+
+function ModuleRoute({
+  eyebrow,
+  title,
+  detail,
+  snapshot,
+}: {
+  eyebrow: string
+  title: string
+  detail: string
+  snapshot: PhaseOneSnapshot
+}) {
+  return (
+    <section className="module-route">
+      <article className="card">
+        <div className="card-heading">
+          <p>{eyebrow}</p>
+          <h2>{title}</h2>
+        </div>
+        <p className="card-body">{detail}</p>
+        <div className="module-grid">
+          <MetricCard label="工作区" value={snapshot?.workspaceId ?? '未进入'} />
+          <MetricCard label="分类" value={String(snapshot?.localCounts.categories ?? 0)} />
+          <MetricCard label="待办" value={String(snapshot?.localCounts.todos ?? 0)} />
+          <MetricCard label="事件" value={String(snapshot?.localCounts.events ?? 0)} />
+          <MetricCard
+            label="待同步"
+            value={String(snapshot?.localCounts.pendingOutbox ?? 0)}
+          />
+          <MetricCard label="同步状态" value={snapshot?.syncStatus ?? 'idle'} />
+        </div>
+      </article>
+    </section>
+  )
+}
+
+function MetricCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="metric-card">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  )
+}
+
+function toSyncCategory(record: CategoryRecord) {
+  return {
+    id: record.id,
+    workspace_id: record.workspaceId,
+    name: record.name,
+    color: record.color,
+    updated_at: record.updatedAt,
+    deleted: record.deleted,
+  }
+}
+
+function toSyncTodo(record: TodoRecord) {
+  return {
+    id: record.id,
+    workspace_id: record.workspaceId,
+    title: record.title,
+    category_id: record.categoryId,
+    due_date: record.dueDate,
+    completed: record.completed,
+    note: record.note,
+    recurrence_type: record.recurrenceType === 'none' ? null : record.recurrenceType,
+    updated_at: record.updatedAt,
+    deleted: record.deleted,
+  }
+}
+
+function toSyncEvent(record: EventRecord) {
+  return {
+    id: record.id,
+    workspace_id: record.workspaceId,
+    title: record.title,
+    date: record.date,
+    start_at: record.startAt,
+    end_at: record.endAt,
+    note: record.note,
+    updated_at: record.updatedAt,
+    deleted: record.deleted,
+  }
 }
 
 export default App
