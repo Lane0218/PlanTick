@@ -39,3 +39,36 @@ PlanTick 现已转为 `Web / PWA` 方案。
 - 多设备同步采用本地优先 + 本地 outbox + 前台补拉
 - 冲突规则采用最后更新时间覆盖
 - 重复待办在完成当前实例后生成下一实例，并由服务端统一派生
+
+## Phase 0 本地开发
+
+启动前端：
+- `npm install`
+- `npm run dev`
+
+前端环境变量：
+- 复制 `.env.example` 为 `.env.local`
+- 填入：
+  - `VITE_SUPABASE_URL`
+  - `VITE_SUPABASE_ANON_KEY`
+
+Supabase 本地 Spike：
+- `supabase/migrations/20260311211000_phase0_workspace_spike.sql`
+- `supabase/functions/workspace-create`
+- `supabase/functions/workspace-join`
+
+推荐本地流程：
+- `supabase start`
+- `supabase db reset`
+- `supabase functions serve --env-file supabase/.env.local`
+
+函数运行环境变量：
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+当前 Phase 0 页面已包含：
+- PWA 注册与安装状态卡片
+- IndexedDB 探针写入
+- Supabase 匿名登录
+- `workspace-create` / `workspace-join` 调用入口

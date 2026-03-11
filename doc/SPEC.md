@@ -206,6 +206,7 @@ V1 的核心目标：
 
 字段：
 - `id`
+- `passphrase_lookup_hash`
 - `passphrase_hash`
 - `created_at`
 

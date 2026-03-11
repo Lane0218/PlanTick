@@ -1,0 +1,8 @@
+project_id = "plantick"
+
+[functions.workspace-create]
+verify_jwt = true
+
+[functions.workspace-join]
+verify_jwt = true
+
