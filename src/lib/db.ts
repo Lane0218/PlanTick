@@ -3,6 +3,16 @@ import { openDB } from 'idb'
 const databaseName = 'plantick-phase0'
 const storeName = 'phase0_meta'
 
+function createProbeId() {
+  if (typeof crypto.randomUUID === 'function') {
+    return `probe-${crypto.randomUUID()}`
+  }
+
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+  return `probe-${hex}`
+}
+
 async function getDatabase() {
   return openDB(databaseName, 1, {
     upgrade(database) {
@@ -15,7 +25,7 @@ async function getDatabase() {
 
 export async function runIndexedDbProbe() {
   const database = await getDatabase()
-  const probeId = `probe-${crypto.randomUUID()}`
+  const probeId = createProbeId()
   await database.put(storeName, probeId, 'lastProbeId')
   return probeId
 }

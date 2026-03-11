@@ -47,25 +47,46 @@ export async function invokeWorkspaceFunction(
   mode: WorkspaceMode,
   passphrase: string,
 ) {
-  const client = requireClient()
+  requireClient()
   const functionName = mode === 'create' ? 'workspace-create' : 'workspace-join'
+  const session = await ensureAnonymousSession()
+  const { supabaseUrl, supabaseAnonKey } = getSupabaseEnv()
 
-  const { data, error } = await client.functions.invoke<WorkspaceResponse>(
-    functionName,
-    {
-      body: {
-        passphrase,
-      },
+  const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: supabaseAnonKey,
+      Authorization: `Bearer ${session.access_token}`,
     },
-  )
+    body: JSON.stringify({
+      passphrase,
+    }),
+  })
 
-  if (error) {
-    throw new Error(error.message)
+  const text = await response.text()
+  let payload: (Partial<WorkspaceResponse> & { error?: string }) | null = null
+
+  if (text) {
+    try {
+      payload = JSON.parse(text) as Partial<WorkspaceResponse> & { error?: string }
+    } catch {
+      payload = {
+        error: text,
+      }
+    }
   }
 
-  if (!data?.workspaceId) {
+  if (!response.ok) {
+    throw new Error(payload?.error ?? `函数调用失败，HTTP ${response.status}`)
+  }
+
+  if (!payload?.workspaceId) {
     throw new Error('函数未返回 workspaceId')
   }
 
-  return data
+  return {
+    workspaceId: payload.workspaceId,
+    joined: Boolean(payload.joined),
+  }
 }
