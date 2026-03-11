@@ -171,7 +171,7 @@ export async function saveCurrentWorkspaceMeta(
     lastProbeId: current?.lastProbeId ?? null,
   }
 
-  await database.put('workspace_meta', next)
+  await database.put('workspace_meta', next, 'current')
 
   if (database.objectStoreNames.contains(legacyStoreName)) {
     await database.put(legacyStoreName, workspaceId, 'workspaceId')
