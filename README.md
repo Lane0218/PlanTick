@@ -72,3 +72,8 @@ Supabase 本地 Spike：
 - IndexedDB 探针写入
 - Supabase 匿名登录
 - `workspace-create` / `workspace-join` 调用入口
+
+当前远端 Supabase 项目状态：
+- Phase 0 migration 已应用
+- `workspace-create` 与 `workspace-join` 已部署
+- 当前项目的 Anonymous sign-ins 仍为禁用状态，需要在 Supabase Dashboard 中开启后，前端匿名登录和工作区接入流程才能真正跑通
