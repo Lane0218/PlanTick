@@ -30,7 +30,7 @@
 - 提交信息必须使用明确、简洁、可检索的规范格式：
 
 ```text
-type(scope): summary
+type: <一句话中文总结>
 ```
 
 - `type` 允许使用：
@@ -40,23 +40,7 @@ type(scope): summary
   - `refactor`
   - `test`
   - `chore`
-- `scope` 应尽量反映改动范围，例如：
-  - `web`
-  - `pwa`
-  - `sync`
-  - `docs`
-  - `db`
-  - `ui`
-- `summary` 使用英文短句，简洁描述本次改动，不要写空泛内容。
-
-示例：
-
-```text
-feat(web): initialize vite app shell
-fix(sync): handle stale outbox replay
-docs(agent): add repository collaboration rules
-test(pwa): cover workspace bootstrap flow
-```
+- `一句话中文总结` 使用中文短句，简洁描述本次改动，不要写空泛内容。
 
 ## 4. 测试要求
 
@@ -94,13 +78,7 @@ test(pwa): cover workspace bootstrap flow
 - 涉及关键用户流程时，应优先补充或执行对应的端到端测试。
 - 如果当前环境不具备运行测试的条件，必须明确说明原因、影响范围和未验证项。
 
-## 5. 实施原则
-
-- 以当前仓库现行方案为唯一实现基线。
-- 不在沟通和文档中主动回顾、比较或引入历史方案。
-- 除非用户明确要求，否则不要扩展到当前目标之外的技术讨论。
-
-## 6. 执行完成后的最小交付要求
+## 5. 执行完成后的最小交付要求
 
 - 完成修改
 - 运行与改动范围匹配的测试
