@@ -21,7 +21,7 @@ Deno.serve(async (req) => {
 
   try {
     const authorization = req.headers.get("Authorization");
-    const { userId, admin } = await requireUser(authorization);
+    const { client } = await requireUser(authorization);
     const body = await req.json();
     const passphrase = String(body.passphrase ?? "").trim();
 
@@ -38,8 +38,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { data, error } = await admin.rpc("create_workspace_with_member", {
-      p_user_id: userId,
+    const { data, error } = await client.rpc("create_workspace_with_member", {
       p_passphrase: passphrase,
     });
 
@@ -80,7 +79,7 @@ Deno.serve(async (req) => {
         error: error instanceof Error ? error.message : "Unknown error.",
       }),
       {
-        status: 401,
+        status: 500,
         headers: {
           ...corsHeaders,
           "Content-Type": "application/json",
@@ -89,4 +88,3 @@ Deno.serve(async (req) => {
     );
   }
 });
-
