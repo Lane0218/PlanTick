@@ -1,27 +1,30 @@
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
 
 :root {
-  --bg-app: #eef3f8;
-  --surface-raised: #fcfdff;
-  --surface-muted: #f1f5fa;
-  --surface-selected: #e8f0f8;
-  --line-soft: #dbe3ee;
-  --line-strong: #c4d0de;
-  --text-strong: #162233;
-  --text-soft: #627487;
-  --accent: #2f6ea4;
-  --accent-strong: #245987;
-  --danger: #c25e4e;
-  --shadow-panel: 0 16px 36px rgba(31, 58, 90, 0.08);
+  --bg-app: #efefea;
+  --surface-panel: #f8f8f5;
+  --surface-card: #fbfbf8;
+  --surface-muted: #f1f2ec;
+  --surface-selected: #eff4f2;
+  --line-soft: #e3e4de;
+  --line-strong: #d2d5ce;
+  --text-strong: #2e3c39;
+  --text-soft: #6f7f7b;
+  --text-muted: #9aa29d;
+  --accent: #48a7a5;
+  --accent-strong: #3a8f90;
+  --success: #608469;
+  --danger: #c66e5d;
+  --shadow-panel: 0 12px 28px rgba(59, 72, 70, 0.06);
   --font-mono: 'IBM Plex Sans', 'Segoe UI', sans-serif;
   font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
   line-height: 1.5;
   font-weight: 400;
   color: var(--text-strong);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.8), rgba(238, 243, 248, 0.88)),
-    linear-gradient(rgba(207, 219, 233, 0.12) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(207, 219, 233, 0.12) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.65), rgba(239, 239, 234, 0.9)),
+    linear-gradient(rgba(216, 219, 210, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(216, 219, 210, 0.08) 1px, transparent 1px),
     var(--bg-app);
   background-size: auto, 24px 24px, 24px 24px, auto;
   font-synthesis: none;
@@ -68,7 +71,7 @@ input:focus-visible,
 textarea:focus-visible,
 select:focus-visible,
 a:focus-visible {
-  outline: 2px solid rgba(47, 110, 164, 0.36);
+  outline: 2px solid rgba(72, 167, 165, 0.34);
   outline-offset: 2px;
 }
 

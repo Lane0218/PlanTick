@@ -107,11 +107,14 @@ function App() {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
   const [selectedTodoId, setSelectedTodoId] = useState<string | null>(null)
   const [quickTodoTitle, setQuickTodoTitle] = useState('')
+  const [quickDueDate, setQuickDueDate] = useState('')
+  const [showQuickCreateDatePicker, setShowQuickCreateDatePicker] = useState(false)
   const [newCategoryName, setNewCategoryName] = useState('')
   const [newCategoryColor, setNewCategoryColor] = useState(categoryPalette[0])
   const [categoryEditorName, setCategoryEditorName] = useState('')
   const [categoryEditorColor, setCategoryEditorColor] = useState(categoryPalette[0])
   const [detailDraft, setDetailDraft] = useState<TodoDraft | null>(null)
+  const [confirmDeleteTodo, setConfirmDeleteTodo] = useState(false)
   const lastSavedDraftRef = useRef('')
 
   const activeCategories = useMemo(
@@ -230,6 +233,7 @@ function App() {
     if (!selectedTodo) {
       setDetailDraft(null)
       lastSavedDraftRef.current = ''
+      setConfirmDeleteTodo(false)
       return
     }
 
@@ -243,6 +247,7 @@ function App() {
     }
 
     setDetailDraft(nextDraft)
+    setConfirmDeleteTodo(false)
     lastSavedDraftRef.current = serializeTodoDraft(nextDraft)
   }, [selectedTodo])
 
@@ -450,6 +455,10 @@ function App() {
       return
     }
 
+    if (!window.confirm(`确认删除分类「${selectedCategory.name}」吗？关联任务会回到未分类。`)) {
+      return
+    }
+
     const timestamp = new Date().toISOString()
     const affectedTodos = activeTodos
       .filter((todo) => todo.categoryId === selectedCategory.id)
@@ -493,7 +502,7 @@ function App() {
       workspaceId,
       quickTodoTitle.trim(),
       selectedCategoryId,
-      activeFilter === 'today' ? todayDate() : null,
+      quickDueDate || (activeFilter === 'today' ? todayDate() : null),
     )
 
     setBusy(true)
@@ -502,6 +511,8 @@ function App() {
       await enqueueRecordMutation('todos', 'upsert', toSyncTodo(record))
       await refreshWorkspaceData(workspaceId)
       setQuickTodoTitle('')
+      setQuickDueDate('')
+      setShowQuickCreateDatePicker(false)
       setSelectedTodoId(record.id)
       setMessage(`任务「${record.title}」已创建。`)
     } finally {
@@ -581,6 +592,8 @@ function App() {
     )
   }
 
+  const boardTitle = selectedCategory ? selectedCategory.name : filterLabels[activeFilter]
+
   return (
     <main className={shellClassName}>
       <Sidebar
@@ -608,7 +621,14 @@ function App() {
 
       <section className="board-pane">
         <header className="board-header">
-          <h1>{selectedCategory ? selectedCategory.name : filterLabels[activeFilter]}</h1>
+          <div className="board-heading">
+            <div className="board-title-row">
+              <h1>{boardTitle}</h1>
+              {location.pathname !== '/calendar' ? (
+                <span className="board-count">{String(visibleTodos.length).padStart(2, '0')}</span>
+              ) : null}
+            </div>
+          </div>
 
           <div className="board-actions">
             <nav className="route-switch" aria-label="主导航">
@@ -626,6 +646,10 @@ function App() {
               <TodoBoard
                 quickTodoTitle={quickTodoTitle}
                 setQuickTodoTitle={setQuickTodoTitle}
+                quickDueDate={quickDueDate}
+                setQuickDueDate={setQuickDueDate}
+                showQuickCreateDatePicker={showQuickCreateDatePicker}
+                setShowQuickCreateDatePicker={setShowQuickCreateDatePicker}
                 handleQuickCreateTodo={handleQuickCreateTodo}
                 visibleTodos={visibleTodos}
                 selectedTodoId={selectedTodoId}
@@ -656,6 +680,8 @@ function App() {
           detailDraft={detailDraft}
           setDetailDraft={setDetailDraft}
           handleDeleteTodo={handleDeleteTodo}
+          confirmDeleteTodo={confirmDeleteTodo}
+          setConfirmDeleteTodo={setConfirmDeleteTodo}
           closeDetail={() => setSelectedTodoId(null)}
           busy={busy}
         />
@@ -759,8 +785,10 @@ function OnboardingLayout({
                 <input
                   value={passphrase}
                   onChange={(event) => setPassphrase(event.target.value)}
-                  placeholder="至少 6 个字符"
+                  placeholder="至少 6 个字符…"
                   minLength={6}
+                  name="workspacePassphrase"
+                  autoComplete="off"
                 />
               </label>
 
@@ -843,10 +871,13 @@ function Sidebar({
   return (
     <aside className="sidebar-pane">
       <div className="sidebar-top">
-        <h2 title={sessionLabel}>PlanTick</h2>
+        <div className="sidebar-brand">
+          <h2 title={sessionLabel}>PlanTick</h2>
+          <p className="sidebar-session">{sessionLabel}</p>
+        </div>
       </div>
 
-      <nav className="sidebar-section" aria-label="任务筛选">
+      <nav className="sidebar-section sidebar-nav" aria-label="任务筛选">
         {(Object.keys(filterLabels) as TaskFilter[]).map((filter) => (
           <button
             key={filter}
@@ -865,16 +896,18 @@ function Sidebar({
         ))}
       </nav>
 
-      <section className="sidebar-section">
-        <div className="section-head sidebar-actions-only">
-          <div />
+      <section className="sidebar-section sidebar-card sidebar-category-section">
+        <div className="section-head">
+          <div>
+            <span>分类清单</span>
+          </div>
           <button
             type="button"
             className={showCategoryManager ? 'sidebar-plain-button active' : 'sidebar-plain-button'}
             aria-label="切换分类管理"
             onClick={() => setShowCategoryManager((current) => !current)}
           >
-            +
+            {showCategoryManager ? '收起' : '新建'}
           </button>
         </div>
 
@@ -892,9 +925,7 @@ function Sidebar({
                 }}
               >
                 <span className="color-dot" style={{ backgroundColor: category.color }} />
-                <span className="category-name" style={{ color: category.color }}>
-                  {category.name}
-                </span>
+                <span className="category-name">{category.name}</span>
               </button>
 
               <button
@@ -921,7 +952,9 @@ function Sidebar({
                 <input
                   value={newCategoryName}
                   onChange={(event) => setNewCategoryName(event.target.value)}
-                  placeholder="例如：工作、生活、学习"
+                  placeholder="例如：工作、生活、学习…"
+                  name="newCategoryName"
+                  autoComplete="off"
                 />
               </label>
 
@@ -954,6 +987,8 @@ function Sidebar({
                   <input
                     value={categoryEditorName}
                     onChange={(event) => setCategoryEditorName(event.target.value)}
+                    name="categoryEditorName"
+                    autoComplete="off"
                   />
                 </label>
 
@@ -974,7 +1009,12 @@ function Sidebar({
                   <button className="secondary-button" onClick={() => void handleSaveCategory()} disabled={busy}>
                     保存
                   </button>
-                  <button className="danger-button" onClick={() => void handleDeleteCategory()} disabled={busy}>
+                  <button
+                    className="danger-button"
+                    type="button"
+                    onClick={() => void handleDeleteCategory()}
+                    disabled={busy}
+                  >
                     删除
                   </button>
                 </div>
@@ -990,6 +1030,10 @@ function Sidebar({
 function TodoBoard({
   quickTodoTitle,
   setQuickTodoTitle,
+  quickDueDate,
+  setQuickDueDate,
+  showQuickCreateDatePicker,
+  setShowQuickCreateDatePicker,
   handleQuickCreateTodo,
   visibleTodos,
   selectedTodoId,
@@ -1000,6 +1044,10 @@ function TodoBoard({
 }: {
   quickTodoTitle: string
   setQuickTodoTitle: (value: string) => void
+  quickDueDate: string
+  setQuickDueDate: (value: string) => void
+  showQuickCreateDatePicker: boolean
+  setShowQuickCreateDatePicker: (value: boolean) => void
   handleQuickCreateTodo: (event: FormEvent<HTMLFormElement>) => Promise<void>
   visibleTodos: TodoRecord[]
   selectedTodoId: string | null
@@ -1012,12 +1060,68 @@ function TodoBoard({
     <section className="todo-board">
       <div className="board-toolbar">
         <form className="quick-create" onSubmit={(event) => void handleQuickCreateTodo(event)}>
-          <input
-            value={quickTodoTitle}
-            onChange={(event) => setQuickTodoTitle(event.target.value)}
-            placeholder="回车新建任务"
-            aria-label="快速新建任务"
-          />
+          <div className="quick-create-main">
+            <input
+              value={quickTodoTitle}
+              onChange={(event) => setQuickTodoTitle(event.target.value)}
+              onFocus={() => setShowQuickCreateDatePicker(true)}
+              placeholder="添加任务…"
+              aria-label="快速新建任务"
+              name="quickTodoTitle"
+              autoComplete="off"
+            />
+            <button
+              type="button"
+              className={showQuickCreateDatePicker ? 'ghost-button active' : 'ghost-button'}
+              aria-expanded={showQuickCreateDatePicker}
+              onClick={() => setShowQuickCreateDatePicker(!showQuickCreateDatePicker)}
+            >
+              {quickDueDate ? formatDueDate(quickDueDate, 'not_started').label : '选择日期'}
+            </button>
+          </div>
+
+          {showQuickCreateDatePicker ? (
+            <div className="quick-create-options">
+              <div className="quick-create-shortcuts" aria-label="新建任务日期快捷方式">
+                <button
+                  type="button"
+                  className={quickDueDate === todayDate() ? 'ghost-button active' : 'ghost-button'}
+                  onClick={() => setQuickDueDate(todayDate())}
+                >
+                  今天
+                </button>
+                <button
+                  type="button"
+                  className={quickDueDate === nextDate(1) ? 'ghost-button active' : 'ghost-button'}
+                  onClick={() => setQuickDueDate(nextDate(1))}
+                >
+                  明天
+                </button>
+                <button
+                  type="button"
+                  className={!quickDueDate ? 'ghost-button active' : 'ghost-button'}
+                  onClick={() => setQuickDueDate('')}
+                >
+                  无日期
+                </button>
+              </div>
+
+              <label className="quick-date-picker">
+                <span className="sr-only">新建任务日期</span>
+                <input
+                  type="date"
+                  value={quickDueDate}
+                  onChange={(event) => setQuickDueDate(event.target.value)}
+                  aria-label="新建任务日期"
+                  name="quickTodoDueDate"
+                />
+              </label>
+
+              <button className="primary-button" type="submit">
+                添加任务
+              </button>
+            </div>
+          ) : null}
         </form>
       </div>
 
@@ -1027,6 +1131,7 @@ function TodoBoard({
             const category = categories.find((item) => item.id === todo.categoryId) ?? null
             const statusMeta = todoStatusMeta[todo.status]
             const dueLabel = formatDueDate(todo.dueDate, todo.status)
+            const noteExcerpt = todo.note.trim().split('\n')[0]
 
             return (
               <article
@@ -1039,6 +1144,11 @@ function TodoBoard({
                   .filter(Boolean)
                   .join(' ')}
                 data-testid={`todo-item-${todo.id}`}
+                style={
+                  {
+                    '--todo-tone': statusMeta.tone,
+                  } as CSSProperties
+                }
               >
                 <button
                   type="button"
@@ -1046,7 +1156,9 @@ function TodoBoard({
                   aria-label={`切换任务状态，当前${statusMeta.label}`}
                   onClick={() => void handleToggleTodo(todo)}
                 >
-                  {statusMeta.label}
+                  <span className="todo-status-icon" aria-hidden="true">
+                    {todo.status === 'completed' ? '✓' : ''}
+                  </span>
                 </button>
 
                 <button
@@ -1055,17 +1167,20 @@ function TodoBoard({
                   aria-label={`查看任务 ${todo.title}`}
                   onClick={() => setSelectedTodoId(todo.id)}
                 >
-                  <div className="todo-row">
-                    <strong>{todo.title}</strong>
-
-                    <div className="todo-secondary">
-                      <span className="todo-category" style={{ color: category?.color ?? '#8A93A2' }}>
-                        {category?.name ?? '未分类'}
-                      </span>
-                      <span className={dueLabel.emphasis ? 'todo-due is-alert' : 'todo-due'}>
-                        {dueLabel.label}
-                      </span>
+                  <div className="todo-main-top">
+                    <div className="todo-row">
+                      <strong>{todo.title}</strong>
+                      <span className={dueLabel.emphasis ? 'todo-due is-alert' : 'todo-due'}>{dueLabel.label}</span>
                     </div>
+                  </div>
+
+                  {noteExcerpt ? <p className="todo-excerpt">{noteExcerpt}</p> : null}
+
+                  <div className="todo-secondary">
+                    <span className="todo-category" style={{ color: category?.color ?? '#7b8280' }}>
+                      {category?.name ?? '未分类'}
+                    </span>
+                    <span className="todo-detail-copy">{statusMeta.label}</span>
                   </div>
                 </button>
               </article>
@@ -1088,6 +1203,8 @@ function TodoDetailPane({
   detailDraft,
   setDetailDraft,
   handleDeleteTodo,
+  confirmDeleteTodo,
+  setConfirmDeleteTodo,
   closeDetail,
   busy,
 }: {
@@ -1096,6 +1213,8 @@ function TodoDetailPane({
   detailDraft: TodoDraft | null
   setDetailDraft: (draft: TodoDraft | null) => void
   handleDeleteTodo: () => Promise<void>
+  confirmDeleteTodo: boolean
+  setConfirmDeleteTodo: (value: boolean) => void
   closeDetail: () => void
   busy: boolean
 }) {
@@ -1113,7 +1232,10 @@ function TodoDetailPane({
                   title: event.target.value,
                 })
               }
-              placeholder="任务标题"
+              placeholder="任务标题…"
+              aria-label="任务标题"
+              name="detailTitle"
+              autoComplete="off"
             />
             <button className="detail-close" onClick={closeDetail} aria-label="关闭详情">
               ×
@@ -1139,32 +1261,43 @@ function TodoDetailPane({
             >
               {todoStatusMeta[detailDraft.status].label}
             </button>
-            <span>{detailDraft.dueDate ? detailDraft.dueDate : '无日期'}</span>
+
+            <span className="detail-overview-date">
+              {detailDraft.dueDate ? formatSlashDate(detailDraft.dueDate) : '暂无日期'}
+            </span>
           </div>
 
           <div className="detail-stack">
-            <label>
-              <span>分类</span>
-              <select
-                value={detailDraft.categoryId}
-                onChange={(event) =>
-                  setDetailDraft({
-                    ...detailDraft,
-                    categoryId: event.target.value,
-                  })
-                }
-              >
-                <option value="">未分类</option>
-                {categories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <section className="detail-section">
+              <div className="detail-card-head">
+                <span>分类</span>
+              </div>
+              <label className="detail-field">
+                <span>分类</span>
+                <select
+                  value={detailDraft.categoryId}
+                  onChange={(event) =>
+                    setDetailDraft({
+                      ...detailDraft,
+                      categoryId: event.target.value,
+                    })
+                  }
+                  name="detailCategoryId"
+                >
+                  <option value="">未分类</option>
+                  {categories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </section>
 
-            <div className="detail-date-block">
-              <span>日期</span>
+            <section className="detail-section detail-date-block">
+              <div className="detail-card-head">
+                <span>日期</span>
+              </div>
               <div className="detail-date-shortcuts">
                 <button
                   type="button"
@@ -1204,7 +1337,8 @@ function TodoDetailPane({
                 </button>
               </div>
 
-              <div className="detail-date-picker">
+              <label className="detail-field detail-date-picker">
+                <span>日期</span>
                 <input
                   type="date"
                   value={detailDraft.dueDate}
@@ -1214,41 +1348,70 @@ function TodoDetailPane({
                       dueDate: event.target.value,
                     })
                   }
+                  aria-label="日期"
+                  name="detailDueDate"
                 />
+              </label>
+            </section>
+
+            <section className="detail-section">
+              <div className="detail-card-head">
+                <span>备注</span>
               </div>
-            </div>
+              <label className="detail-field">
+                <span>备注</span>
+                <textarea
+                  value={detailDraft.note}
+                  onChange={(event) =>
+                    setDetailDraft({
+                      ...detailDraft,
+                      note: event.target.value,
+                    })
+                  }
+                  rows={8}
+                  placeholder="记录上下文、拆分步骤或补充说明…"
+                  aria-label="备注"
+                  name="detailNote"
+                  autoComplete="off"
+                />
+              </label>
+            </section>
 
-            <label>
-              <span>备注</span>
-              <textarea
-                value={detailDraft.note}
-                onChange={(event) =>
-                  setDetailDraft({
-                    ...detailDraft,
-                    note: event.target.value,
-                  })
-                }
-                rows={8}
-                placeholder="记录上下文、拆分步骤或补充说明"
-              />
-            </label>
-
-            <div className="detail-meta">
+            <div className="detail-section detail-meta">
+              <div className="detail-card-head">
+                <span>记录</span>
+              </div>
               <span>更新时间 {formatTimestamp(selectedTodo.updatedAt)}</span>
             </div>
           </div>
 
-          <div className="detail-actions">
-            <button className="danger-button" onClick={() => void handleDeleteTodo()} disabled={busy}>
-              删除任务
-            </button>
+          <div className="detail-section detail-actions detail-danger-zone">
+            <div className="detail-card-head">
+              <span>危险操作</span>
+            </div>
+            {confirmDeleteTodo ? (
+              <div className="detail-delete-confirm">
+                <p>确认删除这条任务？删除后会立即从当前列表移除。</p>
+                <div className="detail-delete-actions">
+                  <button className="secondary-button" onClick={() => setConfirmDeleteTodo(false)} type="button">
+                    取消
+                  </button>
+                  <button className="danger-button" onClick={() => void handleDeleteTodo()} disabled={busy} type="button">
+                    确认删除
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button className="danger-button" onClick={() => setConfirmDeleteTodo(true)} disabled={busy} type="button">
+                删除任务
+              </button>
+            )}
           </div>
         </>
       ) : (
         <div className="detail-empty">
-          <p className="eyebrow">Detail</p>
           <h2>点击一条任务，右侧就会展开详情。</h2>
-          <p>这里会承接标题、分类、截止日期、备注和重复规则的编辑。</p>
+          <p>这里会承接标题、分类、日期、备注和删除操作。</p>
         </div>
       )}
     </aside>
@@ -1358,17 +1521,35 @@ function formatDueDate(value: string | null, status: TodoStatus) {
     }
   }
 
+  if (value === nextDate(1)) {
+    return {
+      label: '明天',
+      emphasis: false,
+    }
+  }
+
   if (value < todayDate() && status !== 'completed') {
     return {
-      label: value,
+      label: formatMonthDay(value),
       emphasis: true,
     }
   }
 
   return {
-    label: value,
+    label: formatMonthDay(value),
     emphasis: false,
   }
+}
+
+function formatSlashDate(value: string) {
+  return value.replaceAll('-', '/')
+}
+
+function formatMonthDay(value: string) {
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+  }).format(new Date(`${value}T00:00:00`))
 }
 
 function formatTimestamp(value: string) {
