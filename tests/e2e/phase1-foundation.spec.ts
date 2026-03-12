@@ -11,12 +11,12 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   await page.getByRole('button', { name: '匿名登录并检查 Supabase' }).click()
   await expect(page.getByText('匿名会话已建立，可以创建或加入工作区。')).toBeVisible()
 
-  await page.getByPlaceholder('至少 6 个字符').fill(passphrase)
+  await page.getByPlaceholder('至少 6 个字符…').fill(passphrase)
   await page.getByRole('button', { name: '调用 workspace-create' }).click()
   await expect(page.getByRole('heading', { name: '全部任务' })).toBeVisible()
 
   await page.getByRole('button', { name: '切换分类管理' }).click()
-  await page.getByPlaceholder('例如：工作、生活、学习').fill('产品设计')
+  await page.getByPlaceholder('例如：工作、生活、学习…').fill('产品设计')
   await page.getByRole('button', { name: '添加分类' }).click()
   await expect(page.getByRole('button', { name: '产品设计', exact: true })).toBeVisible()
 
