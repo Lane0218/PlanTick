@@ -517,6 +517,27 @@
   border: 1px solid var(--line-soft);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.74);
+  box-shadow: inset 4px 0 0 transparent;
+}
+
+.todo-card.status-not_started {
+  box-shadow: inset 4px 0 0 #8a8f85;
+}
+
+.todo-card.status-in_progress {
+  box-shadow: inset 4px 0 0 #2e7d6b;
+}
+
+.todo-card.status-completed {
+  box-shadow: inset 4px 0 0 #547a61;
+}
+
+.todo-card.status-blocked {
+  box-shadow: inset 4px 0 0 #c86e4f;
+}
+
+.todo-card.status-canceled {
+  box-shadow: inset 4px 0 0 #8b6689;
 }
 
 .todo-card.active {
@@ -566,7 +587,32 @@
   font-size: 0.92rem;
 }
 
-.todo-meta span:last-child {
+.todo-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--status-accent);
+  color: var(--status-tone);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.todo-due {
+  color: var(--text-soft);
+  font-size: 0.9rem;
+}
+
+.todo-due.is-alert {
   flex-shrink: 0;
   color: var(--danger);
 }
@@ -611,6 +657,50 @@
   gap: 12px;
 }
 
+.status-picker {
+  display: grid;
+  gap: 10px;
+}
+
+.status-picker > span {
+  color: var(--text-soft);
+  font-size: 0.84rem;
+}
+
+.status-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.status-option {
+  display: grid;
+  gap: 4px;
+  min-height: 76px;
+  padding: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.92);
+  text-align: left;
+}
+
+.status-option strong {
+  color: var(--status-tone);
+  font-size: 0.92rem;
+}
+
+.status-option span {
+  color: var(--text-soft);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.status-option.active {
+  border-color: color-mix(in srgb, var(--status-tone) 26%, transparent);
+  background: color-mix(in srgb, var(--status-accent) 78%, white);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--status-tone) 18%, transparent);
+}
+
 .detail-meta {
   margin-top: 4px;
   padding-top: 14px;
@@ -619,6 +709,10 @@
 
 .detail-meta span {
   color: var(--text-soft);
+}
+
+.detail-meta .status-pill {
+  color: var(--status-tone);
 }
 
 .detail-actions {
@@ -728,7 +822,8 @@
   }
 
   .quick-create,
-  .detail-split {
+  .detail-split,
+  .status-picker-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -740,6 +835,7 @@
   }
 
   .todo-meta,
+  .todo-foot,
   .todo-line,
   .category-toolbar,
   .editor-actions {

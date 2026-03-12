@@ -28,6 +28,7 @@ export type CategoryRecord = {
 }
 
 export type TodoRecurrenceType = 'none' | 'daily' | 'weekly' | 'monthly'
+export type TodoStatus = 'not_started' | 'in_progress' | 'completed' | 'blocked' | 'canceled'
 
 export type TodoRecord = {
   id: EntityId
@@ -35,6 +36,7 @@ export type TodoRecord = {
   title: string
   categoryId: EntityId | null
   dueDate: string | null
+  status: TodoStatus
   completed: boolean
   note: string
   recurrenceType: TodoRecurrenceType

@@ -75,6 +75,20 @@ function createDefaultCursor() {
   }
 }
 
+function normalizeTodoStatus(
+  record: Record<string, unknown> & { status?: unknown; completed?: unknown },
+): TodoRecord['status'] {
+  return record.status === 'not_started' ||
+    record.status === 'in_progress' ||
+    record.status === 'completed' ||
+    record.status === 'blocked' ||
+    record.status === 'canceled'
+    ? record.status
+    : record.completed
+      ? 'completed'
+      : 'not_started'
+}
+
 export async function getDatabase() {
   if (!databasePromise) {
     databasePromise = openDB<PlantickDBSchema>(databaseName, 2, {
@@ -258,7 +272,12 @@ export async function upsertTodo(record: TodoRecord) {
 
 export async function listTodos(workspaceId: string) {
   const database = await getDatabase()
-  return database.getAllFromIndex('todos', 'by-workspace', workspaceId)
+  const records = await database.getAllFromIndex('todos', 'by-workspace', workspaceId)
+  return records.map((record) => ({
+    ...record,
+    status: normalizeTodoStatus(record),
+    completed: normalizeTodoStatus(record) === 'completed',
+  }))
 }
 
 export async function upsertEvent(record: EventRecord) {
@@ -328,7 +347,8 @@ export async function applyRemoteChanges(changes: RemoteChangeSet) {
         categoryId:
           typeof record.category_id === 'string' ? record.category_id : null,
         dueDate: typeof record.due_date === 'string' ? record.due_date : null,
-        completed: Boolean(record.completed),
+        status: normalizeTodoStatus(record),
+        completed: normalizeTodoStatus(record) === 'completed',
         note: String(record.note ?? ''),
         recurrenceType:
           record.recurrence_type === 'daily' ||

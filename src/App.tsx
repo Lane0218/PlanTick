@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { CSSProperties, FormEvent } from 'react'
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import './App.css'
 import {
@@ -16,7 +16,7 @@ import {
   upsertTodo,
 } from './lib/db'
 import { envSummary, isSupabaseConfigured } from './lib/env'
-import type { CategoryRecord, TodoRecord, TodoRecurrenceType } from './lib/types'
+import type { CategoryRecord, TodoRecord, TodoRecurrenceType, TodoStatus } from './lib/types'
 import { enqueueRecordMutation } from './lib/sync'
 import type { SyncMeta } from './lib/sync-types'
 import { ensureAnonymousSession, invokeWorkspaceFunction } from './lib/supabase'
@@ -28,9 +28,9 @@ type TodoDraft = {
   title: string
   categoryId: string
   dueDate: string
+  status: TodoStatus
   note: string
   recurrenceType: TodoRecurrenceType
-  completed: boolean
 }
 
 type BeforeInstallPromptEvent = Event & {
@@ -45,6 +45,42 @@ const filterLabels: Record<TaskFilter, string> = {
   today: '今天',
   overdue: '逾期',
   completed: '已完成',
+}
+
+const todoStatusMeta: Record<
+  TodoStatus,
+  { label: string; tone: string; accent: string; detail: string }
+> = {
+  not_started: {
+    label: '未开始',
+    tone: '#8A8F85',
+    accent: '#F0E9DA',
+    detail: '还没有开始推进',
+  },
+  in_progress: {
+    label: '进行中',
+    tone: '#2E7D6B',
+    accent: '#DDF1E9',
+    detail: '正在处理',
+  },
+  completed: {
+    label: '已完成',
+    tone: '#547A61',
+    accent: '#E0ECE2',
+    detail: '已经收口',
+  },
+  blocked: {
+    label: '阻塞',
+    tone: '#C86E4F',
+    accent: '#F8E1D9',
+    detail: '受依赖或问题阻塞',
+  },
+  canceled: {
+    label: '取消',
+    tone: '#8B6689',
+    accent: '#EFE0EC',
+    detail: '当前不再继续',
+  },
 }
 
 declare global {
@@ -108,13 +144,13 @@ function App() {
 
         switch (activeFilter) {
           case 'today':
-            return todo.dueDate === todayDate()
+            return todo.status !== 'completed' && todo.dueDate === todayDate()
           case 'overdue':
-            return !todo.completed && Boolean(todo.dueDate) && todo.dueDate! < todayDate()
+            return todo.status !== 'completed' && Boolean(todo.dueDate) && todo.dueDate! < todayDate()
           case 'completed':
-            return todo.completed
+            return todo.status === 'completed'
           default:
-            return !todo.completed
+            return todo.status !== 'completed'
         }
       }),
     [activeFilter, activeTodos, selectedCategoryId],
@@ -124,12 +160,14 @@ function App() {
 
   const sidebarCounts = useMemo(
     () => ({
-      all: activeTodos.filter((todo) => !todo.completed).length,
-      today: activeTodos.filter((todo) => todo.dueDate === todayDate() && !todo.completed).length,
-      overdue: activeTodos.filter(
-        (todo) => !todo.completed && Boolean(todo.dueDate) && todo.dueDate! < todayDate(),
+      all: activeTodos.filter((todo) => todo.status !== 'completed').length,
+      today: activeTodos.filter(
+        (todo) => todo.dueDate === todayDate() && todo.status !== 'completed',
       ).length,
-      completed: activeTodos.filter((todo) => todo.completed).length,
+      overdue: activeTodos.filter(
+        (todo) => todo.status !== 'completed' && Boolean(todo.dueDate) && todo.dueDate! < todayDate(),
+      ).length,
+      completed: activeTodos.filter((todo) => todo.status === 'completed').length,
     }),
     [activeTodos],
   )
@@ -200,9 +238,9 @@ function App() {
       title: selectedTodo.title,
       categoryId: selectedTodo.categoryId ?? '',
       dueDate: selectedTodo.dueDate ?? '',
+      status: selectedTodo.status,
       note: selectedTodo.note,
       recurrenceType: selectedTodo.recurrenceType,
-      completed: selectedTodo.completed,
     })
   }, [selectedTodo])
 
@@ -430,9 +468,11 @@ function App() {
       return
     }
 
+    const nextStatus = toggleTodoStatus(todo.status)
     const updated: TodoRecord = {
       ...todo,
-      completed: !todo.completed,
+      status: nextStatus,
+      completed: nextStatus === 'completed',
       updatedAt: new Date().toISOString(),
     }
 
@@ -441,7 +481,11 @@ function App() {
       await upsertTodo(updated)
       await enqueueRecordMutation('todos', 'upsert', toSyncTodo(updated))
       await refreshWorkspaceData(workspaceId)
-      setMessage(updated.completed ? `任务「${todo.title}」已完成。` : `任务「${todo.title}」已恢复。`)
+      setMessage(
+        updated.status === 'completed'
+          ? `任务「${todo.title}」已完成。`
+          : `任务「${todo.title}」已恢复为进行中。`,
+      )
     } finally {
       setBusy(false)
     }
@@ -458,9 +502,10 @@ function App() {
       title: detailDraft.title.trim(),
       categoryId: detailDraft.categoryId || null,
       dueDate: detailDraft.dueDate || null,
+      status: detailDraft.status,
       note: detailDraft.note.trim(),
       recurrenceType: detailDraft.recurrenceType,
-      completed: detailDraft.completed,
+      completed: detailDraft.status === 'completed',
       updatedAt: new Date().toISOString(),
     }
 
@@ -605,7 +650,7 @@ function App() {
             element={
               <CalendarBoard
                 categories={activeCategories.length}
-                todos={activeTodos.filter((todo) => !todo.completed).length}
+                todos={activeTodos.filter((todo) => todo.status !== 'completed').length}
                 pendingOutboxCount={pendingOutboxCount}
               />
             }
@@ -1018,17 +1063,25 @@ function TodoBoard({
         <div className="todo-list" role="list">
           {visibleTodos.map((todo) => {
             const category = categories.find((item) => item.id === todo.categoryId) ?? null
+            const statusMeta = todoStatusMeta[todo.status]
+            const dueLabel = formatDueDate(todo.dueDate, todo.status)
 
             return (
               <article
                 key={todo.id}
-                className={selectedTodoId === todo.id ? 'todo-card active' : 'todo-card'}
+                className={[
+                  'todo-card',
+                  `status-${todo.status}`,
+                  selectedTodoId === todo.id ? 'active' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
                 data-testid={`todo-item-${todo.id}`}
               >
                 <button
                   type="button"
-                  className={todo.completed ? 'checkmark is-complete' : 'checkmark'}
-                  aria-label={todo.completed ? '恢复任务' : '完成任务'}
+                  className={todo.status === 'completed' ? 'checkmark is-complete' : 'checkmark'}
+                  aria-label={todo.status === 'completed' ? '恢复任务' : '完成任务'}
                   onClick={() => void handleToggleTodo(todo)}
                 />
 
@@ -1051,7 +1104,23 @@ function TodoBoard({
 
                   <div className="todo-meta">
                     <span>{todo.note ? truncate(todo.note, 42) : '点击右侧详情补充备注、重复规则和截止日期'}</span>
-                    <span>{formatDueDate(todo.dueDate, todo.completed)}</span>
+                  </div>
+
+                  <div className="todo-foot">
+                    <span
+                      className={`status-pill status-pill-${todo.status}`}
+                      style={
+                        {
+                          '--status-tone': statusMeta.tone,
+                          '--status-accent': statusMeta.accent,
+                        } as CSSProperties
+                      }
+                    >
+                      {statusMeta.label}
+                    </span>
+                    <span className={dueLabel.emphasis ? 'todo-due is-alert' : 'todo-due'}>
+                      {dueLabel.label}
+                    </span>
                   </div>
                 </button>
               </article>
@@ -1155,6 +1224,39 @@ function TodoDetailPane({
               </label>
             </div>
 
+            <div className="status-picker">
+              <span>任务状态</span>
+              <div className="status-picker-grid" role="list" aria-label="任务状态">
+                {(Object.keys(todoStatusMeta) as TodoStatus[]).map((status) => {
+                  const meta = todoStatusMeta[status]
+
+                  return (
+                    <button
+                      key={status}
+                      type="button"
+                      className={detailDraft.status === status ? 'status-option active' : 'status-option'}
+                      aria-label={`状态 ${meta.label}`}
+                      style={
+                        {
+                          '--status-tone': meta.tone,
+                          '--status-accent': meta.accent,
+                        } as CSSProperties
+                      }
+                      onClick={() =>
+                        setDetailDraft({
+                          ...detailDraft,
+                          status,
+                        })
+                      }
+                    >
+                      <strong>{meta.label}</strong>
+                      <span>{meta.detail}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
             <label>
               <span>重复规则</span>
               <select
@@ -1190,12 +1292,23 @@ function TodoDetailPane({
 
             <div className="detail-meta">
               <button
-                className={selectedTodo.completed ? 'secondary-button active' : 'secondary-button'}
+                className={selectedTodo.status === 'completed' ? 'secondary-button active' : 'secondary-button'}
                 onClick={() => void handleToggleTodo(selectedTodo)}
                 disabled={busy}
               >
-                {selectedTodo.completed ? '恢复未完成' : '标记完成'}
+                {selectedTodo.status === 'completed' ? '恢复进行中' : '标记完成'}
               </button>
+              <span
+                className={`status-pill status-pill-${selectedTodo.status}`}
+                style={
+                  {
+                    '--status-tone': todoStatusMeta[selectedTodo.status].tone,
+                    '--status-accent': todoStatusMeta[selectedTodo.status].accent,
+                  } as CSSProperties
+                }
+              >
+                当前状态 {todoStatusMeta[selectedTodo.status].label}
+              </span>
               <span>更新时间 {formatTimestamp(selectedTodo.updatedAt)}</span>
             </div>
           </div>
@@ -1263,8 +1376,12 @@ function todayDate() {
 }
 
 function compareTodos(left: TodoRecord, right: TodoRecord) {
-  if (left.completed !== right.completed) {
-    return left.completed ? 1 : -1
+  if (left.status === 'completed' && right.status !== 'completed') {
+    return 1
+  }
+
+  if (left.status !== 'completed' && right.status === 'completed') {
+    return -1
   }
 
   if (left.dueDate && right.dueDate) {
@@ -1295,6 +1412,7 @@ function createTodoRecord(
     title,
     categoryId,
     dueDate,
+    status: 'not_started',
     completed: false,
     note: '',
     recurrenceType: 'none',
@@ -1303,20 +1421,32 @@ function createTodoRecord(
   }
 }
 
-function formatDueDate(value: string | null, completed: boolean) {
+function formatDueDate(value: string | null, status: TodoStatus) {
   if (!value) {
-    return completed ? '已完成 · 无截止日期' : '未设置截止日期'
+    return {
+      label: status === 'completed' ? '已完成 · 无截止日期' : '未设置截止日期',
+      emphasis: false,
+    }
   }
 
   if (value === todayDate()) {
-    return completed ? '今天完成' : '今天截止'
+    return {
+      label: status === 'completed' ? '今天完成' : '今天截止',
+      emphasis: status !== 'completed',
+    }
   }
 
-  if (value < todayDate() && !completed) {
-    return `${value} · 已逾期`
+  if (value < todayDate() && status !== 'completed') {
+    return {
+      label: `${value} · 已逾期`,
+      emphasis: true,
+    }
   }
 
-  return value
+  return {
+    label: value,
+    emphasis: false,
+  }
 }
 
 function formatTimestamp(value: string) {
@@ -1330,6 +1460,10 @@ function formatTimestamp(value: string) {
 
 function truncate(value: string, maxLength: number) {
   return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value
+}
+
+function toggleTodoStatus(status: TodoStatus): TodoStatus {
+  return status === 'completed' ? 'in_progress' : 'completed'
 }
 
 function toSyncCategory(record: CategoryRecord) {
@@ -1350,6 +1484,7 @@ function toSyncTodo(record: TodoRecord) {
     title: record.title,
     category_id: record.categoryId,
     due_date: record.dueDate,
+    status: record.status,
     completed: record.completed,
     note: record.note,
     recurrence_type: record.recurrenceType === 'none' ? null : record.recurrenceType,

@@ -221,6 +221,7 @@ export function createTodoSeed(workspaceId: string, categoryId: string | null): 
     title: 'Phase 1 本地待办样本',
     categoryId,
     dueDate: now.slice(0, 10),
+    status: 'not_started',
     completed: false,
     note: '用于验证本地 schema、outbox 和同步契约是否贯通。',
     recurrenceType: 'none',

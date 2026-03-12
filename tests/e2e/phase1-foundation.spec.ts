@@ -28,11 +28,13 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
 
   await page.getByLabel('备注').fill('右侧详情支持完整编辑任务字段')
   await page.getByLabel('截止日期').fill('2026-03-20')
+  await page.getByRole('button', { name: '状态 阻塞' }).click()
   await page.getByLabel('重复规则').selectOption('weekly')
   await page.getByRole('button', { name: '保存更改' }).click()
 
   await expect(page.getByLabel('截止日期')).toHaveValue('2026-03-20')
   await expect(page.getByLabel('备注')).toHaveValue('右侧详情支持完整编辑任务字段')
+  await expect(page.getByText('当前状态 阻塞')).toBeVisible()
 
   await page.reload()
 
@@ -44,4 +46,5 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   )
   await expect(page.getByLabel('截止日期')).toHaveValue('2026-03-20')
   await expect(page.getByLabel('重复规则')).toHaveValue('weekly')
+  await expect(page.getByText('当前状态 阻塞')).toBeVisible()
 })
