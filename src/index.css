@@ -1,32 +1,25 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
-
 :root {
-  --bg-app: #efefea;
-  --surface-panel: #f8f8f5;
-  --surface-card: #fbfbf8;
-  --surface-muted: #f1f2ec;
-  --surface-selected: #eff4f2;
-  --line-soft: #e3e4de;
-  --line-strong: #d2d5ce;
-  --text-strong: #2e3c39;
-  --text-soft: #6f7f7b;
-  --text-muted: #9aa29d;
-  --accent: #48a7a5;
-  --accent-strong: #3a8f90;
-  --success: #608469;
-  --danger: #c66e5d;
-  --shadow-panel: 0 12px 28px rgba(59, 72, 70, 0.06);
-  --font-mono: 'IBM Plex Sans', 'Segoe UI', sans-serif;
-  font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
+  --bg-app: #f7fafc;
+  --surface-panel: #ffffff;
+  --surface-card: #ffffff;
+  --surface-muted: #f5f7fa;
+  --surface-selected: #f0f9f8;
+  --line-soft: #e2e8f0;
+  --line-strong: #cfd8e3;
+  --text-strong: #2c3e50;
+  --text-soft: #6b7c93;
+  --text-muted: #90a4ae;
+  --accent: #1f6e66;
+  --accent-strong: #195b55;
+  --success: #26a69a;
+  --danger: #ef5350;
+  --shadow-panel: 0 20px 40px rgba(15, 23, 42, 0.06);
+  --font-mono: 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  font-family: 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
   line-height: 1.5;
   font-weight: 400;
   color: var(--text-strong);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.65), rgba(239, 239, 234, 0.9)),
-    linear-gradient(rgba(216, 219, 210, 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(216, 219, 210, 0.08) 1px, transparent 1px),
-    var(--bg-app);
-  background-size: auto, 24px 24px, 24px 24px, auto;
+  background: var(--bg-app);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -45,7 +38,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: transparent;
+  background: var(--bg-app);
 }
 
 button,
