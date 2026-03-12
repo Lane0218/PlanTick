@@ -1,50 +1,47 @@
 import { expect, test } from '@playwright/test'
 
-test('phase 1 主链路：创建工作区、写入本地样本、第二上下文加入、路由切换', async ({
-  browser,
+test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情并刷新恢复', async ({
+  page,
   baseURL,
 }) => {
-  const passphrase = `phase1-${Date.now()}-pw`
+  const passphrase = `phase3-${Date.now()}-pw`
 
-  const contextA = await browser.newContext()
-  const pageA = await contextA.newPage()
-  await pageA.goto(baseURL!)
+  await page.goto(baseURL!)
 
-  await pageA.getByRole('button', { name: '匿名登录并检查 Supabase' }).click()
-  await expect(pageA.getByText('匿名登录成功，可调用受限 Edge Function')).toBeVisible()
+  await page.getByRole('button', { name: '匿名登录并检查 Supabase' }).click()
+  await expect(page.getByText('匿名会话已建立，可以创建或加入工作区。')).toBeVisible()
 
-  await pageA.getByPlaceholder('至少 6 个字符').fill(passphrase)
-  await pageA.getByRole('button', { name: '调用 workspace-create' }).click()
-  await expect(pageA.getByText('创建工作区成功')).toBeVisible()
+  await page.getByPlaceholder('至少 6 个字符').fill(passphrase)
+  await page.getByRole('button', { name: '调用 workspace-create' }).click()
+  await expect(page.getByRole('heading', { name: '全部任务' })).toBeVisible()
 
-  await pageA.getByRole('button', { name: '写入本地样本并加入 outbox' }).click()
-  await expect(
-    pageA.getByText('已写入本地 categories/todos/events 样本，并加入 outbox。'),
-  ).toBeVisible()
+  await page.getByPlaceholder('例如：工作、生活、学习').fill('产品设计')
+  await page.getByRole('button', { name: '新建分类' }).click()
+  await expect(page.getByRole('button', { name: '产品设计' })).toBeVisible()
 
-  await expect(pageA.getByText('本地分类数：1')).toBeVisible()
-  await expect(pageA.getByText('本地待办数：1')).toBeVisible()
-  await expect(pageA.getByText('本地事件数：1')).toBeVisible()
-  await expect(pageA.getByText('待同步 outbox：3')).toBeVisible()
+  await page
+    .getByPlaceholder('快速新建任务，例如：整理待办详情面板')
+    .fill('完成任务工作台 UI')
+  await page.getByRole('button', { name: '新建任务' }).click()
 
-  await pageA.getByRole('link', { name: '待办骨架' }).click()
-  await expect(pageA.getByText('待办模块骨架已建好，业务列表下一阶段接入。')).toBeVisible()
+  await expect(page.getByRole('heading', { name: '完成任务工作台 UI' })).toBeVisible()
 
-  await pageA.getByRole('link', { name: '月历骨架' }).click()
-  await expect(pageA.getByText('月历模块骨架已建好，事件映射和投影下一阶段接入。')).toBeVisible()
+  await page.getByLabel('备注').fill('右侧详情支持完整编辑任务字段')
+  await page.getByLabel('截止日期').fill('2026-03-20')
+  await page.getByLabel('重复规则').selectOption('weekly')
+  await page.getByRole('button', { name: '保存更改' }).click()
 
-  const contextB = await browser.newContext()
-  const pageB = await contextB.newPage()
-  await pageB.goto(baseURL!)
+  await expect(page.getByLabel('截止日期')).toHaveValue('2026-03-20')
+  await expect(page.getByLabel('备注')).toHaveValue('右侧详情支持完整编辑任务字段')
 
-  await pageB.getByRole('button', { name: '匿名登录并检查 Supabase' }).click()
-  await expect(pageB.getByText('匿名登录成功，可调用受限 Edge Function')).toBeVisible()
+  await page.reload()
 
-  await pageB.getByRole('button', { name: '加入口令工作区' }).click()
-  await pageB.getByPlaceholder('至少 6 个字符').fill(passphrase)
-  await pageB.getByRole('button', { name: '调用 workspace-join' }).click()
-  await expect(pageB.getByText('加入工作区成功')).toBeVisible()
-
-  await contextA.close()
-  await contextB.close()
+  await expect(page.getByRole('button', { name: '产品设计' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '查看任务 完成任务工作台 UI' })).toBeVisible()
+  await page.getByRole('button', { name: '查看任务 完成任务工作台 UI' }).click()
+  await expect(page.getByLabel('备注')).toHaveValue(
+    '右侧详情支持完整编辑任务字段',
+  )
+  await expect(page.getByLabel('截止日期')).toHaveValue('2026-03-20')
+  await expect(page.getByLabel('重复规则')).toHaveValue('weekly')
 })

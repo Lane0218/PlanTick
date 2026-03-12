@@ -1,73 +1,51 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
-import { NavLink, Route, Routes } from 'react-router-dom'
+import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import './App.css'
 import {
+  ensureSyncMeta,
+  getCurrentWorkspaceMeta,
+  listCategories,
+  listPendingOutbox,
+  listTodos,
   loadWorkspaceId,
   runIndexedDbProbe,
   saveCurrentWorkspaceMeta,
   saveWorkspaceId,
   upsertCategory,
-  upsertEvent,
   upsertTodo,
 } from './lib/db'
-import type { CategoryRecord, EventRecord, TodoRecord } from './lib/local-types'
 import { envSummary, isSupabaseConfigured } from './lib/env'
-import {
-  createCategorySeed,
-  createEventSeed,
-  createTodoSeed,
-  enqueueRecordMutation,
-  loadPhaseOneSnapshot,
-} from './lib/sync'
+import type { CategoryRecord, TodoRecord, TodoRecurrenceType } from './lib/types'
+import { enqueueRecordMutation } from './lib/sync'
+import type { SyncMeta } from './lib/sync-types'
 import { ensureAnonymousSession, invokeWorkspaceFunction } from './lib/supabase'
 
-type StatusTone = 'idle' | 'ok' | 'warn' | 'error'
+type WorkspaceMode = 'create' | 'join'
+type TaskFilter = 'all' | 'today' | 'overdue' | 'completed'
 
-type StatusItem = {
-  label: string
-  detail: string
-  tone: StatusTone
+type TodoDraft = {
+  title: string
+  categoryId: string
+  dueDate: string
+  note: string
+  recurrenceType: TodoRecurrenceType
+  completed: boolean
 }
 
-type WorkspaceMode = 'create' | 'join'
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
+}
 
-type PhaseOneSnapshot = Awaited<ReturnType<typeof loadPhaseOneSnapshot>>
+const categoryPalette = ['#4F7A68', '#C86E4F', '#B79A54', '#6989A8', '#A06D8E', '#6E7C88']
 
-const initialStatus: StatusItem[] = [
-  {
-    label: 'PWA 注册',
-    detail: '等待 service worker 注册结果',
-    tone: 'idle',
-  },
-  {
-    label: '安装能力',
-    detail: '等待浏览器安装事件',
-    tone: 'idle',
-  },
-  {
-    label: 'IndexedDB',
-    detail: '等待本地存储探针',
-    tone: 'idle',
-  },
-  {
-    label: 'Supabase 环境',
-    detail: isSupabaseConfigured
-      ? '已发现 VITE_SUPABASE_URL 和 VITE_SUPABASE_ANON_KEY'
-      : '缺少 VITE_SUPABASE_URL 或 VITE_SUPABASE_ANON_KEY',
-    tone: isSupabaseConfigured ? 'ok' : 'warn',
-  },
-  {
-    label: '匿名会话',
-    detail: '等待匿名登录',
-    tone: 'idle',
-  },
-  {
-    label: '工作区 Spike',
-    detail: '等待调用 workspace-create / workspace-join',
-    tone: 'idle',
-  },
-]
+const filterLabels: Record<TaskFilter, string> = {
+  all: '全部任务',
+  today: '今天',
+  overdue: '逾期',
+  completed: '已完成',
+}
 
 declare global {
   interface WindowEventMap {
@@ -76,77 +54,114 @@ declare global {
   }
 }
 
-interface BeforeInstallPromptEvent extends Event {
-  prompt: () => Promise<void>
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
-}
-
 function App() {
-  const [statuses, setStatuses] = useState<StatusItem[]>(initialStatus)
+  const location = useLocation()
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>('create')
   const [passphrase, setPassphrase] = useState('')
-  const [workspaceId, setWorkspaceId] = useState<string>('')
+  const [workspaceId, setWorkspaceId] = useState('')
   const [sessionLabel, setSessionLabel] = useState('尚未建立匿名会话')
-  const [resultMessage, setResultMessage] = useState('等待第一次验证操作')
   const [busy, setBusy] = useState(false)
-  const [installPrompt, setInstallPrompt] =
-    useState<BeforeInstallPromptEvent | null>(null)
-  const [phaseOneSnapshot, setPhaseOneSnapshot] = useState<PhaseOneSnapshot>(null)
+  const [message, setMessage] = useState('请选择工作区后开始管理任务。')
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
+  const [pwaLabel, setPwaLabel] = useState('等待浏览器安装入口')
 
-  const updateStatus = (
-    label: StatusItem['label'],
-    detail: string,
-    tone: StatusItem['tone'],
-  ) => {
-    setStatuses((current) =>
-      current.map((item) =>
-        item.label === label ? { ...item, detail, tone } : item,
-      ),
-    )
-  }
+  const [categories, setCategories] = useState<CategoryRecord[]>([])
+  const [todos, setTodos] = useState<TodoRecord[]>([])
+  const [syncStatus, setSyncStatus] = useState<SyncMeta['status']>('idle')
+  const [pendingOutboxCount, setPendingOutboxCount] = useState(0)
 
-  const refreshPhaseOneSnapshot = async () => {
-    setPhaseOneSnapshot(await loadPhaseOneSnapshot())
-  }
+  const [activeFilter, setActiveFilter] = useState<TaskFilter>('all')
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
+  const [selectedTodoId, setSelectedTodoId] = useState<string | null>(null)
+  const [quickTodoTitle, setQuickTodoTitle] = useState('')
+  const [newCategoryName, setNewCategoryName] = useState('')
+  const [newCategoryColor, setNewCategoryColor] = useState(categoryPalette[0])
+  const [categoryEditorName, setCategoryEditorName] = useState('')
+  const [categoryEditorColor, setCategoryEditorColor] = useState(categoryPalette[0])
+  const [detailDraft, setDetailDraft] = useState<TodoDraft | null>(null)
+
+  const activeCategories = useMemo(
+    () =>
+      categories
+        .filter((category) => !category.deleted)
+        .sort((left, right) => left.name.localeCompare(right.name, 'zh-CN')),
+    [categories],
+  )
+
+  const activeTodos = useMemo(
+    () =>
+      todos
+        .filter((todo) => !todo.deleted)
+        .sort((left, right) => compareTodos(left, right)),
+    [todos],
+  )
+
+  const selectedCategory =
+    activeCategories.find((category) => category.id === selectedCategoryId) ?? null
+
+  const visibleTodos = useMemo(
+    () =>
+      activeTodos.filter((todo) => {
+        if (selectedCategoryId && todo.categoryId !== selectedCategoryId) {
+          return false
+        }
+
+        switch (activeFilter) {
+          case 'today':
+            return todo.dueDate === todayDate()
+          case 'overdue':
+            return !todo.completed && Boolean(todo.dueDate) && todo.dueDate! < todayDate()
+          case 'completed':
+            return todo.completed
+          default:
+            return !todo.completed
+        }
+      }),
+    [activeFilter, activeTodos, selectedCategoryId],
+  )
+
+  const selectedTodo = activeTodos.find((todo) => todo.id === selectedTodoId) ?? null
+
+  const sidebarCounts = useMemo(
+    () => ({
+      all: activeTodos.filter((todo) => !todo.completed).length,
+      today: activeTodos.filter((todo) => todo.dueDate === todayDate() && !todo.completed).length,
+      overdue: activeTodos.filter(
+        (todo) => !todo.completed && Boolean(todo.dueDate) && todo.dueDate! < todayDate(),
+      ).length,
+      completed: activeTodos.filter((todo) => todo.completed).length,
+    }),
+    [activeTodos],
+  )
 
   useEffect(() => {
-    void runIndexedDbProbe()
-      .then(async (probeId) => {
-        updateStatus('IndexedDB', `探针写入成功：${probeId}`, 'ok')
-        const restoredWorkspaceId = await loadWorkspaceId()
-        if (restoredWorkspaceId) {
-          setWorkspaceId(restoredWorkspaceId)
-          setResultMessage(`已从本地恢复 workspaceId：${restoredWorkspaceId}`)
-        }
-        await refreshPhaseOneSnapshot()
-      })
-      .catch((error) => {
-        updateStatus(
-          'IndexedDB',
-          error instanceof Error ? error.message : 'IndexedDB 探针失败',
-          'error',
-        )
-      })
+    void runIndexedDbProbe().catch(() => undefined)
 
-    const handlePwaReady = (event: WindowEventMap['plantick:pwa-ready']) => {
-      updateStatus(
-        'PWA 注册',
-        event.detail.registered ? 'service worker 已注册' : 'service worker 注册失败',
-        event.detail.registered ? 'ok' : 'warn',
-      )
+    const restore = async () => {
+      const restoredWorkspaceId = await loadWorkspaceId()
+      if (!restoredWorkspaceId) {
+        return
+      }
+
+      await refreshWorkspaceData(restoredWorkspaceId)
+      setMessage(`已恢复最近工作区：${restoredWorkspaceId}`)
     }
 
-    const handleBeforeInstallPrompt = (
-      event: WindowEventMap['beforeinstallprompt'],
-    ) => {
+    void restore()
+
+    const handlePwaReady = (event: WindowEventMap['plantick:pwa-ready']) => {
+      setPwaLabel(event.detail.registered ? 'PWA 已注册' : 'PWA 注册失败')
+    }
+
+    const handleBeforeInstallPrompt = (event: WindowEventMap['beforeinstallprompt']) => {
       event.preventDefault()
       setInstallPrompt(event)
-      updateStatus('安装能力', '浏览器允许触发安装提示', 'ok')
+      setPwaLabel('浏览器允许安装到桌面')
     }
 
     const handleAppInstalled = () => {
       setInstallPrompt(null)
-      updateStatus('安装能力', 'PWA 已安装到当前设备', 'ok')
+      setPwaLabel('已安装为 PWA')
     }
 
     window.addEventListener('plantick:pwa-ready', handlePwaReady)
@@ -154,244 +169,468 @@ function App() {
     window.addEventListener('appinstalled', handleAppInstalled)
 
     if (window.matchMedia('(display-mode: standalone)').matches) {
-      updateStatus('安装能力', '当前已在独立 PWA 窗口中运行', 'ok')
+      setPwaLabel('当前以 PWA 独立窗口运行')
     }
 
     return () => {
       window.removeEventListener('plantick:pwa-ready', handlePwaReady)
-      window.removeEventListener(
-        'beforeinstallprompt',
-        handleBeforeInstallPrompt,
-      )
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
       window.removeEventListener('appinstalled', handleAppInstalled)
     }
   }, [])
 
-  const completionRatio = useMemo(() => {
-    const completed = statuses.filter((item) => item.tone === 'ok').length
-    return `${completed}/${statuses.length}`
-  }, [statuses])
+  useEffect(() => {
+    if (!selectedCategory) {
+      setCategoryEditorName('')
+      setCategoryEditorColor(categoryPalette[0])
+      return
+    }
 
-  const handleAnonymousSignIn = async () => {
+    setCategoryEditorName(selectedCategory.name)
+    setCategoryEditorColor(selectedCategory.color)
+  }, [selectedCategory])
+
+  useEffect(() => {
+    if (!selectedTodo) {
+      setDetailDraft(null)
+      return
+    }
+
+    setDetailDraft({
+      title: selectedTodo.title,
+      categoryId: selectedTodo.categoryId ?? '',
+      dueDate: selectedTodo.dueDate ?? '',
+      note: selectedTodo.note,
+      recurrenceType: selectedTodo.recurrenceType,
+      completed: selectedTodo.completed,
+    })
+  }, [selectedTodo])
+
+  async function refreshWorkspaceData(nextWorkspaceId?: string) {
+    const resolvedWorkspaceId = nextWorkspaceId ?? (await loadWorkspaceId())
+    if (!resolvedWorkspaceId) {
+      setWorkspaceId('')
+      setCategories([])
+      setTodos([])
+      setPendingOutboxCount(0)
+      setSyncStatus('idle')
+      setSelectedTodoId(null)
+      return
+    }
+
+    const [workspaceMeta, nextCategories, nextTodos, meta, outbox] = await Promise.all([
+      getCurrentWorkspaceMeta(),
+      listCategories(resolvedWorkspaceId),
+      listTodos(resolvedWorkspaceId),
+      ensureSyncMeta(resolvedWorkspaceId),
+      listPendingOutbox(resolvedWorkspaceId),
+    ])
+
+    setWorkspaceId(resolvedWorkspaceId)
+    setCategories(nextCategories)
+    setTodos(nextTodos)
+    setSyncStatus(meta.status)
+    setPendingOutboxCount(outbox.length)
+    setSessionLabel(
+      workspaceMeta?.anonymousUserId
+        ? `设备会话 ${workspaceMeta.anonymousUserId.slice(0, 8)}`
+        : '尚未建立匿名会话',
+    )
+
+    setSelectedCategoryId((current) =>
+      current && nextCategories.some((category) => category.id === current && !category.deleted)
+        ? current
+        : null,
+    )
+    setSelectedTodoId((current) =>
+      current && nextTodos.some((todo) => todo.id === current && !todo.deleted) ? current : null,
+    )
+  }
+
+  async function handleAnonymousSignIn() {
     if (!isSupabaseConfigured) {
-      updateStatus(
-        '匿名会话',
-        '无法匿名登录，因为 Supabase 环境变量未配置',
-        'warn',
-      )
+      setMessage('缺少 Supabase 环境变量，当前无法建立匿名会话。')
       return
     }
 
     setBusy(true)
     try {
       const session = await ensureAnonymousSession()
-      setSessionLabel(
-        `匿名会话已建立：${session.user.id.slice(0, 8)} · ${session.access_token.slice(0, 12)}...`,
-      )
-      updateStatus('匿名会话', '匿名登录成功，可调用受限 Edge Function', 'ok')
-      setResultMessage('匿名登录成功，可以继续创建或加入工作区')
+      setSessionLabel(`设备会话 ${session.user.id.slice(0, 8)}`)
+      setMessage('匿名会话已建立，可以创建或加入工作区。')
 
       if (workspaceId) {
         await saveCurrentWorkspaceMeta(workspaceId, session.user.id)
+        await refreshWorkspaceData(workspaceId)
       }
-
-      await refreshPhaseOneSnapshot()
     } catch (error) {
-      const detail = error instanceof Error ? error.message : '匿名登录失败'
-      updateStatus('匿名会话', detail, 'error')
-      setResultMessage(detail)
+      setMessage(error instanceof Error ? error.message : '匿名登录失败')
     } finally {
       setBusy(false)
     }
   }
 
-  const handleWorkspaceSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  async function handleWorkspaceSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
     if (passphrase.trim().length < 6) {
-      const detail = '工作区口令至少需要 6 个字符'
-      updateStatus('工作区 Spike', detail, 'warn')
-      setResultMessage(detail)
+      setMessage('工作区口令至少需要 6 个字符。')
       return
     }
 
     setBusy(true)
     try {
       const session = await ensureAnonymousSession()
-      updateStatus('匿名会话', '匿名登录成功，可调用受限 Edge Function', 'ok')
+      const response = await invokeWorkspaceFunction(workspaceMode, passphrase.trim())
 
-      const response = await invokeWorkspaceFunction(workspaceMode, passphrase)
       await saveWorkspaceId(response.workspaceId)
       await saveCurrentWorkspaceMeta(response.workspaceId, session.user.id)
-      setWorkspaceId(response.workspaceId)
-      setResultMessage(
-        `${workspaceMode === 'create' ? '创建' : '加入'}成功，workspaceId = ${response.workspaceId}`,
+      await refreshWorkspaceData(response.workspaceId)
+
+      setMessage(
+        `${workspaceMode === 'create' ? '创建' : '加入'}工作区成功，已进入任务工作台。`,
       )
-      updateStatus(
-        '工作区 Spike',
-        `${workspaceMode === 'create' ? '创建' : '加入'}工作区成功`,
-        'ok',
-      )
-      await refreshPhaseOneSnapshot()
+      setPassphrase('')
     } catch (error) {
-      const detail = error instanceof Error ? error.message : '工作区请求失败'
-      updateStatus('工作区 Spike', detail, 'error')
-      setResultMessage(detail)
+      setMessage(error instanceof Error ? error.message : '工作区操作失败')
     } finally {
       setBusy(false)
     }
   }
 
-  const handleInstall = async () => {
+  async function handleInstall() {
     if (!installPrompt) {
       return
     }
 
     await installPrompt.prompt()
     const choice = await installPrompt.userChoice
-    updateStatus(
-      '安装能力',
-      choice.outcome === 'accepted' ? '用户接受了安装提示' : '用户关闭了安装提示',
-      choice.outcome === 'accepted' ? 'ok' : 'warn',
-    )
+    setPwaLabel(choice.outcome === 'accepted' ? '用户接受安装提示' : '用户关闭安装提示')
   }
 
-  const enqueueSeed = async () => {
-    if (!workspaceId) {
-      setResultMessage('请先创建或加入工作区，再生成本地样本数据。')
+  async function handleCreateCategory(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!workspaceId || !newCategoryName.trim()) {
       return
+    }
+
+    const record: CategoryRecord = {
+      id: crypto.randomUUID(),
+      workspaceId,
+      name: newCategoryName.trim(),
+      color: newCategoryColor,
+      updatedAt: new Date().toISOString(),
+      deleted: false,
     }
 
     setBusy(true)
     try {
-      const category = createCategorySeed(workspaceId)
-      const todo = createTodoSeed(workspaceId, category.id)
-      const event = createEventSeed(workspaceId)
-
-      await Promise.all([
-        upsertCategory(category),
-        upsertTodo(todo),
-        upsertEvent(event),
-      ])
-
-      await Promise.all([
-        enqueueRecordMutation('categories', 'upsert', toSyncCategory(category)),
-        enqueueRecordMutation('todos', 'upsert', toSyncTodo(todo)),
-        enqueueRecordMutation('events', 'upsert', toSyncEvent(event)),
-      ])
-
-      setResultMessage('已写入本地 categories/todos/events 样本，并加入 outbox。')
-      await refreshPhaseOneSnapshot()
+      await upsertCategory(record)
+      await enqueueRecordMutation('categories', 'upsert', toSyncCategory(record))
+      await refreshWorkspaceData(workspaceId)
+      setSelectedCategoryId(record.id)
+      setActiveFilter('all')
+      setNewCategoryName('')
+      setNewCategoryColor(categoryPalette[(activeCategories.length + 1) % categoryPalette.length])
+      setMessage(`分类「${record.name}」已创建。`)
     } finally {
       setBusy(false)
     }
   }
 
-  const shellMetrics = [
-    {
-      label: '验证完成度',
-      value: completionRatio,
-    },
-    {
-      label: '网络状态',
-      value: navigator.onLine ? '在线' : '离线',
-    },
-    {
-      label: '环境',
-      value: envSummary,
-    },
+  async function handleSaveCategory() {
+    if (!workspaceId || !selectedCategory || !categoryEditorName.trim()) {
+      return
+    }
+
+    const updated: CategoryRecord = {
+      ...selectedCategory,
+      name: categoryEditorName.trim(),
+      color: categoryEditorColor,
+      updatedAt: new Date().toISOString(),
+    }
+
+    setBusy(true)
+    try {
+      await upsertCategory(updated)
+      await enqueueRecordMutation('categories', 'upsert', toSyncCategory(updated))
+      await refreshWorkspaceData(workspaceId)
+      setMessage(`分类「${updated.name}」已更新。`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleDeleteCategory() {
+    if (!workspaceId || !selectedCategory) {
+      return
+    }
+
+    const timestamp = new Date().toISOString()
+    const affectedTodos = activeTodos
+      .filter((todo) => todo.categoryId === selectedCategory.id)
+      .map((todo) => ({
+        ...todo,
+        categoryId: null,
+        updatedAt: timestamp,
+      }))
+
+    const deletedCategory: CategoryRecord = {
+      ...selectedCategory,
+      deleted: true,
+      updatedAt: timestamp,
+    }
+
+    setBusy(true)
+    try {
+      await Promise.all(affectedTodos.map((todo) => upsertTodo(todo)))
+      await Promise.all(
+        affectedTodos.map((todo) => enqueueRecordMutation('todos', 'upsert', toSyncTodo(todo))),
+      )
+
+      await upsertCategory(deletedCategory)
+      await enqueueRecordMutation('categories', 'soft-delete', toSyncCategory(deletedCategory))
+
+      await refreshWorkspaceData(workspaceId)
+      setSelectedCategoryId(null)
+      setMessage(`分类「${selectedCategory.name}」已删除，关联任务已回到未分类。`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleQuickCreateTodo(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!workspaceId || !quickTodoTitle.trim()) {
+      return
+    }
+
+    const record = createTodoRecord(
+      workspaceId,
+      quickTodoTitle.trim(),
+      selectedCategoryId,
+      activeFilter === 'today' ? todayDate() : null,
+    )
+
+    setBusy(true)
+    try {
+      await upsertTodo(record)
+      await enqueueRecordMutation('todos', 'upsert', toSyncTodo(record))
+      await refreshWorkspaceData(workspaceId)
+      setQuickTodoTitle('')
+      setSelectedTodoId(record.id)
+      setMessage(`任务「${record.title}」已创建。`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleToggleTodo(todo: TodoRecord) {
+    if (!workspaceId) {
+      return
+    }
+
+    const updated: TodoRecord = {
+      ...todo,
+      completed: !todo.completed,
+      updatedAt: new Date().toISOString(),
+    }
+
+    setBusy(true)
+    try {
+      await upsertTodo(updated)
+      await enqueueRecordMutation('todos', 'upsert', toSyncTodo(updated))
+      await refreshWorkspaceData(workspaceId)
+      setMessage(updated.completed ? `任务「${todo.title}」已完成。` : `任务「${todo.title}」已恢复。`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleSaveTodo() {
+    if (!workspaceId || !selectedTodo || !detailDraft?.title.trim()) {
+      setMessage('任务标题不能为空。')
+      return
+    }
+
+    const updated: TodoRecord = {
+      ...selectedTodo,
+      title: detailDraft.title.trim(),
+      categoryId: detailDraft.categoryId || null,
+      dueDate: detailDraft.dueDate || null,
+      note: detailDraft.note.trim(),
+      recurrenceType: detailDraft.recurrenceType,
+      completed: detailDraft.completed,
+      updatedAt: new Date().toISOString(),
+    }
+
+    setBusy(true)
+    try {
+      await upsertTodo(updated)
+      await enqueueRecordMutation('todos', 'upsert', toSyncTodo(updated))
+      await refreshWorkspaceData(workspaceId)
+      setMessage(`任务「${updated.title}」已保存。`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleDeleteTodo() {
+    if (!workspaceId || !selectedTodo) {
+      return
+    }
+
+    const deletedTodo: TodoRecord = {
+      ...selectedTodo,
+      deleted: true,
+      updatedAt: new Date().toISOString(),
+    }
+
+    setBusy(true)
+    try {
+      await upsertTodo(deletedTodo)
+      await enqueueRecordMutation('todos', 'soft-delete', toSyncTodo(deletedTodo))
+      await refreshWorkspaceData(workspaceId)
+      setSelectedTodoId(null)
+      setMessage(`任务「${selectedTodo.title}」已删除。`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const shellClassName = [
+    'workspace-shell',
+    selectedTodoId && location.pathname !== '/calendar' ? 'has-detail' : '',
   ]
+    .filter(Boolean)
+    .join(' ')
+
+  if (!workspaceId) {
+    return (
+      <OnboardingLayout
+        workspaceMode={workspaceMode}
+        setWorkspaceMode={setWorkspaceMode}
+        passphrase={passphrase}
+        setPassphrase={setPassphrase}
+        handleAnonymousSignIn={handleAnonymousSignIn}
+        handleWorkspaceSubmit={handleWorkspaceSubmit}
+        handleInstall={handleInstall}
+        busy={busy}
+        message={message}
+        installPrompt={installPrompt}
+        pwaLabel={pwaLabel}
+      />
+    )
+  }
 
   return (
-    <main className="shell">
-      <section className="hero">
-        <div className="hero-copy">
-          <p className="eyebrow">PlanTick / Phase 1 Foundation</p>
-          <h1>把第 0 阶段验证壳升级成可持续开发的应用骨架。</h1>
-          <p className="hero-body">
-            当前页面不再只验证连通性，而是开始承担第 1 阶段职责：
-            建立本地数据库 schema、同步契约、工作区恢复上下文和最小路由壳。
-          </p>
-          <div className="hero-metrics">
-            {shellMetrics.map((metric) => (
-              <div key={metric.label}>
-                <span>{metric.label}</span>
-                <strong>{metric.value}</strong>
-              </div>
-            ))}
-          </div>
-        </div>
+    <main className={shellClassName}>
+      <Sidebar
+        workspaceId={workspaceId}
+        sessionLabel={sessionLabel}
+        syncStatus={syncStatus}
+        pendingOutboxCount={pendingOutboxCount}
+        envSummary={envSummary}
+        activeFilter={activeFilter}
+        setActiveFilter={setActiveFilter}
+        selectedCategoryId={selectedCategoryId}
+        setSelectedCategoryId={setSelectedCategoryId}
+        sidebarCounts={sidebarCounts}
+        categories={activeCategories}
+        newCategoryName={newCategoryName}
+        setNewCategoryName={setNewCategoryName}
+        newCategoryColor={newCategoryColor}
+        setNewCategoryColor={setNewCategoryColor}
+        handleCreateCategory={handleCreateCategory}
+        selectedCategory={selectedCategory}
+        categoryEditorName={categoryEditorName}
+        setCategoryEditorName={setCategoryEditorName}
+        categoryEditorColor={categoryEditorColor}
+        setCategoryEditorColor={setCategoryEditorColor}
+        handleSaveCategory={handleSaveCategory}
+        handleDeleteCategory={handleDeleteCategory}
+        busy={busy}
+      />
 
-        <aside className="hero-panel">
-          <div className="panel-label">当前验证结果</div>
-          <div className="panel-title">{resultMessage}</div>
-          <div className="panel-foot">
-            <span>本地 workspaceId</span>
-            <strong>{workspaceId || '尚未创建/加入'}</strong>
+      <section className="board-pane">
+        <header className="board-header">
+          <div>
+            <p className="eyebrow">PlanTick / Phase 3</p>
+            <h1>{selectedCategory ? selectedCategory.name : filterLabels[activeFilter]}</h1>
+            <p className="board-subtitle">
+              单用户本地优先任务工作台，右侧详情可展开也可关闭。
+            </p>
           </div>
-        </aside>
+
+          <div className="board-actions">
+            <nav className="route-switch" aria-label="主导航">
+              <NavLink to="/todos">任务</NavLink>
+              <NavLink to="/calendar">月历</NavLink>
+            </nav>
+
+            <button
+              className="install-chip"
+              onClick={() => void handleInstall()}
+              disabled={!installPrompt}
+            >
+              {installPrompt ? '安装 PWA' : pwaLabel}
+            </button>
+          </div>
+        </header>
+
+        <Routes>
+          <Route path="/" element={<Navigate to="/todos" replace />} />
+          <Route
+            path="/todos"
+            element={
+              <TodoBoard
+                busy={busy}
+                activeFilter={activeFilter}
+                setActiveFilter={setActiveFilter}
+                selectedCategory={selectedCategory}
+                quickTodoTitle={quickTodoTitle}
+                setQuickTodoTitle={setQuickTodoTitle}
+                handleQuickCreateTodo={handleQuickCreateTodo}
+                visibleTodos={visibleTodos}
+                selectedTodoId={selectedTodoId}
+                setSelectedTodoId={setSelectedTodoId}
+                categories={activeCategories}
+                handleToggleTodo={handleToggleTodo}
+                message={message}
+              />
+            }
+          />
+          <Route
+            path="/calendar"
+            element={
+              <CalendarBoard
+                categories={activeCategories.length}
+                todos={activeTodos.filter((todo) => !todo.completed).length}
+                pendingOutboxCount={pendingOutboxCount}
+              />
+            }
+          />
+        </Routes>
       </section>
 
-      <nav className="app-nav">
-        <NavLink end to="/">
-          总览
-        </NavLink>
-        <NavLink to="/todos">待办骨架</NavLink>
-        <NavLink to="/calendar">月历骨架</NavLink>
-      </nav>
-
-      <Routes>
-        <Route
-          path="/"
-          element={
-            <OverviewRoute
-              statuses={statuses}
-              sessionLabel={sessionLabel}
-              busy={busy}
-              workspaceMode={workspaceMode}
-              setWorkspaceMode={setWorkspaceMode}
-              passphrase={passphrase}
-              setPassphrase={setPassphrase}
-              handleAnonymousSignIn={handleAnonymousSignIn}
-              handleWorkspaceSubmit={handleWorkspaceSubmit}
-              handleInstall={handleInstall}
-              installPrompt={installPrompt}
-              phaseOneSnapshot={phaseOneSnapshot}
-              enqueueSeed={enqueueSeed}
-            />
-          }
+      {location.pathname !== '/calendar' ? (
+        <TodoDetailPane
+          selectedTodo={selectedTodo}
+          categories={activeCategories}
+          detailDraft={detailDraft}
+          setDetailDraft={setDetailDraft}
+          handleToggleTodo={handleToggleTodo}
+          handleSaveTodo={handleSaveTodo}
+          handleDeleteTodo={handleDeleteTodo}
+          closeDetail={() => setSelectedTodoId(null)}
+          busy={busy}
         />
-        <Route
-          path="/todos"
-          element={
-            <ModuleRoute
-              eyebrow="Todo Route"
-              title="待办模块骨架已建好，业务列表下一阶段接入。"
-              detail="当前路由用于承接分类、待办列表和编辑表单。Phase 1 已经把 local store、outbox 和 workspace 上下文准备好了。"
-              snapshot={phaseOneSnapshot}
-            />
-          }
-        />
-        <Route
-          path="/calendar"
-          element={
-            <ModuleRoute
-              eyebrow="Calendar Route"
-              title="月历模块骨架已建好，事件映射和投影下一阶段接入。"
-              detail="当前路由用于承接月视图、单日展开和事件编辑。Phase 1 已把 events 表、本地 store 和同步契约预留好。"
-              snapshot={phaseOneSnapshot}
-            />
-          }
-        />
-      </Routes>
+      ) : null}
     </main>
   )
 }
 
-function OverviewRoute({
-  statuses,
-  sessionLabel,
-  busy,
+function OnboardingLayout({
   workspaceMode,
   setWorkspaceMode,
   passphrase,
@@ -399,13 +638,11 @@ function OverviewRoute({
   handleAnonymousSignIn,
   handleWorkspaceSubmit,
   handleInstall,
+  busy,
+  message,
   installPrompt,
-  phaseOneSnapshot,
-  enqueueSeed,
+  pwaLabel,
 }: {
-  statuses: StatusItem[]
-  sessionLabel: string
-  busy: boolean
   workspaceMode: WorkspaceMode
   setWorkspaceMode: (mode: WorkspaceMode) => void
   passphrase: string
@@ -413,183 +650,686 @@ function OverviewRoute({
   handleAnonymousSignIn: () => Promise<void>
   handleWorkspaceSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>
   handleInstall: () => Promise<void>
+  busy: boolean
+  message: string
   installPrompt: BeforeInstallPromptEvent | null
-  phaseOneSnapshot: PhaseOneSnapshot
-  enqueueSeed: () => Promise<void>
+  pwaLabel: string
 }) {
   return (
-    <section className="grid">
-      <article className="card card-status">
-        <div className="card-heading">
-          <p>环境状态</p>
-          <h2>6 个关键信号</h2>
+    <main className="onboarding-shell">
+      <section className="onboarding-copy">
+        <p className="eyebrow">PlanTick</p>
+        <h1>先连上工作区，再进入三栏任务工作台。</h1>
+        <p>
+          Phase 3 不再是验证壳。当前入口只保留工作区接入、匿名会话和 PWA 安装能力，
+          真正的任务管理会在接入成功后展开。
+        </p>
+
+        <div className="onboarding-metrics">
+          <div>
+            <span>模式</span>
+            <strong>{envSummary}</strong>
+          </div>
+          <div>
+            <span>PWA</span>
+            <strong>{pwaLabel}</strong>
+          </div>
+          <div>
+            <span>架构</span>
+            <strong>本地优先 + 三栏任务台</strong>
+          </div>
         </div>
-        <div className="status-list">
-          {statuses.map((item) => (
-            <div className={`status-item tone-${item.tone}`} key={item.label}>
-              <div>
-                <strong>{item.label}</strong>
-                <span>{item.detail}</span>
-              </div>
-              <b>{item.tone}</b>
+      </section>
+
+      <section className="onboarding-panel">
+        <div className="panel-stack">
+          <article className="setup-card">
+            <div className="setup-head">
+              <p>Step A</p>
+              <h2>匿名会话</h2>
             </div>
+            <p className="setup-body">
+              匿名会话只用于工作区接入和后续受限 API 调用，不暴露为注册登录流程。
+            </p>
+            <button className="primary-button" onClick={() => void handleAnonymousSignIn()} disabled={busy}>
+              {busy ? '处理中...' : '匿名登录并检查 Supabase'}
+            </button>
+          </article>
+
+          <article className="setup-card">
+            <div className="setup-head">
+              <p>Step B</p>
+              <h2>创建或加入工作区</h2>
+            </div>
+
+            <form className="workspace-form" onSubmit={handleWorkspaceSubmit}>
+              <div className="segmented">
+                <button
+                  type="button"
+                  className={workspaceMode === 'create' ? 'active' : ''}
+                  onClick={() => setWorkspaceMode('create')}
+                >
+                  创建工作区
+                </button>
+                <button
+                  type="button"
+                  className={workspaceMode === 'join' ? 'active' : ''}
+                  onClick={() => setWorkspaceMode('join')}
+                >
+                  加入口令工作区
+                </button>
+              </div>
+
+              <label>
+                <span>工作区口令</span>
+                <input
+                  value={passphrase}
+                  onChange={(event) => setPassphrase(event.target.value)}
+                  placeholder="至少 6 个字符"
+                  minLength={6}
+                />
+              </label>
+
+              <button className="secondary-button" type="submit" disabled={busy || !isSupabaseConfigured}>
+                {busy
+                  ? '提交中...'
+                  : workspaceMode === 'create'
+                    ? '调用 workspace-create'
+                    : '调用 workspace-join'}
+              </button>
+            </form>
+          </article>
+
+          <article className="setup-card compact">
+            <div className="setup-head">
+              <p>Step C</p>
+              <h2>PWA 安装</h2>
+            </div>
+            <button className="ghost-button" onClick={() => void handleInstall()} disabled={!installPrompt}>
+              {installPrompt ? '安装到桌面' : pwaLabel}
+            </button>
+          </article>
+        </div>
+
+        <aside className="setup-status" aria-live="polite">
+          <p className="eyebrow">当前状态</p>
+          <h2>{message}</h2>
+          <p>成功接入后默认进入任务页，桌面端显示三栏，移动端切换为单栏列表和底部详情抽屉。</p>
+        </aside>
+      </section>
+    </main>
+  )
+}
+
+function Sidebar({
+  workspaceId,
+  sessionLabel,
+  syncStatus,
+  pendingOutboxCount,
+  envSummary,
+  activeFilter,
+  setActiveFilter,
+  selectedCategoryId,
+  setSelectedCategoryId,
+  sidebarCounts,
+  categories,
+  newCategoryName,
+  setNewCategoryName,
+  newCategoryColor,
+  setNewCategoryColor,
+  handleCreateCategory,
+  selectedCategory,
+  categoryEditorName,
+  setCategoryEditorName,
+  categoryEditorColor,
+  setCategoryEditorColor,
+  handleSaveCategory,
+  handleDeleteCategory,
+  busy,
+}: {
+  workspaceId: string
+  sessionLabel: string
+  syncStatus: SyncMeta['status']
+  pendingOutboxCount: number
+  envSummary: string
+  activeFilter: TaskFilter
+  setActiveFilter: (filter: TaskFilter) => void
+  selectedCategoryId: string | null
+  setSelectedCategoryId: (id: string | null) => void
+  sidebarCounts: Record<TaskFilter, number>
+  categories: CategoryRecord[]
+  newCategoryName: string
+  setNewCategoryName: (value: string) => void
+  newCategoryColor: string
+  setNewCategoryColor: (value: string) => void
+  handleCreateCategory: (event: FormEvent<HTMLFormElement>) => Promise<void>
+  selectedCategory: CategoryRecord | null
+  categoryEditorName: string
+  setCategoryEditorName: (value: string) => void
+  categoryEditorColor: string
+  setCategoryEditorColor: (value: string) => void
+  handleSaveCategory: () => Promise<void>
+  handleDeleteCategory: () => Promise<void>
+  busy: boolean
+}) {
+  return (
+    <aside className="sidebar-pane">
+      <div className="sidebar-top">
+        <p className="eyebrow">Workspace</p>
+        <h2>PlanTick</h2>
+        <p className="workspace-token">{workspaceId}</p>
+      </div>
+
+      <nav className="sidebar-section" aria-label="任务筛选">
+        {(Object.keys(filterLabels) as TaskFilter[]).map((filter) => (
+          <button
+            key={filter}
+            className={activeFilter === filter && !selectedCategoryId ? 'sidebar-item active' : 'sidebar-item'}
+            onClick={() => {
+              setSelectedCategoryId(null)
+              setActiveFilter(filter)
+            }}
+          >
+            <span>{filterLabels[filter]}</span>
+            <b>{sidebarCounts[filter]}</b>
+          </button>
+        ))}
+      </nav>
+
+      <section className="sidebar-section">
+        <div className="section-head">
+          <p>分类</p>
+          <span>{categories.length}</span>
+        </div>
+
+        <div className="category-list">
+          {categories.map((category) => (
+            <button
+              key={category.id}
+              className={selectedCategoryId === category.id ? 'category-item active' : 'category-item'}
+              onClick={() => {
+                setSelectedCategoryId(category.id)
+                setActiveFilter('all')
+              }}
+            >
+              <span className="color-dot" style={{ backgroundColor: category.color }} />
+              <span>{category.name}</span>
+            </button>
           ))}
         </div>
-      </article>
 
-      <article className="card card-checklist">
-        <div className="card-heading">
-          <p>Phase 1 状态</p>
-          <h2>本地数据与同步契约</h2>
-        </div>
-        {phaseOneSnapshot ? (
-          <ul>
-            <li>当前工作区：{phaseOneSnapshot.workspaceId}</li>
-            <li>匿名用户：{phaseOneSnapshot.anonymousUserId ?? '尚未写入本地 meta'}</li>
-            <li>本地分类数：{phaseOneSnapshot.localCounts.categories}</li>
-            <li>本地待办数：{phaseOneSnapshot.localCounts.todos}</li>
-            <li>本地事件数：{phaseOneSnapshot.localCounts.events}</li>
-            <li>待同步 outbox：{phaseOneSnapshot.localCounts.pendingOutbox}</li>
-            <li>同步状态：{phaseOneSnapshot.syncStatus}</li>
-          </ul>
-        ) : (
-          <p className="card-body">尚未建立工作区上下文，本地 schema 已初始化但还没有业务数据。</p>
-        )}
-      </article>
-
-      <article className="card">
-        <div className="card-heading">
-          <p>Step A</p>
-          <h2>云端匿名会话</h2>
-        </div>
-        <p className="card-body">
-          当前匿名会话用于调用受限 Edge Function，同时也是后续按 workspace 成员隔离访问业务表的前提。
-        </p>
-        <button className="primary-button" onClick={() => void handleAnonymousSignIn()} disabled={busy}>
-          {busy ? '处理中...' : '匿名登录并检查 Supabase'}
-        </button>
-        <div className="inline-note">{sessionLabel}</div>
-      </article>
-
-      <article className="card">
-        <div className="card-heading">
-          <p>Step B</p>
-          <h2>工作区接入 Spike</h2>
-        </div>
-        <form className="workspace-form" onSubmit={handleWorkspaceSubmit}>
-          <div className="segmented">
-            <button
-              type="button"
-              className={workspaceMode === 'create' ? 'active' : ''}
-              onClick={() => setWorkspaceMode('create')}
-            >
-              创建工作区
-            </button>
-            <button
-              type="button"
-              className={workspaceMode === 'join' ? 'active' : ''}
-              onClick={() => setWorkspaceMode('join')}
-            >
-              加入口令工作区
-            </button>
-          </div>
-
+        <form className="category-create" onSubmit={(event) => void handleCreateCategory(event)}>
           <label>
-            <span>工作区口令</span>
+            <span>新分类</span>
             <input
-              value={passphrase}
-              onChange={(event) => setPassphrase(event.target.value)}
-              placeholder="至少 6 个字符"
-              minLength={6}
+              value={newCategoryName}
+              onChange={(event) => setNewCategoryName(event.target.value)}
+              placeholder="例如：工作、生活、学习"
             />
           </label>
 
-          <button className="secondary-button" type="submit" disabled={busy}>
-            {busy
-              ? '提交中...'
-              : workspaceMode === 'create'
-                ? '调用 workspace-create'
-                : '调用 workspace-join'}
-          </button>
+          <div className="category-toolbar">
+            <div className="palette-row" aria-label="分类颜色">
+              {categoryPalette.map((color) => (
+                <button
+                  key={color}
+                  type="button"
+                  className={newCategoryColor === color ? 'palette-chip active' : 'palette-chip'}
+                  style={{ backgroundColor: color }}
+                  aria-label={`颜色 ${color}`}
+                  onClick={() => setNewCategoryColor(color)}
+                />
+              ))}
+            </div>
+
+            <button
+              className="secondary-button"
+              type="submit"
+              disabled={busy || !newCategoryName.trim()}
+            >
+              新建分类
+            </button>
+          </div>
         </form>
-      </article>
 
-      <article className="card">
-        <div className="card-heading">
-          <p>Step C</p>
-          <h2>PWA 安装验证</h2>
-        </div>
-        <p className="card-body">
-          第 0 阶段已验证通过，这里保留安装入口，方便在不同设备和浏览器环境下反复检查。
-        </p>
-        <button
-          className="ghost-button"
-          onClick={() => void handleInstall()}
-          disabled={!installPrompt}
-        >
-          {installPrompt ? '触发安装提示' : '等待浏览器提供安装入口'}
-        </button>
-      </article>
+        {selectedCategory ? (
+          <div className="category-editor">
+            <div className="section-head">
+              <p>分类设置</p>
+              <span>已选中</span>
+            </div>
 
-      <article className="card">
-        <div className="card-heading">
-          <p>Step D</p>
-          <h2>Phase 1 本地样本</h2>
+            <label>
+              <span>名称</span>
+              <input
+                value={categoryEditorName}
+                onChange={(event) => setCategoryEditorName(event.target.value)}
+              />
+            </label>
+
+            <div className="palette-row" aria-label="编辑分类颜色">
+              {categoryPalette.map((color) => (
+                <button
+                  key={color}
+                  type="button"
+                  className={categoryEditorColor === color ? 'palette-chip active' : 'palette-chip'}
+                  style={{ backgroundColor: color }}
+                  aria-label={`编辑颜色 ${color}`}
+                  onClick={() => setCategoryEditorColor(color)}
+                />
+              ))}
+            </div>
+
+            <div className="editor-actions">
+              <button className="secondary-button" onClick={() => void handleSaveCategory()} disabled={busy}>
+                保存分类
+              </button>
+              <button className="danger-button" onClick={() => void handleDeleteCategory()} disabled={busy}>
+                删除分类
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </section>
+
+      <footer className="sidebar-footer">
+        <div>
+          <span>设备会话</span>
+          <strong>{sessionLabel}</strong>
         </div>
-        <p className="card-body">
-          这个动作不会写远端数据，只会往 `categories / todos / events / outbox`
-          写入最小样本，用来验证第 1 阶段的数据层已经准备好。
-        </p>
-        <button className="primary-button" onClick={() => void enqueueSeed()} disabled={busy}>
-          {busy ? '处理中...' : '写入本地样本并加入 outbox'}
-        </button>
-      </article>
-    </section>
+        <div>
+          <span>同步状态</span>
+          <strong>
+            {syncStatus} · 待同步 {pendingOutboxCount}
+          </strong>
+        </div>
+        <div>
+          <span>环境</span>
+          <strong>{envSummary}</strong>
+        </div>
+      </footer>
+    </aside>
   )
 }
 
-function ModuleRoute({
-  eyebrow,
-  title,
-  detail,
-  snapshot,
+function TodoBoard({
+  busy,
+  activeFilter,
+  setActiveFilter,
+  selectedCategory,
+  quickTodoTitle,
+  setQuickTodoTitle,
+  handleQuickCreateTodo,
+  visibleTodos,
+  selectedTodoId,
+  setSelectedTodoId,
+  categories,
+  handleToggleTodo,
+  message,
 }: {
-  eyebrow: string
-  title: string
-  detail: string
-  snapshot: PhaseOneSnapshot
+  busy: boolean
+  activeFilter: TaskFilter
+  setActiveFilter: (filter: TaskFilter) => void
+  selectedCategory: CategoryRecord | null
+  quickTodoTitle: string
+  setQuickTodoTitle: (value: string) => void
+  handleQuickCreateTodo: (event: FormEvent<HTMLFormElement>) => Promise<void>
+  visibleTodos: TodoRecord[]
+  selectedTodoId: string | null
+  setSelectedTodoId: (id: string | null) => void
+  categories: CategoryRecord[]
+  handleToggleTodo: (todo: TodoRecord) => Promise<void>
+  message: string
 }) {
   return (
-    <section className="module-route">
-      <article className="card">
-        <div className="card-heading">
-          <p>{eyebrow}</p>
-          <h2>{title}</h2>
-        </div>
-        <p className="card-body">{detail}</p>
-        <div className="module-grid">
-          <MetricCard label="工作区" value={snapshot?.workspaceId ?? '未进入'} />
-          <MetricCard label="分类" value={String(snapshot?.localCounts.categories ?? 0)} />
-          <MetricCard label="待办" value={String(snapshot?.localCounts.todos ?? 0)} />
-          <MetricCard label="事件" value={String(snapshot?.localCounts.events ?? 0)} />
-          <MetricCard
-            label="待同步"
-            value={String(snapshot?.localCounts.pendingOutbox ?? 0)}
+    <section className="todo-board">
+      <div className="board-toolbar">
+        <form className="quick-create" onSubmit={(event) => void handleQuickCreateTodo(event)}>
+          <input
+            value={quickTodoTitle}
+            onChange={(event) => setQuickTodoTitle(event.target.value)}
+            placeholder="快速新建任务，例如：整理待办详情面板"
+            aria-label="快速新建任务"
           />
-          <MetricCard label="同步状态" value={snapshot?.syncStatus ?? 'idle'} />
+          <button className="primary-button" type="submit" disabled={busy || !quickTodoTitle.trim()}>
+            新建任务
+          </button>
+        </form>
+
+        <div className="filter-tabs" role="tablist" aria-label="任务筛选">
+          {(['all', 'today', 'overdue', 'completed'] as TaskFilter[]).map((filter) => (
+            <button
+              key={filter}
+              className={activeFilter === filter && !selectedCategory ? 'active' : ''}
+              onClick={() => setActiveFilter(filter)}
+            >
+              {filterLabels[filter]}
+            </button>
+          ))}
         </div>
-      </article>
+      </div>
+
+      <div className="list-summary">
+        <p>{selectedCategory ? `当前分类：${selectedCategory.name}` : filterLabels[activeFilter]}</p>
+        <span>{visibleTodos.length} 条任务</span>
+      </div>
+
+      {visibleTodos.length ? (
+        <div className="todo-list" role="list">
+          {visibleTodos.map((todo) => {
+            const category = categories.find((item) => item.id === todo.categoryId) ?? null
+
+            return (
+              <article
+                key={todo.id}
+                className={selectedTodoId === todo.id ? 'todo-card active' : 'todo-card'}
+                data-testid={`todo-item-${todo.id}`}
+              >
+                <button
+                  type="button"
+                  className={todo.completed ? 'checkmark is-complete' : 'checkmark'}
+                  aria-label={todo.completed ? '恢复任务' : '完成任务'}
+                  onClick={() => void handleToggleTodo(todo)}
+                />
+
+                <button
+                  type="button"
+                  className="todo-main"
+                  aria-label={`查看任务 ${todo.title}`}
+                  onClick={() => setSelectedTodoId(todo.id)}
+                >
+                  <div className="todo-line">
+                    <strong>{todo.title}</strong>
+                    {category ? (
+                      <span className="todo-badge" style={{ color: category.color }}>
+                        {category.name}
+                      </span>
+                    ) : (
+                      <span className="todo-badge muted">未分类</span>
+                    )}
+                  </div>
+
+                  <div className="todo-meta">
+                    <span>{todo.note ? truncate(todo.note, 42) : '点击右侧详情补充备注、重复规则和截止日期'}</span>
+                    <span>{formatDueDate(todo.dueDate, todo.completed)}</span>
+                  </div>
+                </button>
+              </article>
+            )
+          })}
+        </div>
+      ) : (
+        <div className="empty-state">
+          <p className="eyebrow">No Tasks</p>
+          <h2>这里还没有任务。</h2>
+          <p>{message}</p>
+        </div>
+      )}
     </section>
   )
 }
 
-function MetricCard({ label, value }: { label: string; value: string }) {
+function TodoDetailPane({
+  selectedTodo,
+  categories,
+  detailDraft,
+  setDetailDraft,
+  handleToggleTodo,
+  handleSaveTodo,
+  handleDeleteTodo,
+  closeDetail,
+  busy,
+}: {
+  selectedTodo: TodoRecord | null
+  categories: CategoryRecord[]
+  detailDraft: TodoDraft | null
+  setDetailDraft: (draft: TodoDraft | null) => void
+  handleToggleTodo: (todo: TodoRecord) => Promise<void>
+  handleSaveTodo: () => Promise<void>
+  handleDeleteTodo: () => Promise<void>
+  closeDetail: () => void
+  busy: boolean
+}) {
   return (
-    <div className="metric-card">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
+    <aside className={selectedTodo ? 'detail-pane is-open' : 'detail-pane'} aria-label="任务详情">
+      {selectedTodo && detailDraft ? (
+        <>
+          <div className="detail-head">
+            <div>
+              <p className="eyebrow">Task Detail</p>
+              <h2>{selectedTodo.title}</h2>
+            </div>
+            <button className="icon-button" onClick={closeDetail} aria-label="关闭详情">
+              关闭
+            </button>
+          </div>
+
+          <div className="detail-stack">
+            <label>
+              <span>标题</span>
+              <input
+                value={detailDraft.title}
+                onChange={(event) =>
+                  setDetailDraft({
+                    ...detailDraft,
+                    title: event.target.value,
+                  })
+                }
+                placeholder="任务标题"
+              />
+            </label>
+
+            <div className="detail-split">
+              <label>
+                <span>分类</span>
+                <select
+                  value={detailDraft.categoryId}
+                  onChange={(event) =>
+                    setDetailDraft({
+                      ...detailDraft,
+                      categoryId: event.target.value,
+                    })
+                  }
+                >
+                  <option value="">未分类</option>
+                  {categories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>截止日期</span>
+                <input
+                  type="date"
+                  value={detailDraft.dueDate}
+                  onChange={(event) =>
+                    setDetailDraft({
+                      ...detailDraft,
+                      dueDate: event.target.value,
+                    })
+                  }
+                />
+              </label>
+            </div>
+
+            <label>
+              <span>重复规则</span>
+              <select
+                value={detailDraft.recurrenceType}
+                onChange={(event) =>
+                  setDetailDraft({
+                    ...detailDraft,
+                    recurrenceType: event.target.value as TodoRecurrenceType,
+                  })
+                }
+              >
+                <option value="none">不重复</option>
+                <option value="daily">每天</option>
+                <option value="weekly">每周</option>
+                <option value="monthly">每月</option>
+              </select>
+            </label>
+
+            <label>
+              <span>备注</span>
+              <textarea
+                value={detailDraft.note}
+                onChange={(event) =>
+                  setDetailDraft({
+                    ...detailDraft,
+                    note: event.target.value,
+                  })
+                }
+                rows={8}
+                placeholder="记录上下文、拆分步骤或补充说明"
+              />
+            </label>
+
+            <div className="detail-meta">
+              <button
+                className={selectedTodo.completed ? 'secondary-button active' : 'secondary-button'}
+                onClick={() => void handleToggleTodo(selectedTodo)}
+                disabled={busy}
+              >
+                {selectedTodo.completed ? '恢复未完成' : '标记完成'}
+              </button>
+              <span>更新时间 {formatTimestamp(selectedTodo.updatedAt)}</span>
+            </div>
+          </div>
+
+          <div className="detail-actions">
+            <button className="primary-button" onClick={() => void handleSaveTodo()} disabled={busy}>
+              保存更改
+            </button>
+            <button className="danger-button" onClick={() => void handleDeleteTodo()} disabled={busy}>
+              删除任务
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="detail-empty">
+          <p className="eyebrow">Detail</p>
+          <h2>点击一条任务，右侧就会展开详情。</h2>
+          <p>这里会承接标题、分类、截止日期、备注和重复规则的编辑。</p>
+        </div>
+      )}
+    </aside>
   )
+}
+
+function CalendarBoard({
+  categories,
+  todos,
+  pendingOutboxCount,
+}: {
+  categories: number
+  todos: number
+  pendingOutboxCount: number
+}) {
+  return (
+    <section className="calendar-board">
+      <div className="calendar-hero">
+        <p className="eyebrow">Calendar Route</p>
+        <h2>月历页面保留同一套壳，但业务仍在下一阶段接入。</h2>
+        <p>
+          当前先统一视觉基线，避免后续再从展示页迁移。待办与分类会继续作为 Phase 3 的主线，
+          月历页在 Phase 4 承接日程投影和日期格布局。
+        </p>
+      </div>
+
+      <div className="calendar-metrics">
+        <div>
+          <span>分类</span>
+          <strong>{categories}</strong>
+        </div>
+        <div>
+          <span>未完成任务</span>
+          <strong>{todos}</strong>
+        </div>
+        <div>
+          <span>待同步 outbox</span>
+          <strong>{pendingOutboxCount}</strong>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function todayDate() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function compareTodos(left: TodoRecord, right: TodoRecord) {
+  if (left.completed !== right.completed) {
+    return left.completed ? 1 : -1
+  }
+
+  if (left.dueDate && right.dueDate) {
+    return left.dueDate.localeCompare(right.dueDate)
+  }
+
+  if (left.dueDate) {
+    return -1
+  }
+
+  if (right.dueDate) {
+    return 1
+  }
+
+  return right.updatedAt.localeCompare(left.updatedAt)
+}
+
+function createTodoRecord(
+  workspaceId: string,
+  title: string,
+  categoryId: string | null,
+  dueDate: string | null,
+): TodoRecord {
+  const now = new Date().toISOString()
+  return {
+    id: crypto.randomUUID(),
+    workspaceId,
+    title,
+    categoryId,
+    dueDate,
+    completed: false,
+    note: '',
+    recurrenceType: 'none',
+    updatedAt: now,
+    deleted: false,
+  }
+}
+
+function formatDueDate(value: string | null, completed: boolean) {
+  if (!value) {
+    return completed ? '已完成 · 无截止日期' : '未设置截止日期'
+  }
+
+  if (value === todayDate()) {
+    return completed ? '今天完成' : '今天截止'
+  }
+
+  if (value < todayDate() && !completed) {
+    return `${value} · 已逾期`
+  }
+
+  return value
+}
+
+function formatTimestamp(value: string) {
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value))
+}
+
+function truncate(value: string, maxLength: number) {
+  return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value
 }
 
 function toSyncCategory(record: CategoryRecord) {
@@ -613,20 +1353,6 @@ function toSyncTodo(record: TodoRecord) {
     completed: record.completed,
     note: record.note,
     recurrence_type: record.recurrenceType === 'none' ? null : record.recurrenceType,
-    updated_at: record.updatedAt,
-    deleted: record.deleted,
-  }
-}
-
-function toSyncEvent(record: EventRecord) {
-  return {
-    id: record.id,
-    workspace_id: record.workspaceId,
-    title: record.title,
-    date: record.date,
-    start_at: record.startAt,
-    end_at: record.endAt,
-    note: record.note,
     updated_at: record.updatedAt,
     deleted: record.deleted,
   }

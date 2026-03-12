@@ -1,14 +1,22 @@
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Manrope:wght@400;500;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap');
 
 :root {
-  font-family: 'Manrope', 'Segoe UI', sans-serif;
+  --bg-app: #f3f0e8;
+  --surface-raised: #fbfaf7;
+  --surface-muted: #f1ede3;
+  --line-soft: #e4ddcf;
+  --text-strong: #24312b;
+  --text-soft: #6a7068;
+  --accent: #4f7a68;
+  --danger: #c65a46;
+  font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  color: #21352f;
+  color: var(--text-strong);
   background:
-    radial-gradient(circle at top, rgba(234, 123, 67, 0.12), transparent 28%),
-    radial-gradient(circle at bottom left, rgba(44, 88, 74, 0.12), transparent 35%),
-    #f3efe6;
+    radial-gradient(circle at top, rgba(200, 110, 79, 0.08), transparent 28%),
+    radial-gradient(circle at bottom left, rgba(79, 122, 104, 0.08), transparent 32%),
+    var(--bg-app);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -27,15 +35,34 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  background: transparent;
 }
 
 button,
-input {
+input,
+textarea,
+select {
   font: inherit;
 }
 
 button {
   cursor: pointer;
+}
+
+button,
+input,
+textarea,
+select {
+  outline: none;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 2px solid rgba(79, 122, 104, 0.48);
+  outline-offset: 2px;
 }
 
 a {
