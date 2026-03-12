@@ -38,7 +38,7 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
 }
 
-const categoryPalette = ['#4F7A68', '#C86E4F', '#B79A54', '#6989A8', '#A06D8E', '#6E7C88']
+const categoryPalette = ['#4E79A7', '#5C86B4', '#6B8FB6', '#7B8FAF', '#5E768F', '#7D8EA3']
 
 const filterLabels: Record<TaskFilter, string> = {
   all: '全部任务',
@@ -53,32 +53,32 @@ const todoStatusMeta: Record<
 > = {
   not_started: {
     label: '未开始',
-    tone: '#8A8F85',
-    accent: '#F0E9DA',
+    tone: '#617287',
+    accent: '#E9EFF6',
     detail: '还没有开始推进',
   },
   in_progress: {
     label: '进行中',
-    tone: '#2E7D6B',
-    accent: '#DDF1E9',
+    tone: '#2F6EA4',
+    accent: '#E3EFFB',
     detail: '正在处理',
   },
   completed: {
     label: '已完成',
-    tone: '#547A61',
-    accent: '#E0ECE2',
+    tone: '#4D7A67',
+    accent: '#E4F0EA',
     detail: '已经收口',
   },
   blocked: {
     label: '阻塞',
-    tone: '#C86E4F',
-    accent: '#F8E1D9',
+    tone: '#C25E4E',
+    accent: '#F9E8E2',
     detail: '受依赖或问题阻塞',
   },
   canceled: {
     label: '取消',
-    tone: '#8B6689',
-    accent: '#EFE0EC',
+    tone: '#7D6D8E',
+    accent: '#ECE8F3',
     detail: '当前不再继续',
   },
 }
@@ -576,6 +576,9 @@ function App() {
         syncStatus={syncStatus}
         pendingOutboxCount={pendingOutboxCount}
         envSummary={envSummary}
+        installPrompt={installPrompt}
+        pwaLabel={pwaLabel}
+        handleInstall={handleInstall}
         activeFilter={activeFilter}
         setActiveFilter={setActiveFilter}
         selectedCategoryId={selectedCategoryId}
@@ -599,12 +602,13 @@ function App() {
 
       <section className="board-pane">
         <header className="board-header">
-          <div>
-            <p className="eyebrow">PlanTick / Phase 3</p>
-            <h1>{selectedCategory ? selectedCategory.name : filterLabels[activeFilter]}</h1>
-            <p className="board-subtitle">
-              单用户本地优先任务工作台，右侧详情可展开也可关闭。
-            </p>
+          <div className="board-heading">
+            <p className="eyebrow">Task Console</p>
+            <div className="board-title-row">
+              <h1>{selectedCategory ? selectedCategory.name : filterLabels[activeFilter]}</h1>
+              <span className="board-counter">{visibleTodos.length} 项</span>
+            </div>
+            <p className="board-subtitle">默认聚焦任务列表，详情仅在选中任务时展开。</p>
           </div>
 
           <div className="board-actions">
@@ -612,14 +616,6 @@ function App() {
               <NavLink to="/todos">任务</NavLink>
               <NavLink to="/calendar">月历</NavLink>
             </nav>
-
-            <button
-              className="install-chip"
-              onClick={() => void handleInstall()}
-              disabled={!installPrompt}
-            >
-              {installPrompt ? '安装 PWA' : pwaLabel}
-            </button>
           </div>
         </header>
 
@@ -704,7 +700,7 @@ function OnboardingLayout({
     <main className="onboarding-shell">
       <section className="onboarding-copy">
         <p className="eyebrow">PlanTick</p>
-        <h1>先连上工作区，再进入三栏任务工作台。</h1>
+        <h1>先连上工作区，再进入高密度任务工作台。</h1>
         <p>
           Phase 3 不再是验证壳。当前入口只保留工作区接入、匿名会话和 PWA 安装能力，
           真正的任务管理会在接入成功后展开。
@@ -721,7 +717,7 @@ function OnboardingLayout({
           </div>
           <div>
             <span>架构</span>
-            <strong>本地优先 + 三栏任务台</strong>
+            <strong>本地优先 + 按需展开详情</strong>
           </div>
         </div>
       </section>
@@ -799,7 +795,7 @@ function OnboardingLayout({
         <aside className="setup-status" aria-live="polite">
           <p className="eyebrow">当前状态</p>
           <h2>{message}</h2>
-          <p>成功接入后默认进入任务页，桌面端显示三栏，移动端切换为单栏列表和底部详情抽屉。</p>
+          <p>成功接入后默认进入任务页，桌面端先聚焦主列表，选中任务时再展开详情。</p>
         </aside>
       </section>
     </main>
@@ -812,6 +808,9 @@ function Sidebar({
   syncStatus,
   pendingOutboxCount,
   envSummary,
+  installPrompt,
+  pwaLabel,
+  handleInstall,
   activeFilter,
   setActiveFilter,
   selectedCategoryId,
@@ -837,6 +836,9 @@ function Sidebar({
   syncStatus: SyncMeta['status']
   pendingOutboxCount: number
   envSummary: string
+  installPrompt: BeforeInstallPromptEvent | null
+  pwaLabel: string
+  handleInstall: () => Promise<void>
   activeFilter: TaskFilter
   setActiveFilter: (filter: TaskFilter) => void
   selectedCategoryId: string | null
@@ -857,6 +859,9 @@ function Sidebar({
   handleDeleteCategory: () => Promise<void>
   busy: boolean
 }) {
+  const [showCategoryCreate, setShowCategoryCreate] = useState(false)
+  const [showCategoryEditor, setShowCategoryEditor] = useState(false)
+
   return (
     <aside className="sidebar-pane">
       <div className="sidebar-top">
@@ -884,7 +889,26 @@ function Sidebar({
       <section className="sidebar-section">
         <div className="section-head">
           <p>分类</p>
-          <span>{categories.length}</span>
+          <div className="section-tools">
+            <span>{categories.length}</span>
+            <button
+              type="button"
+              className={showCategoryCreate ? 'icon-button active' : 'icon-button'}
+              aria-label="切换新建分类"
+              onClick={() => setShowCategoryCreate((current) => !current)}
+            >
+              新建
+            </button>
+            <button
+              type="button"
+              className={showCategoryEditor ? 'icon-button active' : 'icon-button'}
+              aria-label="切换分类设置"
+              disabled={!selectedCategory}
+              onClick={() => setShowCategoryEditor((current) => !current)}
+            >
+              设置
+            </button>
+          </div>
         </div>
 
         <div className="category-list">
@@ -903,17 +927,17 @@ function Sidebar({
           ))}
         </div>
 
-        <form className="category-create" onSubmit={(event) => void handleCreateCategory(event)}>
-          <label>
-            <span>新分类</span>
-            <input
-              value={newCategoryName}
-              onChange={(event) => setNewCategoryName(event.target.value)}
-              placeholder="例如：工作、生活、学习"
-            />
-          </label>
+        {showCategoryCreate ? (
+          <form className="sidebar-drawer category-create" onSubmit={(event) => void handleCreateCategory(event)}>
+            <label>
+              <span>新分类</span>
+              <input
+                value={newCategoryName}
+                onChange={(event) => setNewCategoryName(event.target.value)}
+                placeholder="例如：工作、生活、学习"
+              />
+            </label>
 
-          <div className="category-toolbar">
             <div className="palette-row" aria-label="分类颜色">
               {categoryPalette.map((color) => (
                 <button
@@ -932,16 +956,16 @@ function Sidebar({
               type="submit"
               disabled={busy || !newCategoryName.trim()}
             >
-              新建分类
+              保存新分类
             </button>
-          </div>
-        </form>
+          </form>
+        ) : null}
 
-        {selectedCategory ? (
-          <div className="category-editor">
-            <div className="section-head">
+        {selectedCategory && showCategoryEditor ? (
+          <div className="sidebar-drawer category-editor">
+            <div className="section-head compact">
               <p>分类设置</p>
-              <span>已选中</span>
+              <span>当前选中</span>
             </div>
 
             <label>
@@ -979,19 +1003,25 @@ function Sidebar({
 
       <footer className="sidebar-footer">
         <div>
-          <span>设备会话</span>
+          <span>会话</span>
           <strong>{sessionLabel}</strong>
         </div>
         <div>
-          <span>同步状态</span>
-          <strong>
-            {syncStatus} · 待同步 {pendingOutboxCount}
-          </strong>
+          <span>同步</span>
+          <strong>{syncStatus}</strong>
+          <small>待同步 {pendingOutboxCount}</small>
         </div>
         <div>
           <span>环境</span>
           <strong>{envSummary}</strong>
         </div>
+        <button
+          className="install-chip"
+          onClick={() => void handleInstall()}
+          disabled={!installPrompt}
+        >
+          {installPrompt ? '安装 PWA' : pwaLabel}
+        </button>
       </footer>
     </aside>
   )
@@ -1041,16 +1071,23 @@ function TodoBoard({
           </button>
         </form>
 
-        <div className="filter-tabs" role="tablist" aria-label="任务筛选">
-          {(['all', 'today', 'overdue', 'completed'] as TaskFilter[]).map((filter) => (
-            <button
-              key={filter}
-              className={activeFilter === filter && !selectedCategory ? 'active' : ''}
-              onClick={() => setActiveFilter(filter)}
-            >
-              {filterLabels[filter]}
-            </button>
-          ))}
+        <div className="board-toolbar-row">
+          <div className="filter-tabs" role="tablist" aria-label="任务筛选">
+            {(['all', 'today', 'overdue', 'completed'] as TaskFilter[]).map((filter) => (
+              <button
+                key={filter}
+                className={activeFilter === filter && !selectedCategory ? 'active' : ''}
+                onClick={() => setActiveFilter(filter)}
+              >
+                {filterLabels[filter]}
+              </button>
+            ))}
+          </div>
+
+          <div className="view-hint">
+            <span>默认视图</span>
+            <strong>列表</strong>
+          </div>
         </div>
       </div>
 
@@ -1065,6 +1102,7 @@ function TodoBoard({
             const category = categories.find((item) => item.id === todo.categoryId) ?? null
             const statusMeta = todoStatusMeta[todo.status]
             const dueLabel = formatDueDate(todo.dueDate, todo.status)
+            const recurrenceLabel = formatRecurrence(detailRecurrenceFallback(todo.recurrenceType))
 
             return (
               <article
@@ -1091,36 +1129,45 @@ function TodoBoard({
                   aria-label={`查看任务 ${todo.title}`}
                   onClick={() => setSelectedTodoId(todo.id)}
                 >
-                  <div className="todo-line">
-                    <strong>{todo.title}</strong>
-                    {category ? (
-                      <span className="todo-badge" style={{ color: category.color }}>
-                        {category.name}
+                  <div className="todo-row">
+                    <div className="todo-primary">
+                      <div className="todo-line">
+                        <strong>{todo.title}</strong>
+                        {category ? (
+                          <span className="todo-badge" style={{ color: category.color }}>
+                            {category.name}
+                          </span>
+                        ) : (
+                          <span className="todo-badge muted">未分类</span>
+                        )}
+                      </div>
+
+                      <div className="todo-meta">
+                        <span>
+                          {todo.note
+                            ? truncate(todo.note, 52)
+                            : '添加备注、截止日期和重复规则，让列表里的上下文更完整。'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="todo-secondary">
+                      <span
+                        className={`status-pill status-pill-${todo.status}`}
+                        style={
+                          {
+                            '--status-tone': statusMeta.tone,
+                            '--status-accent': statusMeta.accent,
+                          } as CSSProperties
+                        }
+                      >
+                        {statusMeta.label}
                       </span>
-                    ) : (
-                      <span className="todo-badge muted">未分类</span>
-                    )}
-                  </div>
-
-                  <div className="todo-meta">
-                    <span>{todo.note ? truncate(todo.note, 42) : '点击右侧详情补充备注、重复规则和截止日期'}</span>
-                  </div>
-
-                  <div className="todo-foot">
-                    <span
-                      className={`status-pill status-pill-${todo.status}`}
-                      style={
-                        {
-                          '--status-tone': statusMeta.tone,
-                          '--status-accent': statusMeta.accent,
-                        } as CSSProperties
-                      }
-                    >
-                      {statusMeta.label}
-                    </span>
-                    <span className={dueLabel.emphasis ? 'todo-due is-alert' : 'todo-due'}>
-                      {dueLabel.label}
-                    </span>
+                      <span className={dueLabel.emphasis ? 'todo-due is-alert' : 'todo-due'}>
+                        {dueLabel.label}
+                      </span>
+                      <span className="todo-repeat">{recurrenceLabel}</span>
+                    </div>
                   </div>
                 </button>
               </article>
@@ -1171,6 +1218,22 @@ function TodoDetailPane({
             <button className="icon-button" onClick={closeDetail} aria-label="关闭详情">
               关闭
             </button>
+          </div>
+
+          <div className="detail-overview">
+            <span
+              className={`status-pill status-pill-${selectedTodo.status}`}
+              style={
+                {
+                  '--status-tone': todoStatusMeta[selectedTodo.status].tone,
+                  '--status-accent': todoStatusMeta[selectedTodo.status].accent,
+                } as CSSProperties
+              }
+            >
+              {todoStatusMeta[selectedTodo.status].label}
+            </span>
+            <span>{selectedTodo.dueDate ? `截止 ${selectedTodo.dueDate}` : '未设置截止日期'}</span>
+            <span>{formatRecurrence(detailDraft.recurrenceType)}</span>
           </div>
 
           <div className="detail-stack">
@@ -1298,17 +1361,6 @@ function TodoDetailPane({
               >
                 {selectedTodo.status === 'completed' ? '恢复进行中' : '标记完成'}
               </button>
-              <span
-                className={`status-pill status-pill-${selectedTodo.status}`}
-                style={
-                  {
-                    '--status-tone': todoStatusMeta[selectedTodo.status].tone,
-                    '--status-accent': todoStatusMeta[selectedTodo.status].accent,
-                  } as CSSProperties
-                }
-              >
-                当前状态 {todoStatusMeta[selectedTodo.status].label}
-              </span>
               <span>更新时间 {formatTimestamp(selectedTodo.updatedAt)}</span>
             </div>
           </div>
@@ -1399,6 +1451,10 @@ function compareTodos(left: TodoRecord, right: TodoRecord) {
   return right.updatedAt.localeCompare(left.updatedAt)
 }
 
+function detailRecurrenceFallback(value: TodoRecurrenceType) {
+  return value || 'none'
+}
+
 function createTodoRecord(
   workspaceId: string,
   title: string,
@@ -1464,6 +1520,19 @@ function truncate(value: string, maxLength: number) {
 
 function toggleTodoStatus(status: TodoStatus): TodoStatus {
   return status === 'completed' ? 'in_progress' : 'completed'
+}
+
+function formatRecurrence(value: TodoRecurrenceType) {
+  switch (value) {
+    case 'daily':
+      return '每天'
+    case 'weekly':
+      return '每周'
+    case 'monthly':
+      return '每月'
+    default:
+      return '不重复'
+  }
 }
 
 function toSyncCategory(record: CategoryRecord) {
