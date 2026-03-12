@@ -21,6 +21,7 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   await expect(page.getByRole('button', { name: '产品设计', exact: true })).toBeVisible()
 
   await page.getByLabel('快速新建任务').fill('完成任务工作台 UI')
+  await page.getByRole('button', { name: '选择日期' }).click()
   await page.locator('input[name="quickTodoDueDate"]').fill('2026-03-20')
   await page.getByRole('button', { name: '添加任务' }).click()
 

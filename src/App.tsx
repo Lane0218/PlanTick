@@ -1147,64 +1147,65 @@ function TodoBoard({
           <input
             value={quickTodoTitle}
             onChange={(event) => setQuickTodoTitle(event.target.value)}
-            onFocus={() => setShowQuickCreateDatePicker(true)}
             placeholder="添加任务"
             aria-label="快速新建任务"
             name="quickTodoTitle"
             autoComplete="off"
           />
-          <button
-            type="button"
-            className={showQuickCreateDatePicker ? 'quick-date-toggle active' : 'quick-date-toggle'}
-            aria-expanded={showQuickCreateDatePicker}
-            onClick={() => setShowQuickCreateDatePicker(!showQuickCreateDatePicker)}
-          >
-            {quickDueDate ? formatDueDate(quickDueDate, 'not_started').label : '选择日期'}
-          </button>
-        </div>
-
-        {showQuickCreateDatePicker ? (
-          <div className="quick-create-options">
-            <div className="quick-create-shortcuts" aria-label="新建任务日期快捷方式">
-              <button
-                type="button"
-                className={quickDueDate === todayDate() ? 'ghost-button active' : 'ghost-button'}
-                onClick={() => setQuickDueDate(todayDate())}
-              >
-                今天
-              </button>
-              <button
-                type="button"
-                className={quickDueDate === nextDate(1) ? 'ghost-button active' : 'ghost-button'}
-                onClick={() => setQuickDueDate(nextDate(1))}
-              >
-                明天
-              </button>
-              <button
-                type="button"
-                className={!quickDueDate ? 'ghost-button active' : 'ghost-button'}
-                onClick={() => setQuickDueDate('')}
-              >
-                无日期
-              </button>
-            </div>
-
-            <label className="quick-date-picker">
-              <span className="sr-only">新建任务日期</span>
-              <input
-                type="date"
-                value={quickDueDate}
-                onChange={(event) => setQuickDueDate(event.target.value)}
-                aria-label="新建任务日期"
-                name="quickTodoDueDate"
-              />
-            </label>
-
-            <button className="primary-button quick-create-submit" type="submit">
-              添加任务
+          <div className="quick-date-popover">
+            <button
+              type="button"
+              className={showQuickCreateDatePicker ? 'quick-date-toggle active' : 'quick-date-toggle'}
+              aria-expanded={showQuickCreateDatePicker}
+              onClick={() => setShowQuickCreateDatePicker(!showQuickCreateDatePicker)}
+            >
+              {quickDueDate ? formatDueDate(quickDueDate, 'not_started').label : '选择日期'}
             </button>
+
+            {showQuickCreateDatePicker ? (
+              <div className="quick-create-options">
+                <div className="quick-create-shortcuts" aria-label="新建任务日期快捷方式">
+                  <button
+                    type="button"
+                    className={quickDueDate === todayDate() ? 'ghost-button active' : 'ghost-button'}
+                    onClick={() => setQuickDueDate(todayDate())}
+                  >
+                    今天
+                  </button>
+                  <button
+                    type="button"
+                    className={quickDueDate === nextDate(1) ? 'ghost-button active' : 'ghost-button'}
+                    onClick={() => setQuickDueDate(nextDate(1))}
+                  >
+                    明天
+                  </button>
+                  <button
+                    type="button"
+                    className={!quickDueDate ? 'ghost-button active' : 'ghost-button'}
+                    onClick={() => setQuickDueDate('')}
+                  >
+                    无日期
+                  </button>
+                </div>
+
+                <label className="quick-date-picker">
+                  <span className="sr-only">新建任务日期</span>
+                  <input
+                    type="date"
+                    value={quickDueDate}
+                    onChange={(event) => setQuickDueDate(event.target.value)}
+                    aria-label="新建任务日期"
+                    name="quickTodoDueDate"
+                  />
+                </label>
+
+                <button className="primary-button quick-create-submit" type="submit">
+                  添加任务
+                </button>
+              </div>
+            ) : null}
           </div>
-        ) : null}
+        </div>
       </form>
 
       {visibleTodos.length ? (
@@ -1255,7 +1256,11 @@ function TodoBoard({
                 >
                   <div className="todo-row">
                     <strong>{todo.title}</strong>
-                    <span className={dueLabel.emphasis ? 'todo-due is-alert' : 'todo-due'}>{dueLabel.label}</span>
+                    {dueLabel.label ? (
+                      <span className={dueLabel.emphasis ? 'todo-due is-alert' : 'todo-due'}>
+                        {dueLabel.label}
+                      </span>
+                    ) : null}
                   </div>
 
                   {noteExcerpt ? <p className="todo-excerpt">{noteExcerpt}</p> : null}
@@ -1296,41 +1301,80 @@ function TodoDetailPane({
   busy: boolean
 }) {
   const selectedCategory = categories.find((category) => category.id === detailDraft?.categoryId) ?? null
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false)
 
   return (
     <aside className={selectedTodo ? 'detail-pane is-open' : 'detail-pane'} aria-label="任务详情">
       {selectedTodo && detailDraft ? (
         <>
           <div className="detail-head">
-            <label className="detail-list-select">
-              <span className="detail-list-name">
-                <span
-                  className="detail-list-dot"
-                  style={{ backgroundColor: selectedCategory?.color ?? '#90A4AE' }}
-                  aria-hidden="true"
-                />
-                <select
-                  value={detailDraft.categoryId}
-                  onChange={(event) =>
-                    setDetailDraft({
-                      ...detailDraft,
-                      categoryId: event.target.value,
-                    })
-                  }
-                  aria-label="分类"
-                  name="detailCategoryId"
-                >
-                  <option value="">未分类</option>
+            <div className="detail-list-picker">
+              <button
+                type="button"
+                className="detail-list-select"
+                aria-haspopup="listbox"
+                aria-expanded={showCategoryPicker}
+                onClick={() => setShowCategoryPicker((current) => !current)}
+              >
+                <span className="detail-list-name">
+                  <span
+                    className="detail-list-dot"
+                    style={{ backgroundColor: selectedCategory?.color ?? '#90A4AE' }}
+                    aria-hidden="true"
+                  />
+                  <span>{selectedCategory?.name ?? '未分类'}</span>
+                </span>
+                <ChevronDown size={14} strokeWidth={2.2} className="detail-list-arrow" aria-hidden="true" />
+              </button>
+
+              {showCategoryPicker ? (
+                <div className="detail-list-menu" role="listbox" aria-label="分类列表">
+                  <button
+                    type="button"
+                    className={!detailDraft.categoryId ? 'active' : ''}
+                    onClick={() => {
+                      setDetailDraft({
+                        ...detailDraft,
+                        categoryId: '',
+                      })
+                      setShowCategoryPicker(false)
+                    }}
+                  >
+                    <span className="detail-list-dot neutral" aria-hidden="true" />
+                    <span>未分类</span>
+                  </button>
                   {categories.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name}
-                    </option>
+                    <button
+                      key={category.id}
+                      type="button"
+                      className={detailDraft.categoryId === category.id ? 'active' : ''}
+                      onClick={() => {
+                        setDetailDraft({
+                          ...detailDraft,
+                          categoryId: category.id,
+                        })
+                        setShowCategoryPicker(false)
+                      }}
+                    >
+                      <span
+                        className="detail-list-dot"
+                        style={{ backgroundColor: category.color }}
+                        aria-hidden="true"
+                      />
+                      <span>{category.name}</span>
+                    </button>
                   ))}
-                </select>
-              </span>
-              <ChevronDown size={14} strokeWidth={2.2} className="detail-list-arrow" aria-hidden="true" />
-            </label>
-            <button className="detail-close" onClick={closeDetail} aria-label="关闭详情">
+                </div>
+              ) : null}
+            </div>
+            <button
+              className="detail-close"
+              onClick={() => {
+                setShowCategoryPicker(false)
+                closeDetail()
+              }}
+              aria-label="关闭详情"
+            >
               ×
             </button>
           </div>
@@ -1575,26 +1619,49 @@ function createTodoRecord(
 function formatDueDate(value: string | null, status: TodoStatus) {
   if (!value) {
     return {
-      label: '无日期',
+      label: '',
       emphasis: false,
     }
   }
 
-  if (value === todayDate()) {
+  const diff = diffDaysFromToday(value)
+
+  if (diff === -2) {
+    return {
+      label: '前天',
+      emphasis: status !== 'completed',
+    }
+  }
+
+  if (diff === -1) {
+    return {
+      label: '昨天',
+      emphasis: status !== 'completed',
+    }
+  }
+
+  if (diff === 0) {
     return {
       label: '今天',
       emphasis: status !== 'completed',
     }
   }
 
-  if (value === nextDate(1)) {
+  if (diff === 1) {
     return {
       label: '明天',
       emphasis: false,
     }
   }
 
-  if (value < todayDate() && status !== 'completed') {
+  if (diff === 2) {
+    return {
+      label: '后天',
+      emphasis: false,
+    }
+  }
+
+  if (diff < 0 && status !== 'completed') {
     return {
       label: formatMonthDay(value),
       emphasis: true,
@@ -1608,10 +1675,8 @@ function formatDueDate(value: string | null, status: TodoStatus) {
 }
 
 function formatMonthDay(value: string) {
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: 'numeric',
-    day: 'numeric',
-  }).format(new Date(`${value}T00:00:00`))
+  const date = new Date(`${value}T00:00:00`)
+  return `${date.getMonth() + 1}月${date.getDate()}日`
 }
 
 function toggleTodoStatus(status: TodoStatus): TodoStatus {
@@ -1628,6 +1693,12 @@ function nextDate(days: number) {
   const next = new Date()
   next.setDate(next.getDate() + days)
   return next.toISOString().slice(0, 10)
+}
+
+function diffDaysFromToday(value: string) {
+  const current = new Date(`${todayDate()}T00:00:00`).getTime()
+  const target = new Date(`${value}T00:00:00`).getTime()
+  return Math.round((target - current) / 86400000)
 }
 
 function renderStatusIcon(status: TodoStatus) {

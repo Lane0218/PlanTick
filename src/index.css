@@ -67,8 +67,9 @@ input:focus-visible,
 textarea:focus-visible,
 select:focus-visible,
 a:focus-visible {
-  outline: 2px solid rgba(72, 167, 165, 0.34);
+  outline: 1px solid rgba(148, 163, 184, 0.7);
   outline-offset: 2px;
+  box-shadow: 0 0 0 3px rgba(226, 232, 240, 0.9);
 }
 
 a {
