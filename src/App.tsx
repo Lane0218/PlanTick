@@ -4,8 +4,6 @@ import {
   Ban,
   CheckCircle2,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Circle,
   Inbox,
   MoreHorizontal,
@@ -457,18 +455,20 @@ function App() {
     }
   }
 
-  async function handleDeleteCategory() {
-    if (!workspaceId || !selectedCategory) {
+  async function handleDeleteCategory(categoryOverride?: CategoryRecord) {
+    const targetCategory = categoryOverride ?? selectedCategory
+
+    if (!workspaceId || !targetCategory) {
       return
     }
 
-    if (!window.confirm(`确认删除分类「${selectedCategory.name}」吗？关联任务会回到未分类。`)) {
+    if (!window.confirm(`确认删除分类「${targetCategory.name}」吗？关联任务会回到未分类。`)) {
       return
     }
 
     const timestamp = new Date().toISOString()
     const affectedTodos = activeTodos
-      .filter((todo) => todo.categoryId === selectedCategory.id)
+      .filter((todo) => todo.categoryId === targetCategory.id)
       .map((todo) => ({
         ...todo,
         categoryId: null,
@@ -476,7 +476,7 @@ function App() {
       }))
 
     const deletedCategory: CategoryRecord = {
-      ...selectedCategory,
+      ...targetCategory,
       deleted: true,
       updatedAt: timestamp,
     }
@@ -493,7 +493,7 @@ function App() {
 
       await refreshWorkspaceData(workspaceId)
       setSelectedCategoryId(null)
-      setMessage(`分类「${selectedCategory.name}」已删除，关联任务已回到未分类。`)
+      setMessage(`分类「${targetCategory.name}」已删除，关联任务已回到未分类。`)
     } finally {
       setBusy(false)
     }
@@ -532,9 +532,26 @@ function App() {
       return
     }
 
-    const nextStatus = toggleTodoStatus(todo.status)
+    const hasUnsavedSelectedDraft =
+      selectedTodoId === todo.id &&
+      detailDraft &&
+      serializeTodoDraft(detailDraft) !== lastSavedDraftRef.current
+
+    const baseTodo: TodoRecord =
+      hasUnsavedSelectedDraft && detailDraft
+        ? {
+            ...todo,
+            title: detailDraft.title.trim() || todo.title,
+            categoryId: detailDraft.categoryId || null,
+            dueDate: detailDraft.dueDate || null,
+            note: detailDraft.note,
+            recurrenceType: detailDraft.recurrenceType,
+          }
+        : todo
+
+    const nextStatus = toggleTodoStatus(baseTodo.status)
     const updated: TodoRecord = {
-      ...todo,
+      ...baseTodo,
       status: nextStatus,
       completed: nextStatus === 'completed',
       updatedAt: new Date().toISOString(),
@@ -544,6 +561,14 @@ function App() {
     try {
       await upsertTodo(updated)
       await enqueueRecordMutation('todos', 'upsert', toSyncTodo(updated))
+      lastSavedDraftRef.current = serializeTodoDraft({
+        title: updated.title,
+        categoryId: updated.categoryId ?? '',
+        dueDate: updated.dueDate ?? '',
+        status: updated.status,
+        note: updated.note,
+        recurrenceType: updated.recurrenceType,
+      })
       await refreshWorkspaceData(workspaceId)
       setMessage(`任务「${todo.title}」状态已切换为 ${todoStatusMeta[updated.status].label}。`)
     } finally {
@@ -869,10 +894,47 @@ function Sidebar({
   categoryEditorColor: string
   setCategoryEditorColor: (value: string) => void
   handleSaveCategory: () => Promise<void>
-  handleDeleteCategory: () => Promise<void>
+  handleDeleteCategory: (category?: CategoryRecord) => Promise<void>
   busy: boolean
 }) {
-  const [showCategoryManager, setShowCategoryManager] = useState(false)
+  const [categoryDialogMode, setCategoryDialogMode] = useState<'create' | 'edit' | null>(null)
+  const [menuCategoryId, setMenuCategoryId] = useState<string | null>(null)
+
+  const dialogTitle = categoryDialogMode === 'edit' ? '修改分类' : '新建分类'
+
+  const openCreateDialog = () => {
+    setMenuCategoryId(null)
+    setCategoryDialogMode('create')
+  }
+
+  const openEditDialog = (category: CategoryRecord) => {
+    setSelectedCategoryId(category.id)
+    setActiveFilter('all')
+    setMenuCategoryId(null)
+    setCategoryDialogMode('edit')
+  }
+
+  const closeCategoryDialog = () => {
+    setCategoryDialogMode(null)
+    setMenuCategoryId(null)
+  }
+
+  const handleCategoryDialogSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    if (categoryDialogMode === 'edit') {
+      await handleSaveCategory()
+      if (selectedCategory && categoryEditorName.trim()) {
+        closeCategoryDialog()
+      }
+      return
+    }
+
+    await handleCreateCategory(event)
+    if (newCategoryName.trim()) {
+      closeCategoryDialog()
+    }
+  }
 
   return (
     <aside className="sidebar-pane">
@@ -911,9 +973,9 @@ function Sidebar({
           </div>
           <button
             type="button"
-            className={showCategoryManager ? 'sidebar-plain-button active' : 'sidebar-plain-button'}
-            aria-label="切换分类管理"
-            onClick={() => setShowCategoryManager((current) => !current)}
+            className={categoryDialogMode === 'create' ? 'sidebar-plain-button active' : 'sidebar-plain-button'}
+            aria-label="新建分类"
+            onClick={openCreateDialog}
           >
             <Plus size={16} strokeWidth={2.2} aria-hidden="true" />
           </button>
@@ -939,98 +1001,111 @@ function Sidebar({
               <button
                 type="button"
                 className="category-more"
-                aria-label={`编辑分类 ${category.name}`}
+                aria-label={`分类操作 ${category.name}`}
                 onClick={() => {
-                  setSelectedCategoryId(category.id)
-                  setActiveFilter('all')
-                  setShowCategoryManager(true)
+                  setMenuCategoryId((current) => (current === category.id ? null : category.id))
                 }}
               >
-                ⋯
+                <MoreHorizontal size={16} strokeWidth={2.1} aria-hidden="true" />
               </button>
+
+              {menuCategoryId === category.id ? (
+                <div className="category-menu" role="menu" aria-label={`${category.name} 分类操作`}>
+                  <button type="button" role="menuitem" onClick={() => openEditDialog(category)}>
+                    修改分类
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="danger"
+                    onClick={() => {
+                      setSelectedCategoryId(category.id)
+                      setActiveFilter('all')
+                      setMenuCategoryId(null)
+                      void handleDeleteCategory(category)
+                    }}
+                  >
+                    删除分类
+                  </button>
+                </div>
+              ) : null}
             </div>
           ))}
         </div>
+      </section>
 
-        {showCategoryManager ? (
-          <div className="sidebar-drawer category-manager">
-            <form className="category-create" onSubmit={(event) => void handleCreateCategory(event)}>
+      {categoryDialogMode ? (
+        <div className="category-dialog-backdrop" role="presentation" onClick={closeCategoryDialog}>
+          <div
+            className="category-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="category-dialog-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="category-dialog-head">
+              <h3 id="category-dialog-title">{dialogTitle}</h3>
+              <button type="button" className="detail-close" aria-label="关闭分类对话框" onClick={closeCategoryDialog}>
+                ×
+              </button>
+            </div>
+
+            <form className="category-dialog-form" onSubmit={(event) => void handleCategoryDialogSubmit(event)}>
               <label>
-                <span>新分类</span>
+                <span>{categoryDialogMode === 'edit' ? '分类名称' : '新分类'}</span>
                 <input
-                  value={newCategoryName}
-                  onChange={(event) => setNewCategoryName(event.target.value)}
+                  value={categoryDialogMode === 'edit' ? categoryEditorName : newCategoryName}
+                  onChange={(event) =>
+                    categoryDialogMode === 'edit'
+                      ? setCategoryEditorName(event.target.value)
+                      : setNewCategoryName(event.target.value)
+                  }
                   placeholder="例如：工作、生活、学习…"
-                  name="newCategoryName"
+                  name={categoryDialogMode === 'edit' ? 'categoryEditorName' : 'newCategoryName'}
                   autoComplete="off"
                 />
               </label>
 
               <div className="palette-row" aria-label="分类颜色">
-                {categoryPalette.map((color) => (
-                  <button
-                    key={color}
-                    type="button"
-                    className={newCategoryColor === color ? 'palette-chip active' : 'palette-chip'}
-                    style={{ backgroundColor: color }}
-                    aria-label={`颜色 ${color}`}
-                    onClick={() => setNewCategoryColor(color)}
-                  />
-                ))}
-              </div>
+                {categoryPalette.map((color) => {
+                  const activeColor = categoryDialogMode === 'edit' ? categoryEditorColor : newCategoryColor
 
-              <button
-                className="secondary-button"
-                type="submit"
-                disabled={busy || !newCategoryName.trim()}
-              >
-                添加分类
-              </button>
-            </form>
-
-            {selectedCategory ? (
-              <div className="category-editor">
-                <label>
-                  <span>当前分类</span>
-                  <input
-                    value={categoryEditorName}
-                    onChange={(event) => setCategoryEditorName(event.target.value)}
-                    name="categoryEditorName"
-                    autoComplete="off"
-                  />
-                </label>
-
-                <div className="palette-row" aria-label="编辑分类颜色">
-                  {categoryPalette.map((color) => (
+                  return (
                     <button
                       key={color}
                       type="button"
-                      className={categoryEditorColor === color ? 'palette-chip active' : 'palette-chip'}
+                      className={activeColor === color ? 'palette-chip active' : 'palette-chip'}
                       style={{ backgroundColor: color }}
-                      aria-label={`编辑颜色 ${color}`}
-                      onClick={() => setCategoryEditorColor(color)}
+                      aria-label={`颜色 ${color}`}
+                      onClick={() =>
+                        categoryDialogMode === 'edit'
+                          ? setCategoryEditorColor(color)
+                          : setNewCategoryColor(color)
+                      }
                     />
-                  ))}
-                </div>
-
-                <div className="editor-actions">
-                  <button className="secondary-button" onClick={() => void handleSaveCategory()} disabled={busy}>
-                    保存
-                  </button>
-                  <button
-                    className="danger-button"
-                    type="button"
-                    onClick={() => void handleDeleteCategory()}
-                    disabled={busy}
-                  >
-                    删除
-                  </button>
-                </div>
+                  )
+                })}
               </div>
-            ) : null}
+
+              <div className="category-dialog-actions">
+                <button className="secondary-button" type="button" onClick={closeCategoryDialog}>
+                  取消
+                </button>
+                <button
+                  className="primary-button"
+                  type="submit"
+                  disabled={
+                    busy ||
+                    !(categoryDialogMode === 'edit' ? categoryEditorName.trim() : newCategoryName.trim())
+                  }
+                >
+                  {categoryDialogMode === 'edit' ? '保存分类' : '添加分类'}
+                </button>
+              </div>
+            </form>
           </div>
-        ) : null}
-      </section>
+        </div>
+      ) : null}
     </aside>
   )
 }
@@ -1062,22 +1137,6 @@ function TodoBoard({
   categories: CategoryRecord[]
   handleToggleTodo: (todo: TodoRecord) => Promise<void>
 }) {
-  const [currentDate, setCurrentDate] = useState(() => new Date())
-
-  const formattedDate = new Intl.DateTimeFormat('zh-CN', {
-    month: 'short',
-    day: 'numeric',
-  }).format(currentDate)
-  const currentDateIsToday = isSameDate(currentDate, new Date())
-
-  const moveCurrentDate = (days: number) => {
-    setCurrentDate((current) => {
-      const next = new Date(current)
-      next.setDate(next.getDate() + days)
-      return next
-    })
-  }
-
   return (
     <section className="todo-board">
       <form className="quick-create" onSubmit={(event) => void handleQuickCreateTodo(event)}>
@@ -1148,24 +1207,6 @@ function TodoBoard({
         ) : null}
       </form>
 
-      <div className="board-date-strip">
-        <div className="board-date-copy">
-          <div className="board-date-headline">
-            <span>{formattedDate}</span>
-            {currentDateIsToday ? <b>今天</b> : null}
-          </div>
-        </div>
-
-        <div className="board-date-nav" aria-label="天数切换">
-          <button type="button" onClick={() => moveCurrentDate(-1)} aria-label="查看前一天">
-            <ChevronLeft size={16} strokeWidth={2.1} />
-          </button>
-          <button type="button" onClick={() => moveCurrentDate(1)} aria-label="查看后一天">
-            <ChevronRight size={16} strokeWidth={2.1} />
-          </button>
-        </div>
-      </div>
-
       {visibleTodos.length ? (
         <div className="todo-list" role="list">
           {visibleTodos.map((todo) => {
@@ -1188,9 +1229,13 @@ function TodoBoard({
                 style={
                   {
                     '--todo-tone': statusMeta.tone,
+                    '--todo-accent': statusMeta.accent,
+                    '--todo-category-tone': category?.color ?? '#cfd6db',
                   } as CSSProperties
                 }
               >
+                <span className="todo-list-accent" aria-hidden="true" />
+
                 <button
                   type="button"
                   className={`todo-status-trigger todo-status-${todo.status}`}
@@ -1208,25 +1253,13 @@ function TodoBoard({
                   aria-label={`查看任务 ${todo.title}`}
                   onClick={() => setSelectedTodoId(todo.id)}
                 >
-                  <div className="todo-main-top">
-                    <div className="todo-card-topline">
-                      <span className="todo-status-badge" style={{ backgroundColor: statusMeta.accent, color: statusMeta.tone }}>
-                        {statusMeta.label}
-                      </span>
-                    </div>
-
-                    <div className="todo-row">
-                      <strong>{todo.title}</strong>
-                      <span className={dueLabel.emphasis ? 'todo-due is-alert' : 'todo-due'}>{dueLabel.label}</span>
-                    </div>
+                  <div className="todo-row">
+                    <strong>{todo.title}</strong>
+                    <span className={dueLabel.emphasis ? 'todo-due is-alert' : 'todo-due'}>{dueLabel.label}</span>
                   </div>
 
                   {noteExcerpt ? <p className="todo-excerpt">{noteExcerpt}</p> : null}
-
-                  {category ? <p className="todo-secondary">{category.name}</p> : null}
                 </button>
-
-                <span className="todo-list-accent" style={{ backgroundColor: category?.color ?? '#cfd6db' }} aria-hidden="true" />
               </article>
             )
           })}
@@ -1269,17 +1302,34 @@ function TodoDetailPane({
       {selectedTodo && detailDraft ? (
         <>
           <div className="detail-head">
-            <div className="detail-list-row">
+            <label className="detail-list-select">
               <span className="detail-list-name">
                 <span
                   className="detail-list-dot"
                   style={{ backgroundColor: selectedCategory?.color ?? '#90A4AE' }}
                   aria-hidden="true"
                 />
-                {selectedCategory?.name ?? '收件箱'}
+                <select
+                  value={detailDraft.categoryId}
+                  onChange={(event) =>
+                    setDetailDraft({
+                      ...detailDraft,
+                      categoryId: event.target.value,
+                    })
+                  }
+                  aria-label="分类"
+                  name="detailCategoryId"
+                >
+                  <option value="">未分类</option>
+                  {categories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
               </span>
               <ChevronDown size={14} strokeWidth={2.2} className="detail-list-arrow" aria-hidden="true" />
-            </div>
+            </label>
             <button className="detail-close" onClick={closeDetail} aria-label="关闭详情">
               ×
             </button>
@@ -1302,66 +1352,6 @@ function TodoDetailPane({
 
           <div className="detail-scroll">
             <div className="detail-stack">
-              <section className="detail-section">
-                <div className="detail-card-head">
-                  <span>状态</span>
-                </div>
-                <div className="detail-status-grid">
-                  {(Object.keys(todoStatusMeta) as TodoStatus[]).map((status) => {
-                    const statusMeta = todoStatusMeta[status]
-                    const active = detailDraft.status === status
-
-                    return (
-                      <button
-                        key={status}
-                        type="button"
-                        className={active ? 'detail-status-choice active' : 'detail-status-choice'}
-                        aria-label={`设置状态为${statusMeta.label}`}
-                        aria-pressed={active}
-                        style={active ? { backgroundColor: statusMeta.accent, color: statusMeta.tone } : undefined}
-                        onClick={() =>
-                          setDetailDraft({
-                            ...detailDraft,
-                            status,
-                          })
-                        }
-                      >
-                        <span className="detail-status-choice-icon" aria-hidden="true">
-                          {renderStatusIcon(status)}
-                        </span>
-                        {statusMeta.label}
-                      </button>
-                    )
-                  })}
-                </div>
-              </section>
-
-              <section className="detail-section detail-meta-section">
-                <div className="detail-card-head">
-                  <span>分类</span>
-                </div>
-                <label className="detail-field detail-inline-field">
-                  <span>分类</span>
-                  <select
-                    value={detailDraft.categoryId}
-                    onChange={(event) =>
-                      setDetailDraft({
-                        ...detailDraft,
-                        categoryId: event.target.value,
-                      })
-                    }
-                    name="detailCategoryId"
-                  >
-                    <option value="">未分类</option>
-                    {categories.map((category) => (
-                      <option key={category.id} value={category.id}>
-                        {category.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </section>
-
               <section className="detail-section detail-date-block">
                 <div className="detail-card-head">
                   <span>日期</span>
@@ -1638,14 +1628,6 @@ function nextDate(days: number) {
   const next = new Date()
   next.setDate(next.getDate() + days)
   return next.toISOString().slice(0, 10)
-}
-
-function isSameDate(left: Date, right: Date) {
-  return (
-    left.getFullYear() === right.getFullYear() &&
-    left.getMonth() === right.getMonth() &&
-    left.getDate() === right.getDate()
-  )
 }
 
 function renderStatusIcon(status: TodoStatus) {

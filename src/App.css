@@ -519,6 +519,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
+  position: relative;
 }
 
 .category-item {
@@ -540,6 +541,40 @@
   background: transparent;
   color: var(--text-muted);
   font-size: 1rem;
+}
+
+.category-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 10;
+  min-width: 132px;
+  padding: 6px;
+  border: 1px solid #e2e6eb;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 16px 30px rgba(31, 42, 55, 0.08);
+  display: grid;
+  gap: 2px;
+}
+
+.category-menu button {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #2c3e50;
+  text-align: left;
+  font-size: 0.82rem;
+}
+
+.category-menu button:hover {
+  background: #f5f7fa;
+}
+
+.category-menu button.danger {
+  color: #ef5350;
 }
 
 .sidebar-drawer {
@@ -566,6 +601,52 @@
 .palette-chip.active {
   border-color: #1f2937;
   box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.82);
+}
+
+.category-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(17, 24, 39, 0.18);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.category-dialog {
+  width: min(420px, 100%);
+  padding: 18px;
+  border: 1px solid #e2e6eb;
+  border-radius: 24px;
+  background: #ffffff;
+  box-shadow: 0 24px 48px rgba(31, 42, 55, 0.18);
+  display: grid;
+  gap: 16px;
+}
+
+.category-dialog-head,
+.category-dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.category-dialog-head h3 {
+  margin: 0;
+  color: #2c3e50;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.category-dialog-form {
+  display: grid;
+  gap: 16px;
+}
+
+.category-dialog-form label {
+  display: grid;
+  gap: 8px;
 }
 
 .color-dot {
@@ -687,58 +768,6 @@
   min-width: 96px;
 }
 
-.board-date-strip {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 14px 0 2px;
-  border-bottom: 1px solid #eef1f4;
-}
-
-.board-date-copy {
-  display: flex;
-  align-items: center;
-}
-
-.board-date-headline {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: #2c3e50;
-}
-
-.board-date-headline b {
-  display: inline-flex;
-  align-items: center;
-  min-height: 22px;
-  padding: 0 9px;
-  border-radius: 999px;
-  background: #1f6e66;
-  color: #ffffff;
-  font-size: 0.74rem;
-}
-
-.board-date-nav {
-  display: inline-flex;
-  gap: 6px;
-}
-
-.board-date-nav button {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border: 1px solid #e0e5ea;
-  border-radius: 8px;
-  background: #f5f7fa;
-  color: var(--text-muted);
-  font-size: 1rem;
-}
-
 .todo-list {
   overflow: hidden;
   border-top: 1px solid #f0f3f6;
@@ -748,9 +777,10 @@
 .todo-card {
   position: relative;
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) 4px;
+  grid-template-columns: 4px 32px minmax(0, 1fr);
   gap: 12px;
-  padding: 18px 0;
+  align-items: start;
+  padding: 12px 0;
   border-bottom: 1px solid #f0f3f6;
   background: transparent;
 }
@@ -765,14 +795,13 @@
 
 .todo-status-trigger {
   align-self: start;
-  width: 22px;
-  min-width: 22px;
-  height: 22px;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
   padding: 0;
-  margin-left: 2px;
   border: 0;
-  border-radius: 0;
-  background: transparent;
+  border-radius: 999px;
+  background: var(--todo-accent, #f5f7fa);
   color: var(--todo-tone, #a0aca7);
   display: grid;
   place-items: center;
@@ -792,28 +821,8 @@
   border: 0;
   background: transparent;
   text-align: left;
-}
-
-.todo-main-top {
   display: grid;
-  gap: 10px;
-}
-
-.todo-card-topline {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-}
-
-.todo-status-badge {
-  display: inline-flex;
-  align-items: center;
-  min-height: 24px;
-  padding: 0 10px;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 500;
+  gap: 4px;
 }
 
 .todo-row {
@@ -829,6 +838,9 @@
   font-size: 0.875rem;
   line-height: 1.35;
   font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .todo-due {
@@ -845,7 +857,7 @@
 }
 
 .todo-excerpt {
-  margin: 6px 0 0;
+  margin: 0;
   color: #90a4ae;
   font-size: 0.75rem;
   line-height: 1.45;
@@ -855,17 +867,11 @@
   overflow: hidden;
 }
 
-.todo-secondary {
-  display: block;
-  margin-top: 10px;
-  color: #90a4ae;
-  font-size: 0.75rem;
-}
-
 .todo-list-accent {
   width: 4px;
   align-self: stretch;
   border-radius: 999px;
+  background: var(--todo-category-tone, #cfd6db);
 }
 
 .todo-card.status-completed strong,
@@ -944,6 +950,33 @@
   color: var(--text-muted);
 }
 
+.detail-list-select {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  max-width: 100%;
+  padding-right: 18px;
+}
+
+.detail-list-select select {
+  appearance: none;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #90a4ae;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.detail-list-select .detail-list-arrow {
+  position: absolute;
+  right: 0;
+  pointer-events: none;
+}
+
 .detail-title-input {
   min-height: 0;
   padding: 14px 0 0;
@@ -1000,42 +1033,10 @@
   display: none;
 }
 
-.detail-inline-field select {
-  min-height: 44px;
-  border-color: #e7ebef;
-  border-radius: 14px;
-  color: #2c3e50;
-}
-
-.detail-status-grid,
 .detail-date-shortcuts {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
-}
-
-.detail-status-choice {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 36px;
-  padding: 0 12px;
-  border: 1px solid #e0e5ea;
-  border-radius: 10px;
-  background: #f5f7fa;
-  color: var(--text-soft);
-  font-size: 0.75rem;
-  font-weight: 500;
-}
-
-.detail-status-choice.active {
-  border-color: transparent;
-}
-
-.detail-status-choice-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .detail-note-field textarea {
@@ -1259,8 +1260,7 @@
     text-align: center;
   }
 
-  .board-header,
-  .board-date-strip {
+  .board-header {
     flex-direction: column;
     align-items: stretch;
   }

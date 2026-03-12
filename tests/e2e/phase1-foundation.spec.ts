@@ -15,7 +15,7 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   await page.getByRole('button', { name: '调用 workspace-create' }).click()
   await expect(page.getByRole('heading', { name: '全部任务' })).toBeVisible()
 
-  await page.getByRole('button', { name: '切换分类管理' }).click()
+  await page.getByRole('button', { name: '新建分类' }).click()
   await page.getByPlaceholder('例如：工作、生活、学习…').fill('产品设计')
   await page.getByRole('button', { name: '添加分类' }).click()
   await expect(page.getByRole('button', { name: '产品设计', exact: true })).toBeVisible()
@@ -28,18 +28,23 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
 
   await page.getByLabel('备注').fill('右侧详情支持完整编辑任务字段')
   await page.getByLabel('日期').fill('2026-03-21')
-  await page.getByRole('button', { name: '设置状态为进行中' }).click()
+  const createdTask = page.locator('article', {
+    has: page.getByRole('button', { name: '查看任务 完成任务工作台 UI' }),
+  })
+  await createdTask.getByRole('button', { name: '切换任务状态，当前未开始' }).click()
 
-  await expect(page.getByRole('button', { name: '设置状态为进行中' })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  )
+  await expect(
+    createdTask.getByRole('button', { name: '切换任务状态，当前进行中' }),
+  ).toBeVisible()
   await expect(page.getByLabel('日期')).toHaveValue('2026-03-21')
   await expect(page.getByLabel('备注')).toHaveValue('右侧详情支持完整编辑任务字段')
   await page.waitForTimeout(700)
 
   await page.reload()
 
+  const restoredTask = page.locator('article', {
+    has: page.getByRole('button', { name: '查看任务 完成任务工作台 UI' }),
+  })
   await expect(page.getByRole('button', { name: '产品设计', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: '查看任务 完成任务工作台 UI' })).toBeVisible()
   await page.getByRole('button', { name: '查看任务 完成任务工作台 UI' }).click()
@@ -47,8 +52,7 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
     '右侧详情支持完整编辑任务字段',
   )
   await expect(page.getByLabel('日期')).toHaveValue('2026-03-21')
-  await expect(page.getByRole('button', { name: '设置状态为进行中' })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  )
+  await expect(
+    restoredTask.getByRole('button', { name: '切换任务状态，当前进行中' }),
+  ).toBeVisible()
 })
