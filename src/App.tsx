@@ -3,15 +3,20 @@ import type { CSSProperties, FormEvent } from 'react'
 import { DayPicker } from 'react-day-picker'
 import 'react-day-picker/dist/style.css'
 import {
+  Ban,
+  CheckCircle2,
   ChevronDown,
+  Circle,
   Inbox,
   MoreHorizontal,
+  PauseCircle,
+  PlayCircle,
   Plus,
   Repeat,
   Trash2,
 } from 'lucide-react'
 import { zhCN } from 'date-fns/locale'
-import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import './App.css'
 import {
   getCurrentWorkspaceMeta,
@@ -51,8 +56,8 @@ const categoryPalette = ['#2F6EA4', '#4D7A67', '#C25E4E', '#8B5FD6', '#B36A1D', 
 const categorySuggestionLabels = ['工作', '生活', '学习', '书影音', '项目-X']
 
 const filterLabels: Record<TaskFilter, string> = {
-  all: '全部任务',
-  today: '今天',
+  all: '待办箱',
+  today: '我的一天',
   overdue: '逾期',
   completed: '已完成',
 }
@@ -109,6 +114,7 @@ function App() {
 
   const [activeFilter, setActiveFilter] = useState<TaskFilter>('all')
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
+  const [selectedUncategorized, setSelectedUncategorized] = useState(false)
   const [selectedTodoId, setSelectedTodoId] = useState<string | null>(null)
   const [quickTodoTitle, setQuickTodoTitle] = useState('')
   const [newCategoryName, setNewCategoryName] = useState('')
@@ -141,6 +147,10 @@ function App() {
   const visibleTodos = useMemo(
     () =>
       activeTodos.filter((todo) => {
+        if (selectedUncategorized) {
+          return todo.categoryId === null
+        }
+
         if (selectedCategoryId && todo.categoryId !== selectedCategoryId) {
           return false
         }
@@ -156,7 +166,7 @@ function App() {
             return true
         }
       }),
-    [activeFilter, activeTodos, selectedCategoryId],
+    [activeFilter, activeTodos, selectedCategoryId, selectedUncategorized],
   )
 
   const selectedTodo = activeTodos.find((todo) => todo.id === selectedTodoId) ?? null
@@ -615,7 +625,14 @@ function App() {
     )
   }
 
-  const boardTitle = selectedCategory ? selectedCategory.name : filterLabels[activeFilter]
+  const boardTitle =
+    location.pathname === '/calendar'
+      ? '日程概览'
+      : selectedUncategorized
+        ? '未分类'
+        : selectedCategory
+          ? selectedCategory.name
+          : filterLabels[activeFilter]
 
   return (
     <main className={shellClassName}>
@@ -625,6 +642,8 @@ function App() {
         setActiveFilter={setActiveFilter}
         selectedCategoryId={selectedCategoryId}
         setSelectedCategoryId={setSelectedCategoryId}
+        selectedUncategorized={selectedUncategorized}
+        setSelectedUncategorized={setSelectedUncategorized}
         sidebarCounts={sidebarCounts}
         categories={activeCategories}
         newCategoryName={newCategoryName}
@@ -647,17 +666,7 @@ function App() {
           <div className="board-heading">
             <div className="board-title-row">
               <h1>{boardTitle}</h1>
-              {location.pathname !== '/calendar' ? (
-                <span className="board-count">{String(visibleTodos.length).padStart(2, '0')}</span>
-              ) : null}
             </div>
-          </div>
-
-          <div className="board-actions">
-            <nav className="route-switch" aria-label="主导航">
-              <NavLink to="/todos">任务</NavLink>
-              <NavLink to="/calendar">月历</NavLink>
-            </nav>
           </div>
         </header>
 
@@ -847,6 +856,8 @@ function Sidebar({
   setActiveFilter,
   selectedCategoryId,
   setSelectedCategoryId,
+  selectedUncategorized,
+  setSelectedUncategorized,
   sidebarCounts,
   categories,
   newCategoryName,
@@ -868,6 +879,8 @@ function Sidebar({
   setActiveFilter: (filter: TaskFilter) => void
   selectedCategoryId: string | null
   setSelectedCategoryId: (id: string | null) => void
+  selectedUncategorized: boolean
+  setSelectedUncategorized: (value: boolean) => void
   sidebarCounts: Record<TaskFilter, number>
   categories: CategoryRecord[]
   newCategoryName: string
@@ -887,6 +900,8 @@ function Sidebar({
   const [categoryDialogMode, setCategoryDialogMode] = useState<'create' | 'edit' | null>(null)
   const [menuCategoryId, setMenuCategoryId] = useState<string | null>(null)
   const [pendingDeleteCategory, setPendingDeleteCategory] = useState<CategoryRecord | null>(null)
+  const navigate = useNavigate()
+  const location = useLocation()
 
   const dialogTitle = categoryDialogMode === 'edit' ? '修改分类' : '新建分类'
 
@@ -936,22 +951,47 @@ function Sidebar({
       </div>
 
       <nav className="sidebar-section sidebar-nav" aria-label="任务筛选">
-        {(Object.keys(filterLabels) as TaskFilter[]).map((filter) => (
+        {(
+          [
+            { id: 'today', label: '我的一天', count: sidebarCounts.today },
+            { id: 'all', label: '待办箱', count: sidebarCounts.all },
+          ] as const
+        ).map((item) => (
           <button
-            key={filter}
-            className={activeFilter === filter && !selectedCategoryId ? 'sidebar-item active' : 'sidebar-item'}
+            key={item.id}
+            className={
+              activeFilter === item.id && !selectedCategoryId && !selectedUncategorized
+                ? 'sidebar-item active'
+                : 'sidebar-item'
+            }
             onClick={() => {
+              navigate('/todos')
               setSelectedCategoryId(null)
-              setActiveFilter(filter)
+              setSelectedUncategorized(false)
+              setActiveFilter(item.id)
             }}
           >
             <span className="sidebar-item-main">
-              <span className={`sidebar-icon sidebar-icon-${filter}`} aria-hidden="true" />
-              <span>{filterLabels[filter]}</span>
+              <span className={`sidebar-icon sidebar-icon-${item.id}`} aria-hidden="true" />
+              <span>{item.label}</span>
             </span>
-            <b>{sidebarCounts[filter]}</b>
+            <b>{item.count}</b>
           </button>
         ))}
+
+        <button
+          className={location.pathname === '/calendar' ? 'sidebar-item active' : 'sidebar-item'}
+          onClick={() => {
+            setSelectedCategoryId(null)
+            setSelectedUncategorized(false)
+            navigate('/calendar')
+          }}
+        >
+          <span className="sidebar-item-main">
+            <span className="sidebar-icon sidebar-icon-calendar" aria-hidden="true" />
+            <span>日程概览</span>
+          </span>
+        </button>
       </nav>
 
       <section className="sidebar-section sidebar-card sidebar-category-section">
@@ -970,6 +1010,21 @@ function Sidebar({
         </div>
 
         <div className="category-list">
+          <div className={selectedUncategorized ? 'category-row active' : 'category-row'}>
+            <button
+              className={selectedUncategorized ? 'category-item active' : 'category-item'}
+              onClick={() => {
+                navigate('/todos')
+                setSelectedCategoryId(null)
+                setSelectedUncategorized(true)
+                setActiveFilter('all')
+              }}
+            >
+              <span className="color-dot neutral" />
+              <span className="category-name">未分类</span>
+            </button>
+          </div>
+
           {categories.map((category) => (
             <div
               key={category.id}
@@ -978,7 +1033,9 @@ function Sidebar({
               <button
                 className={selectedCategoryId === category.id ? 'category-item active' : 'category-item'}
                 onClick={() => {
+                  navigate('/todos')
                   setSelectedCategoryId(category.id)
+                  setSelectedUncategorized(false)
                   setActiveFilter('all')
                 }}
               >
@@ -1038,27 +1095,32 @@ function Sidebar({
 
             <form className="category-dialog-form" onSubmit={(event) => void handleCategoryDialogSubmit(event)}>
               <div className="category-dialog-banner">
-                <button type="button" className="category-dialog-tab active">
-                  分类清单
-                </button>
-                <button type="button" className="category-dialog-tab" disabled>
-                  文件夹
-                </button>
+                <span>{categoryDialogMode === 'edit' ? '修改分类' : '新建分类'}</span>
               </div>
 
-              <label>
+              <label className="category-name-field">
                 <span>{categoryDialogMode === 'edit' ? '分类名称' : '新分类'}</span>
-                <input
-                  value={categoryDialogMode === 'edit' ? categoryEditorName : newCategoryName}
-                  onChange={(event) =>
-                    categoryDialogMode === 'edit'
-                      ? setCategoryEditorName(event.target.value)
-                      : setNewCategoryName(event.target.value)
-                  }
-                  placeholder="例如：工作、生活、学习…"
-                  name={categoryDialogMode === 'edit' ? 'categoryEditorName' : 'newCategoryName'}
-                  autoComplete="off"
-                />
+                <div className="category-name-input-shell">
+                  <span
+                    className="category-name-color"
+                    style={{
+                      backgroundColor:
+                        categoryDialogMode === 'edit' ? categoryEditorColor : newCategoryColor,
+                    }}
+                    aria-hidden="true"
+                  />
+                  <input
+                    value={categoryDialogMode === 'edit' ? categoryEditorName : newCategoryName}
+                    onChange={(event) =>
+                      categoryDialogMode === 'edit'
+                        ? setCategoryEditorName(event.target.value)
+                        : setNewCategoryName(event.target.value)
+                    }
+                    placeholder="分类名称"
+                    name={categoryDialogMode === 'edit' ? 'categoryEditorName' : 'newCategoryName'}
+                    autoComplete="off"
+                  />
+                </div>
               </label>
 
               <div className="category-suggestion-row" aria-label="快捷分类名称">
@@ -1100,9 +1162,6 @@ function Sidebar({
               </div>
 
               <div className="category-dialog-actions">
-                <button className="secondary-button" type="button" onClick={closeCategoryDialog}>
-                  取消
-                </button>
                 <button
                   className="primary-button"
                   type="submit"
@@ -1112,6 +1171,9 @@ function Sidebar({
                   }
                 >
                   {categoryDialogMode === 'edit' ? '保存分类' : '添加分类'}
+                </button>
+                <button className="secondary-button" type="button" onClick={closeCategoryDialog}>
+                  取消
                 </button>
               </div>
             </form>
@@ -1155,7 +1217,11 @@ function Sidebar({
               >
                 确定
               </button>
-              <button className="secondary-button" type="button" onClick={() => setPendingDeleteCategory(null)}>
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => setPendingDeleteCategory(null)}
+              >
                 取消
               </button>
             </div>
@@ -1783,15 +1849,15 @@ function formatDateInputValue(date: Date) {
 function renderStatusIcon(status: TodoStatus) {
   switch (status) {
     case 'in_progress':
-      return '•'
+      return <PlayCircle size={15} strokeWidth={2} />
     case 'completed':
-      return '✓'
+      return <CheckCircle2 size={15} strokeWidth={2} />
     case 'blocked':
-      return '!'
+      return <PauseCircle size={15} strokeWidth={2} />
     case 'canceled':
-      return '−'
+      return <Ban size={15} strokeWidth={2} />
     default:
-      return ''
+      return <Circle size={15} strokeWidth={2} />
   }
 }
 

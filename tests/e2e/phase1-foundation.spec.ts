@@ -13,10 +13,10 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
 
   await page.getByPlaceholder('至少 6 个字符…').fill(passphrase)
   await page.getByRole('button', { name: '调用 workspace-create' }).click()
-  await expect(page.getByRole('heading', { name: '全部任务' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '待办箱' })).toBeVisible()
 
   await page.getByRole('button', { name: '新建分类' }).click()
-  await page.getByPlaceholder('例如：工作、生活、学习…').fill('产品设计')
+  await page.getByPlaceholder('分类名称').fill('产品设计')
   await page.getByRole('button', { name: '添加分类' }).click()
   await expect(page.getByRole('button', { name: '产品设计', exact: true })).toBeVisible()
 
