@@ -3,7 +3,6 @@ import type { CSSProperties, FormEvent } from 'react'
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import './App.css'
 import {
-  ensureSyncMeta,
   getCurrentWorkspaceMeta,
   listCategories,
   listPendingOutbox,
@@ -18,7 +17,6 @@ import {
 import { envSummary, isSupabaseConfigured } from './lib/env'
 import type { CategoryRecord, TodoRecord, TodoRecurrenceType, TodoStatus } from './lib/types'
 import { enqueueRecordMutation } from './lib/sync'
-import type { SyncMeta } from './lib/sync-types'
 import { ensureAnonymousSession, invokeWorkspaceFunction } from './lib/supabase'
 
 type WorkspaceMode = 'create' | 'join'
@@ -103,7 +101,6 @@ function App() {
 
   const [categories, setCategories] = useState<CategoryRecord[]>([])
   const [todos, setTodos] = useState<TodoRecord[]>([])
-  const [syncStatus, setSyncStatus] = useState<SyncMeta['status']>('idle')
   const [pendingOutboxCount, setPendingOutboxCount] = useState(0)
 
   const [activeFilter, setActiveFilter] = useState<TaskFilter>('all')
@@ -251,23 +248,20 @@ function App() {
       setCategories([])
       setTodos([])
       setPendingOutboxCount(0)
-      setSyncStatus('idle')
       setSelectedTodoId(null)
       return
     }
 
-    const [workspaceMeta, nextCategories, nextTodos, meta, outbox] = await Promise.all([
+    const [workspaceMeta, nextCategories, nextTodos, outbox] = await Promise.all([
       getCurrentWorkspaceMeta(),
       listCategories(resolvedWorkspaceId),
       listTodos(resolvedWorkspaceId),
-      ensureSyncMeta(resolvedWorkspaceId),
       listPendingOutbox(resolvedWorkspaceId),
     ])
 
     setWorkspaceId(resolvedWorkspaceId)
     setCategories(nextCategories)
     setTodos(nextTodos)
-    setSyncStatus(meta.status)
     setPendingOutboxCount(outbox.length)
     setSessionLabel(
       workspaceMeta?.anonymousUserId
@@ -481,11 +475,7 @@ function App() {
       await upsertTodo(updated)
       await enqueueRecordMutation('todos', 'upsert', toSyncTodo(updated))
       await refreshWorkspaceData(workspaceId)
-      setMessage(
-        updated.status === 'completed'
-          ? `任务「${todo.title}」已完成。`
-          : `任务「${todo.title}」已恢复为进行中。`,
-      )
+      setMessage(`任务「${todo.title}」状态已切换为 ${todoStatusMeta[updated.status].label}。`)
     } finally {
       setBusy(false)
     }
@@ -573,12 +563,6 @@ function App() {
       <Sidebar
         workspaceId={workspaceId}
         sessionLabel={sessionLabel}
-        syncStatus={syncStatus}
-        pendingOutboxCount={pendingOutboxCount}
-        envSummary={envSummary}
-        installPrompt={installPrompt}
-        pwaLabel={pwaLabel}
-        handleInstall={handleInstall}
         activeFilter={activeFilter}
         setActiveFilter={setActiveFilter}
         selectedCategoryId={selectedCategoryId}
@@ -602,10 +586,7 @@ function App() {
 
       <section className="board-pane">
         <header className="board-header">
-          <div className="board-heading">
-            <p className="eyebrow">Task Console</p>
-            <h1>{selectedCategory ? selectedCategory.name : filterLabels[activeFilter]}</h1>
-          </div>
+          <h1>{selectedCategory ? selectedCategory.name : filterLabels[activeFilter]}</h1>
 
           <div className="board-actions">
             <nav className="route-switch" aria-label="主导航">
@@ -621,10 +602,6 @@ function App() {
             path="/todos"
             element={
               <TodoBoard
-                busy={busy}
-                activeFilter={activeFilter}
-                setActiveFilter={setActiveFilter}
-                selectedCategory={selectedCategory}
                 quickTodoTitle={quickTodoTitle}
                 setQuickTodoTitle={setQuickTodoTitle}
                 handleQuickCreateTodo={handleQuickCreateTodo}
@@ -800,12 +777,6 @@ function OnboardingLayout({
 function Sidebar({
   workspaceId,
   sessionLabel,
-  syncStatus,
-  pendingOutboxCount,
-  envSummary,
-  installPrompt,
-  pwaLabel,
-  handleInstall,
   activeFilter,
   setActiveFilter,
   selectedCategoryId,
@@ -828,12 +799,6 @@ function Sidebar({
 }: {
   workspaceId: string
   sessionLabel: string
-  syncStatus: SyncMeta['status']
-  pendingOutboxCount: number
-  envSummary: string
-  installPrompt: BeforeInstallPromptEvent | null
-  pwaLabel: string
-  handleInstall: () => Promise<void>
   activeFilter: TaskFilter
   setActiveFilter: (filter: TaskFilter) => void
   selectedCategoryId: string | null
@@ -854,18 +819,22 @@ function Sidebar({
   handleDeleteCategory: () => Promise<void>
   busy: boolean
 }) {
-  const [showCategoryCreate, setShowCategoryCreate] = useState(false)
-  const [showCategoryEditor, setShowCategoryEditor] = useState(false)
+  const [showCategoryManager, setShowCategoryManager] = useState(false)
 
   return (
     <aside className="sidebar-pane">
       <div className="sidebar-top">
         <p className="eyebrow">Workspace</p>
         <h2>PlanTick</h2>
-        <p className="workspace-token">{workspaceId}</p>
+        <p className="workspace-token" title={sessionLabel}>
+          {workspaceId}
+        </p>
       </div>
 
       <nav className="sidebar-section" aria-label="任务筛选">
+        <div className="section-head">
+          <p>视图</p>
+        </div>
         {(Object.keys(filterLabels) as TaskFilter[]).map((filter) => (
           <button
             key={filter}
@@ -885,23 +854,13 @@ function Sidebar({
         <div className="section-head">
           <p>分类</p>
           <div className="section-tools">
-            <span>{categories.length}</span>
             <button
               type="button"
-              className={showCategoryCreate ? 'icon-button active' : 'icon-button'}
-              aria-label="切换新建分类"
-              onClick={() => setShowCategoryCreate((current) => !current)}
+              className={showCategoryManager ? 'icon-button active' : 'icon-button'}
+              aria-label="切换分类管理"
+              onClick={() => setShowCategoryManager((current) => !current)}
             >
-              新建
-            </button>
-            <button
-              type="button"
-              className={showCategoryEditor ? 'icon-button active' : 'icon-button'}
-              aria-label="切换分类设置"
-              disabled={!selectedCategory}
-              onClick={() => setShowCategoryEditor((current) => !current)}
-            >
-              设置
+              管理
             </button>
           </div>
         </div>
@@ -922,103 +881,81 @@ function Sidebar({
           ))}
         </div>
 
-        {showCategoryCreate ? (
-          <form className="sidebar-drawer category-create" onSubmit={(event) => void handleCreateCategory(event)}>
-            <label>
-              <span>新分类</span>
-              <input
-                value={newCategoryName}
-                onChange={(event) => setNewCategoryName(event.target.value)}
-                placeholder="例如：工作、生活、学习"
-              />
-            </label>
-
-            <div className="palette-row" aria-label="分类颜色">
-              {categoryPalette.map((color) => (
-                <button
-                  key={color}
-                  type="button"
-                  className={newCategoryColor === color ? 'palette-chip active' : 'palette-chip'}
-                  style={{ backgroundColor: color }}
-                  aria-label={`颜色 ${color}`}
-                  onClick={() => setNewCategoryColor(color)}
+        {showCategoryManager ? (
+          <div className="sidebar-drawer category-manager">
+            <form className="category-create" onSubmit={(event) => void handleCreateCategory(event)}>
+              <label>
+                <span>新分类</span>
+                <input
+                  value={newCategoryName}
+                  onChange={(event) => setNewCategoryName(event.target.value)}
+                  placeholder="例如：工作、生活、学习"
                 />
-              ))}
-            </div>
+              </label>
 
-            <button
-              className="secondary-button"
-              type="submit"
-              disabled={busy || !newCategoryName.trim()}
-            >
-              保存新分类
-            </button>
-          </form>
-        ) : null}
+              <div className="palette-row" aria-label="分类颜色">
+                {categoryPalette.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    className={newCategoryColor === color ? 'palette-chip active' : 'palette-chip'}
+                    style={{ backgroundColor: color }}
+                    aria-label={`颜色 ${color}`}
+                    onClick={() => setNewCategoryColor(color)}
+                  />
+                ))}
+              </div>
 
-        {selectedCategory && showCategoryEditor ? (
-          <div className="sidebar-drawer category-editor">
-            <div className="section-head compact">
-              <p>分类设置</p>
-              <span>当前选中</span>
-            </div>
-
-            <label>
-              <span>名称</span>
-              <input
-                value={categoryEditorName}
-                onChange={(event) => setCategoryEditorName(event.target.value)}
-              />
-            </label>
-
-            <div className="palette-row" aria-label="编辑分类颜色">
-              {categoryPalette.map((color) => (
-                <button
-                  key={color}
-                  type="button"
-                  className={categoryEditorColor === color ? 'palette-chip active' : 'palette-chip'}
-                  style={{ backgroundColor: color }}
-                  aria-label={`编辑颜色 ${color}`}
-                  onClick={() => setCategoryEditorColor(color)}
-                />
-              ))}
-            </div>
-
-            <div className="editor-actions">
-              <button className="secondary-button" onClick={() => void handleSaveCategory()} disabled={busy}>
-                保存分类
+              <button
+                className="secondary-button"
+                type="submit"
+                disabled={busy || !newCategoryName.trim()}
+              >
+                添加分类
               </button>
-              <button className="danger-button" onClick={() => void handleDeleteCategory()} disabled={busy}>
-                删除分类
-              </button>
-            </div>
+            </form>
+
+            {selectedCategory ? (
+              <div className="category-editor">
+                <label>
+                  <span>当前分类</span>
+                  <input
+                    value={categoryEditorName}
+                    onChange={(event) => setCategoryEditorName(event.target.value)}
+                  />
+                </label>
+
+                <div className="palette-row" aria-label="编辑分类颜色">
+                  {categoryPalette.map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      className={categoryEditorColor === color ? 'palette-chip active' : 'palette-chip'}
+                      style={{ backgroundColor: color }}
+                      aria-label={`编辑颜色 ${color}`}
+                      onClick={() => setCategoryEditorColor(color)}
+                    />
+                  ))}
+                </div>
+
+                <div className="editor-actions">
+                  <button className="secondary-button" onClick={() => void handleSaveCategory()} disabled={busy}>
+                    保存
+                  </button>
+                  <button className="danger-button" onClick={() => void handleDeleteCategory()} disabled={busy}>
+                    删除
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </section>
-
-      <footer className="sidebar-footer">
-        <small>{sessionLabel}</small>
-        <small>
-          同步 {syncStatus} · 待同步 {pendingOutboxCount}
-        </small>
-        <small>{envSummary}</small>
-        <button
-          className="install-chip"
-          onClick={() => void handleInstall()}
-          disabled={!installPrompt}
-        >
-          {installPrompt ? '安装 PWA' : pwaLabel}
-        </button>
-      </footer>
     </aside>
   )
 }
 
 function TodoBoard({
-  busy,
-  activeFilter,
-  setActiveFilter,
-  selectedCategory,
   quickTodoTitle,
   setQuickTodoTitle,
   handleQuickCreateTodo,
@@ -1029,10 +966,6 @@ function TodoBoard({
   handleToggleTodo,
   message,
 }: {
-  busy: boolean
-  activeFilter: TaskFilter
-  setActiveFilter: (filter: TaskFilter) => void
-  selectedCategory: CategoryRecord | null
   quickTodoTitle: string
   setQuickTodoTitle: (value: string) => void
   handleQuickCreateTodo: (event: FormEvent<HTMLFormElement>) => Promise<void>
@@ -1046,31 +979,14 @@ function TodoBoard({
   return (
     <section className="todo-board">
       <div className="board-toolbar">
-        <div className="board-toolbar-row">
-          <form className="quick-create" onSubmit={(event) => void handleQuickCreateTodo(event)}>
-            <input
-              value={quickTodoTitle}
-              onChange={(event) => setQuickTodoTitle(event.target.value)}
-              placeholder="快速新建任务"
-              aria-label="快速新建任务"
-            />
-            <button className="primary-button" type="submit" disabled={busy || !quickTodoTitle.trim()}>
-              新建
-            </button>
-          </form>
-
-          <div className="filter-tabs" role="tablist" aria-label="任务筛选">
-            {(['all', 'today', 'overdue', 'completed'] as TaskFilter[]).map((filter) => (
-              <button
-                key={filter}
-                className={activeFilter === filter && !selectedCategory ? 'active' : ''}
-                onClick={() => setActiveFilter(filter)}
-              >
-                {filterLabels[filter]}
-              </button>
-            ))}
-          </div>
-        </div>
+        <form className="quick-create" onSubmit={(event) => void handleQuickCreateTodo(event)}>
+          <input
+            value={quickTodoTitle}
+            onChange={(event) => setQuickTodoTitle(event.target.value)}
+            placeholder="输入任务后回车创建"
+            aria-label="快速新建任务"
+          />
+        </form>
       </div>
 
       {visibleTodos.length ? (
@@ -1094,10 +1010,12 @@ function TodoBoard({
               >
                 <button
                   type="button"
-                  className={todo.status === 'completed' ? 'checkmark is-complete' : 'checkmark'}
-                  aria-label={todo.status === 'completed' ? '恢复任务' : '完成任务'}
+                  className={`todo-status-trigger todo-status-${todo.status}`}
+                  aria-label={`切换任务状态，当前${statusMeta.label}`}
                   onClick={() => void handleToggleTodo(todo)}
-                />
+                >
+                  {statusMeta.label}
+                </button>
 
                 <button
                   type="button"
@@ -1106,28 +1024,11 @@ function TodoBoard({
                   onClick={() => setSelectedTodoId(todo.id)}
                 >
                   <div className="todo-row">
-                    <div className="todo-line">
-                      <strong>{todo.title}</strong>
-                      {category ? (
-                        <span className="todo-badge" style={{ color: category.color }}>
-                          {category.name}
-                        </span>
-                      ) : (
-                        <span className="todo-badge muted">未分类</span>
-                      )}
-                    </div>
+                    <strong>{todo.title}</strong>
 
                     <div className="todo-secondary">
-                      <span
-                        className={`status-pill status-pill-${todo.status}`}
-                        style={
-                          {
-                            '--status-tone': statusMeta.tone,
-                            '--status-accent': statusMeta.accent,
-                          } as CSSProperties
-                        }
-                      >
-                        {statusMeta.label}
+                      <span className="todo-badge" style={{ color: category?.color ?? statusMeta.tone }}>
+                        {category?.name ?? '未分类'}
                       </span>
                       <span className={dueLabel.emphasis ? 'todo-due is-alert' : 'todo-due'}>
                         {dueLabel.label}
@@ -1184,19 +1085,25 @@ function TodoDetailPane({
           </div>
 
           <div className="detail-overview">
-            <span
-              className={`status-pill status-pill-${selectedTodo.status}`}
+            <button
+              type="button"
+              className={`detail-status-rotator detail-status-${detailDraft.status}`}
               style={
                 {
-                  '--status-tone': todoStatusMeta[selectedTodo.status].tone,
-                  '--status-accent': todoStatusMeta[selectedTodo.status].accent,
+                  '--status-tone': todoStatusMeta[detailDraft.status].tone,
+                  '--status-accent': todoStatusMeta[detailDraft.status].accent,
                 } as CSSProperties
               }
+              onClick={() =>
+                setDetailDraft({
+                  ...detailDraft,
+                  status: nextTodoStatus(detailDraft.status),
+                })
+              }
             >
-              {todoStatusMeta[selectedTodo.status].label}
-            </span>
-            <span>{selectedTodo.dueDate ? `截止 ${selectedTodo.dueDate}` : '未设置截止日期'}</span>
-            <span>{formatRecurrence(detailDraft.recurrenceType)}</span>
+              {todoStatusMeta[detailDraft.status].label}
+            </button>
+            <span>{detailDraft.dueDate ? detailDraft.dueDate : '无日期'}</span>
           </div>
 
           <div className="detail-stack">
@@ -1214,29 +1121,68 @@ function TodoDetailPane({
               />
             </label>
 
-            <div className="detail-split">
-              <label>
-                <span>分类</span>
-                <select
-                  value={detailDraft.categoryId}
-                  onChange={(event) =>
+            <label>
+              <span>分类</span>
+              <select
+                value={detailDraft.categoryId}
+                onChange={(event) =>
+                  setDetailDraft({
+                    ...detailDraft,
+                    categoryId: event.target.value,
+                  })
+                }
+              >
+                <option value="">未分类</option>
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="detail-date-block">
+              <span>日期</span>
+              <div className="detail-date-shortcuts">
+                <button
+                  type="button"
+                  className={detailDraft.dueDate === todayDate() ? 'ghost-button active' : 'ghost-button'}
+                  onClick={() =>
                     setDetailDraft({
                       ...detailDraft,
-                      categoryId: event.target.value,
+                      dueDate: todayDate(),
                     })
                   }
                 >
-                  <option value="">未分类</option>
-                  {categories.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  今天
+                </button>
+                <button
+                  type="button"
+                  className={detailDraft.dueDate === nextDate(1) ? 'ghost-button active' : 'ghost-button'}
+                  onClick={() =>
+                    setDetailDraft({
+                      ...detailDraft,
+                      dueDate: nextDate(1),
+                    })
+                  }
+                >
+                  明天
+                </button>
+                <button
+                  type="button"
+                  className={!detailDraft.dueDate ? 'ghost-button active' : 'ghost-button'}
+                  onClick={() =>
+                    setDetailDraft({
+                      ...detailDraft,
+                      dueDate: '',
+                    })
+                  }
+                >
+                  无日期
+                </button>
+              </div>
 
-              <label>
-                <span>截止日期</span>
+              <div className="detail-date-picker">
                 <input
                   type="date"
                   value={detailDraft.dueDate}
@@ -1247,58 +1193,8 @@ function TodoDetailPane({
                     })
                   }
                 />
-              </label>
-            </div>
-
-            <div className="status-picker">
-              <span>任务状态</span>
-              <div className="status-picker-grid" role="list" aria-label="任务状态">
-                {(Object.keys(todoStatusMeta) as TodoStatus[]).map((status) => {
-                  const meta = todoStatusMeta[status]
-
-                  return (
-                    <button
-                      key={status}
-                      type="button"
-                      className={detailDraft.status === status ? 'status-option active' : 'status-option'}
-                      aria-label={`状态 ${meta.label}`}
-                      style={
-                        {
-                          '--status-tone': meta.tone,
-                          '--status-accent': meta.accent,
-                        } as CSSProperties
-                      }
-                      onClick={() =>
-                        setDetailDraft({
-                          ...detailDraft,
-                          status,
-                        })
-                      }
-                    >
-                      <strong>{meta.label}</strong>
-                    </button>
-                  )
-                })}
               </div>
             </div>
-
-            <label>
-              <span>重复规则</span>
-              <select
-                value={detailDraft.recurrenceType}
-                onChange={(event) =>
-                  setDetailDraft({
-                    ...detailDraft,
-                    recurrenceType: event.target.value as TodoRecurrenceType,
-                  })
-                }
-              >
-                <option value="none">不重复</option>
-                <option value="daily">每天</option>
-                <option value="weekly">每周</option>
-                <option value="monthly">每月</option>
-              </select>
-            </label>
 
             <label>
               <span>备注</span>
@@ -1431,7 +1327,7 @@ function createTodoRecord(
 function formatDueDate(value: string | null, status: TodoStatus) {
   if (!value) {
     return {
-      label: '--',
+      label: '无日期',
       emphasis: false,
     }
   }
@@ -1466,20 +1362,19 @@ function formatTimestamp(value: string) {
 }
 
 function toggleTodoStatus(status: TodoStatus): TodoStatus {
-  return status === 'completed' ? 'in_progress' : 'completed'
+  return nextTodoStatus(status)
 }
 
-function formatRecurrence(value: TodoRecurrenceType) {
-  switch (value) {
-    case 'daily':
-      return '每天'
-    case 'weekly':
-      return '每周'
-    case 'monthly':
-      return '每月'
-    default:
-      return '不重复'
-  }
+function nextTodoStatus(status: TodoStatus): TodoStatus {
+  const cycle: TodoStatus[] = ['not_started', 'in_progress', 'blocked', 'completed', 'canceled']
+  const currentIndex = cycle.indexOf(status)
+  return cycle[(currentIndex + 1) % cycle.length]
+}
+
+function nextDate(days: number) {
+  const next = new Date()
+  next.setDate(next.getDate() + days)
+  return next.toISOString().slice(0, 10)
 }
 
 function toSyncCategory(record: CategoryRecord) {
