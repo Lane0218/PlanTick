@@ -54,7 +54,18 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
 }
 
-const categoryPalette = ['#2F6EA4', '#4D7A67', '#C25E4E', '#8B5FD6', '#B36A1D', '#0E7C86']
+const categoryPalette = [
+  '#2F6EA4',
+  '#4D7A67',
+  '#C25E4E',
+  '#8B5FD6',
+  '#B36A1D',
+  '#0E7C86',
+  '#D46A7A',
+  '#556FB5',
+  '#7C8F49',
+  '#C78A3B',
+]
 const categorySuggestionLabels = ['工作', '生活', '学习', '书影音', '项目-X']
 
 const filterLabels: Record<TaskFilter, string> = {
@@ -1100,12 +1111,8 @@ function Sidebar({
             </div>
 
             <form className="category-dialog-form" onSubmit={(event) => void handleCategoryDialogSubmit(event)}>
-              <div className="category-dialog-banner">
-                <span>{categoryDialogMode === 'edit' ? '修改分类' : '新建分类'}</span>
-              </div>
-
               <label className="category-name-field">
-                <span>{categoryDialogMode === 'edit' ? '分类名称' : '新分类'}</span>
+                <span>分类名称</span>
                 <div className="category-name-input-shell">
                   <span
                     className="category-name-color"
@@ -1209,7 +1216,7 @@ function Sidebar({
             </div>
 
             <p className="category-confirm-copy">
-              删除分类后，分类里的事件会全部保留，是否确定删除？
+              删除分类后，该分类下的任务会保留，并自动移动到“未分类”。是否确认删除？
             </p>
 
             <div className="category-dialog-actions category-confirm-actions">
@@ -1285,12 +1292,14 @@ function TodoBoard({
             const statusMeta = todoStatusMeta[todo.status]
             const dueLabel = formatDueDate(todo.dueDate, todo.status)
             const noteExcerpt = todo.note.trim().split('\n')[0]
+            const hasNoteExcerpt = Boolean(noteExcerpt)
 
             return (
               <article
                 key={todo.id}
                 className={[
                   'todo-card',
+                  hasNoteExcerpt ? 'has-note' : 'no-note',
                   `status-${todo.status}`,
                   selectedTodoId === todo.id ? 'active' : '',
                 ]
@@ -1320,11 +1329,11 @@ function TodoBoard({
 
                 <button
                   type="button"
-                  className="todo-main"
+                  className={hasNoteExcerpt ? 'todo-main has-note' : 'todo-main no-note'}
                   aria-label={`查看任务 ${todo.title}`}
                   onClick={() => setSelectedTodoId(todo.id)}
                 >
-                  <div className="todo-row">
+                  <div className={hasNoteExcerpt ? 'todo-row has-note' : 'todo-row no-note'}>
                     <strong>{todo.title}</strong>
                     {dueLabel.label ? (
                       <span className={dueLabel.emphasis ? 'todo-due is-alert' : 'todo-due'}>
@@ -1828,7 +1837,7 @@ function toggleTodoStatus(status: TodoStatus): TodoStatus {
 }
 
 function nextTodoStatus(status: TodoStatus): TodoStatus {
-  const cycle: TodoStatus[] = ['not_started', 'in_progress', 'blocked', 'completed', 'canceled']
+  const cycle: TodoStatus[] = ['not_started', 'in_progress', 'completed', 'blocked', 'canceled']
   const currentIndex = cycle.indexOf(status)
   return cycle[(currentIndex + 1) % cycle.length]
 }

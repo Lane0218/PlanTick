@@ -350,6 +350,12 @@
   box-shadow: 0 0 0 4px rgba(226, 232, 240, 0.9);
 }
 
+.quick-create input:focus-visible {
+  outline: none;
+  border-color: transparent;
+  box-shadow: none;
+}
+
 .sidebar-pane {
   display: grid;
   align-content: start;
@@ -580,6 +586,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  justify-content: flex-start;
 }
 
 .palette-chip {
@@ -675,12 +682,6 @@
   border-top: 1px solid #eceff2;
 }
 
-.category-dialog-banner {
-  color: #16a3a7;
-  font-size: 1.6rem;
-  font-weight: 500;
-}
-
 .category-name-field {
   gap: 12px;
 }
@@ -722,7 +723,7 @@
 .category-suggestion-row {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 12px;
 }
 
@@ -924,6 +925,14 @@
   height: 28px;
 }
 
+.todo-card.no-note {
+  align-items: center;
+}
+
+.todo-card.no-note .todo-status-trigger {
+  align-self: center;
+}
+
 .todo-main {
   width: 100%;
   padding: 0;
@@ -934,11 +943,20 @@
   gap: 4px;
 }
 
+.todo-main.no-note {
+  align-content: center;
+  min-height: 32px;
+}
+
 .todo-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
   align-items: start;
+}
+
+.todo-row.no-note {
+  align-items: center;
 }
 
 .todo-main strong {
@@ -1023,7 +1041,8 @@
   align-content: stretch;
   gap: 0;
   max-height: 100vh;
-  overflow: hidden;
+  overflow: visible;
+  z-index: 3;
 }
 
 .detail-head {
@@ -1258,7 +1277,7 @@
   position: absolute;
   top: calc(100% + 12px);
   right: 0;
-  z-index: 30;
+  z-index: 60;
   padding: 12px;
   border: 1px solid #dfe6eb;
   border-radius: 18px;
@@ -1267,28 +1286,46 @@
 }
 
 .detail-calendar-popover .rdp {
-  --rdp-accent-color: #16a3a7;
-  --rdp-accent-background-color: #e8f7f7;
+  --rdp-accent-color: #1f6e66;
+  --rdp-accent-background-color: #e8f5f3;
+  --rdp-today-color: #1f6e66;
+  --rdp-selected-border: 2px solid #1f6e66;
   margin: 0;
 }
 
 .detail-calendar-popover .rdp-caption {
+  color: #2c3e50;
   font-size: 0.96rem;
   font-weight: 600;
 }
 
-.detail-calendar-popover .rdp-nav_button {
+.detail-calendar-popover .rdp-button_previous,
+.detail-calendar-popover .rdp-button_next {
   width: 30px;
   height: 30px;
   border-radius: 999px;
-  color: #5f6f86;
+  color: #1f6e66;
+}
+
+.detail-calendar-popover .rdp-button_previous:hover,
+.detail-calendar-popover .rdp-button_next:hover {
+  background: #edf3f1;
+}
+
+.detail-calendar-popover .rdp-chevron {
+  fill: #1f6e66;
 }
 
 .detail-calendar-popover .rdp-day_button {
   width: 36px;
   height: 36px;
   border-radius: 10px;
+  color: #334155;
   font-size: 0.88rem;
+}
+
+.detail-calendar-popover .rdp-day_button:hover {
+  background: #edf3f1;
 }
 
 .detail-calendar-popover .rdp-weekday {
@@ -1298,7 +1335,7 @@
 }
 
 .detail-calendar-popover .rdp-today:not(.rdp-selected) .rdp-day_button {
-  border: 1px solid #dfe6eb;
+  border: 1px solid #c7ddd9;
 }
 
 .detail-note-field textarea {
