@@ -21,14 +21,14 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   await expect(page.getByRole('button', { name: '产品设计', exact: true })).toBeVisible()
 
   await page.getByLabel('快速新建任务').fill('完成任务工作台 UI')
-  await page.getByRole('button', { name: '选择日期' }).click()
-  await page.locator('input[name="quickTodoDueDate"]').fill('2026-03-20')
-  await page.getByRole('button', { name: '添加任务' }).click()
+  await page.getByLabel('快速新建任务').press('Enter')
 
   await expect(page.getByLabel('任务标题')).toHaveValue('完成任务工作台 UI')
 
   await page.getByLabel('备注').fill('右侧详情支持完整编辑任务字段')
-  await page.getByLabel('日期').fill('2026-03-21')
+  await page.getByRole('button', { name: '选择日期' }).click()
+  await expect(page.locator('.detail-calendar-popover')).toBeVisible()
+  await page.getByRole('button', { name: '明天' }).click()
   const createdTask = page.locator('article', {
     has: page.getByRole('button', { name: '查看任务 完成任务工作台 UI' }),
   })
@@ -37,7 +37,7 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   await expect(
     createdTask.getByRole('button', { name: '切换任务状态，当前进行中' }),
   ).toBeVisible()
-  await expect(page.getByLabel('日期')).toHaveValue('2026-03-21')
+  await expect(page.getByRole('button', { name: '明天' })).toHaveClass(/active/)
   await expect(page.getByLabel('备注')).toHaveValue('右侧详情支持完整编辑任务字段')
   await page.waitForTimeout(700)
 
@@ -52,8 +52,9 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   await expect(page.getByLabel('备注')).toHaveValue(
     '右侧详情支持完整编辑任务字段',
   )
-  await expect(page.getByLabel('日期')).toHaveValue('2026-03-21')
+  await expect(page.getByRole('button', { name: '明天' })).toHaveClass(/active/)
   await expect(
     restoredTask.getByRole('button', { name: '切换任务状态，当前进行中' }),
   ).toBeVisible()
+  await expect(restoredTask.getByText('明天')).toBeVisible()
 })

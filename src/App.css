@@ -1039,6 +1039,22 @@
   background: #cfd8e3;
 }
 
+.detail-note-inline textarea {
+  width: 100%;
+  min-height: 48px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #2c3e50;
+  font-size: 0.98rem;
+  line-height: 1.55;
+  resize: none;
+}
+
+.detail-note-inline textarea::placeholder {
+  color: #90a4ae;
+}
+
 .detail-title-input {
   min-height: 0;
   padding: 14px 0 0;
@@ -1066,12 +1082,13 @@
 .detail-scroll {
   min-height: 0;
   overflow-y: auto;
-  padding-top: 10px;
+  padding-top: 18px;
   padding-right: 4px;
 }
 
 .detail-stack {
-  gap: 0;
+  display: grid;
+  gap: 18px;
 }
 
 .detail-section {
@@ -1095,10 +1112,81 @@
   display: none;
 }
 
-.detail-date-shortcuts {
+.detail-date-actions {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  align-items: center;
+}
+
+.detail-date-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 42px;
+  padding: 0 18px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: #f5f6f8;
+  color: #5f6f86;
+  font-size: 0.92rem;
+  font-weight: 500;
+}
+
+.detail-date-pill.active {
+  background: #16a3a7;
+  color: #ffffff;
+}
+
+.detail-date-picker-wrap {
+  position: relative;
+}
+
+.detail-calendar-popover {
+  position: absolute;
+  top: calc(100% + 12px);
+  right: 0;
+  z-index: 30;
+  padding: 12px;
+  border: 1px solid #dfe6eb;
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 22px 40px rgba(31, 42, 55, 0.14);
+}
+
+.detail-calendar-popover .rdp {
+  --rdp-accent-color: #16a3a7;
+  --rdp-accent-background-color: #e8f7f7;
+  margin: 0;
+}
+
+.detail-calendar-popover .rdp-caption {
+  font-size: 0.96rem;
+  font-weight: 600;
+}
+
+.detail-calendar-popover .rdp-nav_button {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  color: #5f6f86;
+}
+
+.detail-calendar-popover .rdp-day_button {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  font-size: 0.88rem;
+}
+
+.detail-calendar-popover .rdp-weekday {
+  color: #90a4ae;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.detail-calendar-popover .rdp-today:not(.rdp-selected) .rdp-day_button {
+  border: 1px solid #dfe6eb;
 }
 
 .detail-note-field textarea {
@@ -1318,6 +1406,11 @@
   .quick-create-options {
     position: static;
     width: auto;
+  }
+
+  .detail-calendar-popover {
+    right: auto;
+    left: 0;
   }
 
   .route-switch,
