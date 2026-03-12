@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
 
 :root {
   --bg-app: #eef3f8;
@@ -13,7 +13,7 @@
   --accent-strong: #245987;
   --danger: #c25e4e;
   --shadow-panel: 0 16px 36px rgba(31, 58, 90, 0.08);
-  --font-mono: 'IBM Plex Mono', 'SFMono-Regular', monospace;
+  --font-mono: 'IBM Plex Sans', 'Segoe UI', sans-serif;
   font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
   line-height: 1.5;
   font-weight: 400;

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent } from 'react'
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import './App.css'
@@ -112,6 +112,7 @@ function App() {
   const [categoryEditorName, setCategoryEditorName] = useState('')
   const [categoryEditorColor, setCategoryEditorColor] = useState(categoryPalette[0])
   const [detailDraft, setDetailDraft] = useState<TodoDraft | null>(null)
+  const lastSavedDraftRef = useRef('')
 
   const activeCategories = useMemo(
     () =>
@@ -228,18 +229,69 @@ function App() {
   useEffect(() => {
     if (!selectedTodo) {
       setDetailDraft(null)
+      lastSavedDraftRef.current = ''
       return
     }
 
-    setDetailDraft({
+    const nextDraft = {
       title: selectedTodo.title,
       categoryId: selectedTodo.categoryId ?? '',
       dueDate: selectedTodo.dueDate ?? '',
       status: selectedTodo.status,
       note: selectedTodo.note,
       recurrenceType: selectedTodo.recurrenceType,
-    })
+    }
+
+    setDetailDraft(nextDraft)
+    lastSavedDraftRef.current = serializeTodoDraft(nextDraft)
   }, [selectedTodo])
+
+  const persistTodoDraft = useEffectEvent(async (draft: TodoDraft, baseTodo: TodoRecord) => {
+    if (!workspaceId || !draft.title.trim()) {
+      return
+    }
+
+    const updated: TodoRecord = {
+      ...baseTodo,
+      title: draft.title.trim(),
+      categoryId: draft.categoryId || null,
+      dueDate: draft.dueDate || null,
+      status: draft.status,
+      note: draft.note,
+      recurrenceType: draft.recurrenceType,
+      completed: draft.status === 'completed',
+      updatedAt: new Date().toISOString(),
+    }
+
+    await upsertTodo(updated)
+    await enqueueRecordMutation('todos', 'upsert', toSyncTodo(updated))
+    lastSavedDraftRef.current = serializeTodoDraft({
+      title: updated.title,
+      categoryId: updated.categoryId ?? '',
+      dueDate: updated.dueDate ?? '',
+      status: updated.status,
+      note: updated.note,
+      recurrenceType: updated.recurrenceType,
+    })
+    setTodos((current) => current.map((todo) => (todo.id === updated.id ? updated : todo)))
+  })
+
+  useEffect(() => {
+    if (!selectedTodo || !detailDraft) {
+      return
+    }
+
+    const nextSignature = serializeTodoDraft(detailDraft)
+    if (nextSignature === lastSavedDraftRef.current) {
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      void persistTodoDraft(detailDraft, selectedTodo)
+    }, 220)
+
+    return () => window.clearTimeout(timer)
+  }, [detailDraft, selectedTodo])
 
   async function refreshWorkspaceData(nextWorkspaceId?: string) {
     const resolvedWorkspaceId = nextWorkspaceId ?? (await loadWorkspaceId())
@@ -481,35 +533,6 @@ function App() {
     }
   }
 
-  async function handleSaveTodo() {
-    if (!workspaceId || !selectedTodo || !detailDraft?.title.trim()) {
-      setMessage('任务标题不能为空。')
-      return
-    }
-
-    const updated: TodoRecord = {
-      ...selectedTodo,
-      title: detailDraft.title.trim(),
-      categoryId: detailDraft.categoryId || null,
-      dueDate: detailDraft.dueDate || null,
-      status: detailDraft.status,
-      note: detailDraft.note.trim(),
-      recurrenceType: detailDraft.recurrenceType,
-      completed: detailDraft.status === 'completed',
-      updatedAt: new Date().toISOString(),
-    }
-
-    setBusy(true)
-    try {
-      await upsertTodo(updated)
-      await enqueueRecordMutation('todos', 'upsert', toSyncTodo(updated))
-      await refreshWorkspaceData(workspaceId)
-      setMessage(`任务「${updated.title}」已保存。`)
-    } finally {
-      setBusy(false)
-    }
-  }
-
   async function handleDeleteTodo() {
     if (!workspaceId || !selectedTodo) {
       return
@@ -632,7 +655,6 @@ function App() {
           categories={activeCategories}
           detailDraft={detailDraft}
           setDetailDraft={setDetailDraft}
-          handleSaveTodo={handleSaveTodo}
           handleDeleteTodo={handleDeleteTodo}
           closeDetail={() => setSelectedTodoId(null)}
           busy={busy}
@@ -821,14 +843,10 @@ function Sidebar({
   return (
     <aside className="sidebar-pane">
       <div className="sidebar-top">
-        <p className="eyebrow">工作区</p>
         <h2 title={sessionLabel}>PlanTick</h2>
       </div>
 
       <nav className="sidebar-section" aria-label="任务筛选">
-        <div className="section-head">
-          <p>视图</p>
-        </div>
         {(Object.keys(filterLabels) as TaskFilter[]).map((filter) => (
           <button
             key={filter}
@@ -838,25 +856,26 @@ function Sidebar({
               setActiveFilter(filter)
             }}
           >
-            <span>{filterLabels[filter]}</span>
+            <span className="sidebar-item-main">
+              <span className={`sidebar-icon sidebar-icon-${filter}`} aria-hidden="true" />
+              <span>{filterLabels[filter]}</span>
+            </span>
             <b>{sidebarCounts[filter]}</b>
           </button>
         ))}
       </nav>
 
       <section className="sidebar-section">
-        <div className="section-head">
-          <p>分类</p>
-          <div className="section-tools">
-            <button
-              type="button"
-              className={showCategoryManager ? 'icon-button active' : 'icon-button'}
-              aria-label="切换分类管理"
-              onClick={() => setShowCategoryManager((current) => !current)}
-            >
-              +
-            </button>
-          </div>
+        <div className="section-head sidebar-actions-only">
+          <div />
+          <button
+            type="button"
+            className={showCategoryManager ? 'sidebar-plain-button active' : 'sidebar-plain-button'}
+            aria-label="切换分类管理"
+            onClick={() => setShowCategoryManager((current) => !current)}
+          >
+            +
+          </button>
         </div>
 
         <div className="category-list">
@@ -1040,14 +1059,7 @@ function TodoBoard({
                     <strong>{todo.title}</strong>
 
                     <div className="todo-secondary">
-                      <span
-                        className="todo-badge"
-                        style={
-                          {
-                            '--category-color': category?.color ?? statusMeta.tone,
-                          } as CSSProperties
-                        }
-                      >
+                      <span className="todo-category" style={{ color: category?.color ?? '#8A93A2' }}>
                         {category?.name ?? '未分类'}
                       </span>
                       <span className={dueLabel.emphasis ? 'todo-due is-alert' : 'todo-due'}>
@@ -1075,7 +1087,6 @@ function TodoDetailPane({
   categories,
   detailDraft,
   setDetailDraft,
-  handleSaveTodo,
   handleDeleteTodo,
   closeDetail,
   busy,
@@ -1084,7 +1095,6 @@ function TodoDetailPane({
   categories: CategoryRecord[]
   detailDraft: TodoDraft | null
   setDetailDraft: (draft: TodoDraft | null) => void
-  handleSaveTodo: () => Promise<void>
   handleDeleteTodo: () => Promise<void>
   closeDetail: () => void
   busy: boolean
@@ -1094,11 +1104,19 @@ function TodoDetailPane({
       {selectedTodo && detailDraft ? (
         <>
           <div className="detail-head">
-            <div>
-              <h2>{selectedTodo.title}</h2>
-            </div>
-            <button className="icon-button" onClick={closeDetail} aria-label="关闭详情">
-              关闭
+            <input
+              className="detail-title-input"
+              value={detailDraft.title}
+              onChange={(event) =>
+                setDetailDraft({
+                  ...detailDraft,
+                  title: event.target.value,
+                })
+              }
+              placeholder="任务标题"
+            />
+            <button className="detail-close" onClick={closeDetail} aria-label="关闭详情">
+              ×
             </button>
           </div>
 
@@ -1125,20 +1143,6 @@ function TodoDetailPane({
           </div>
 
           <div className="detail-stack">
-            <label>
-              <span>标题</span>
-              <input
-                value={detailDraft.title}
-                onChange={(event) =>
-                  setDetailDraft({
-                    ...detailDraft,
-                    title: event.target.value,
-                  })
-                }
-                placeholder="任务标题"
-              />
-            </label>
-
             <label>
               <span>分类</span>
               <select
@@ -1235,9 +1239,6 @@ function TodoDetailPane({
           </div>
 
           <div className="detail-actions">
-            <button className="primary-button" onClick={() => void handleSaveTodo()} disabled={busy}>
-              保存更改
-            </button>
             <button className="danger-button" onClick={() => void handleDeleteTodo()} disabled={busy}>
               删除任务
             </button>
@@ -1393,6 +1394,17 @@ function nextDate(days: number) {
   const next = new Date()
   next.setDate(next.getDate() + days)
   return next.toISOString().slice(0, 10)
+}
+
+function serializeTodoDraft(draft: TodoDraft) {
+  return JSON.stringify([
+    draft.title.trim(),
+    draft.categoryId,
+    draft.dueDate,
+    draft.status,
+    draft.note,
+    draft.recurrenceType,
+  ])
 }
 
 function toSyncCategory(record: CategoryRecord) {
