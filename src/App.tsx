@@ -4,6 +4,7 @@ import { DayPicker } from 'react-day-picker'
 import 'react-day-picker/dist/style.css'
 import {
   Ban,
+  CalendarDays,
   CheckCircle2,
   ChevronDown,
   Circle,
@@ -13,6 +14,7 @@ import {
   PlayCircle,
   Plus,
   Repeat,
+  Sun,
   Trash2,
 } from 'lucide-react'
 import { zhCN } from 'date-fns/locale'
@@ -953,8 +955,8 @@ function Sidebar({
       <nav className="sidebar-section sidebar-nav" aria-label="任务筛选">
         {(
           [
-            { id: 'today', label: '我的一天', count: sidebarCounts.today },
-            { id: 'all', label: '待办箱', count: sidebarCounts.all },
+            { id: 'today', label: '我的一天', count: sidebarCounts.today, icon: 'today' },
+            { id: 'all', label: '待办箱', count: sidebarCounts.all, icon: 'all' },
           ] as const
         ).map((item) => (
           <button
@@ -972,7 +974,9 @@ function Sidebar({
             }}
           >
             <span className="sidebar-item-main">
-              <span className={`sidebar-icon sidebar-icon-${item.id}`} aria-hidden="true" />
+              <span className={`sidebar-icon sidebar-icon-${item.icon}`} aria-hidden="true">
+                {renderSidebarIcon(item.icon)}
+              </span>
               <span>{item.label}</span>
             </span>
             <b>{item.count}</b>
@@ -988,7 +992,9 @@ function Sidebar({
           }}
         >
           <span className="sidebar-item-main">
-            <span className="sidebar-icon sidebar-icon-calendar" aria-hidden="true" />
+            <span className="sidebar-icon sidebar-icon-calendar" aria-hidden="true">
+              {renderSidebarIcon('calendar')}
+            </span>
             <span>日程概览</span>
           </span>
         </button>
@@ -1161,7 +1167,7 @@ function Sidebar({
                 })}
               </div>
 
-              <div className="category-dialog-actions">
+              <div className="category-dialog-actions category-form-actions">
                 <button
                   className="primary-button"
                   type="submit"
@@ -1206,7 +1212,14 @@ function Sidebar({
               删除分类后，分类里的事件会全部保留，是否确定删除？
             </p>
 
-            <div className="category-dialog-actions">
+            <div className="category-dialog-actions category-confirm-actions">
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => setPendingDeleteCategory(null)}
+              >
+                取消
+              </button>
               <button
                 className="primary-button"
                 type="button"
@@ -1216,13 +1229,6 @@ function Sidebar({
                 }}
               >
                 确定
-              </button>
-              <button
-                className="secondary-button"
-                type="button"
-                onClick={() => setPendingDeleteCategory(null)}
-              >
-                取消
               </button>
             </div>
           </div>
@@ -1849,15 +1855,26 @@ function formatDateInputValue(date: Date) {
 function renderStatusIcon(status: TodoStatus) {
   switch (status) {
     case 'in_progress':
-      return <PlayCircle size={15} strokeWidth={2} />
+      return <PlayCircle size={28} strokeWidth={1.9} />
     case 'completed':
-      return <CheckCircle2 size={15} strokeWidth={2} />
+      return <CheckCircle2 size={28} strokeWidth={1.9} />
     case 'blocked':
-      return <PauseCircle size={15} strokeWidth={2} />
+      return <PauseCircle size={28} strokeWidth={1.9} />
     case 'canceled':
-      return <Ban size={15} strokeWidth={2} />
+      return <Ban size={28} strokeWidth={1.9} />
     default:
-      return <Circle size={15} strokeWidth={2} />
+      return <Circle size={28} strokeWidth={1.9} />
+  }
+}
+
+function renderSidebarIcon(icon: 'today' | 'all' | 'calendar') {
+  switch (icon) {
+    case 'today':
+      return <Sun size={18} strokeWidth={2.15} />
+    case 'calendar':
+      return <CalendarDays size={18} strokeWidth={2.15} />
+    default:
+      return <Inbox size={18} strokeWidth={2.15} />
   }
 }
 

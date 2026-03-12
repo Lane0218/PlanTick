@@ -32,7 +32,7 @@
 }
 
 .workspace-shell.has-detail {
-  grid-template-columns: 240px minmax(0, 0.86fr) 400px;
+  grid-template-columns: 240px minmax(520px, 1.35fr) minmax(420px, 1fr);
 }
 
 .eyebrow {
@@ -477,63 +477,29 @@
 }
 
 .sidebar-icon {
-  position: relative;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: rgba(144, 164, 174, 0.18);
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.sidebar-icon svg {
+  width: 18px;
+  height: 18px;
 }
 
 .sidebar-icon-all {
-  background: rgba(144, 164, 174, 0.28);
-}
-
-.sidebar-icon-today {
-  background: rgba(31, 110, 102, 0.18);
-}
-
-.sidebar-icon-overdue {
-  background: rgba(239, 83, 80, 0.18);
-}
-
-.sidebar-icon-completed {
-  background: rgba(38, 166, 154, 0.18);
-}
-
-.sidebar-icon-today::after,
-.sidebar-icon-overdue::after,
-.sidebar-icon-completed::after {
-  content: "";
-  position: absolute;
-  inset: 3px;
-  border-radius: 50%;
-  background: currentColor;
+  color: #7b8c98;
 }
 
 .sidebar-icon-today {
   color: #1f6e66;
 }
 
-.sidebar-icon-overdue {
-  color: #ef5350;
-}
-
-.sidebar-icon-completed {
-  color: #26a69a;
-}
-
 .sidebar-icon-calendar {
-  background: rgba(242, 140, 40, 0.18);
   color: #f28c28;
-}
-
-.sidebar-icon-calendar::after {
-  content: "";
-  position: absolute;
-  inset: 3px;
-  border-radius: 3px;
-  border: 1.4px solid currentColor;
 }
 
 .category-list {
@@ -664,7 +630,6 @@
 .category-dialog-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
 }
 
@@ -689,6 +654,7 @@
 .category-dialog-head {
   padding: 20px 24px 16px;
   border-bottom: 1px solid #eceff2;
+  justify-content: space-between;
 }
 
 .category-confirm-copy {
@@ -697,6 +663,16 @@
   color: #2c3e50;
   font-size: 1rem;
   line-height: 1.8;
+}
+
+.category-form-actions {
+  justify-content: flex-end;
+}
+
+.category-confirm-actions {
+  justify-content: flex-end;
+  padding: 20px 24px 24px;
+  border-top: 1px solid #eceff2;
 }
 
 .category-dialog-banner {
@@ -775,6 +751,7 @@
   display: grid;
   align-content: start;
   gap: 18px;
+  min-width: 0;
   min-height: 100vh;
   border-right: 1px solid #e7ebef;
   background: #ffffff;
@@ -923,13 +900,13 @@
 
 .todo-status-trigger {
   align-self: start;
-  width: 28px;
-  min-width: 28px;
-  height: 28px;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
   padding: 0;
   border: 0;
   border-radius: 999px;
-  background: var(--todo-accent, #f5f7fa);
+  background: transparent;
   color: var(--todo-tone, #a0aca7);
   display: grid;
   place-items: center;
@@ -943,8 +920,8 @@
 }
 
 .todo-status-icon svg {
-  width: 15px;
-  height: 15px;
+  width: 28px;
+  height: 28px;
 }
 
 .todo-main {
@@ -1032,6 +1009,7 @@
 
 .detail-pane {
   display: none;
+  min-width: 0;
   align-self: stretch;
   border-left: 1px solid #e7ebef;
   background: #ffffff;
@@ -1414,30 +1392,45 @@
 .todo-status-not_started,
 .detail-status-not_started {
   color: #90a4ae;
-  background: #f5f7fa;
 }
 
 .todo-status-in_progress,
 .detail-status-in_progress {
   color: #42a5f5;
-  background: #ebf5ff;
 }
 
 .todo-status-blocked,
 .detail-status-blocked {
   color: #ef5350;
-  background: #ffebee;
 }
 
 .todo-status-completed,
 .detail-status-completed {
   color: #26a69a;
-  background: #e8f5f3;
 }
 
 .todo-status-canceled,
 .detail-status-canceled {
   color: #90a4ae;
+}
+
+.detail-status-not_started {
+  background: #f5f7fa;
+}
+
+.detail-status-in_progress {
+  background: #ebf5ff;
+}
+
+.detail-status-blocked {
+  background: #ffebee;
+}
+
+.detail-status-completed {
+  background: #e8f5f3;
+}
+
+.detail-status-canceled {
   background: #f5f7fa;
 }
 
