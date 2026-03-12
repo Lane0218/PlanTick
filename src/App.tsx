@@ -3,14 +3,9 @@ import type { CSSProperties, FormEvent } from 'react'
 import { DayPicker } from 'react-day-picker'
 import 'react-day-picker/dist/style.css'
 import {
-  Ban,
-  CheckCircle2,
   ChevronDown,
-  Circle,
   Inbox,
   MoreHorizontal,
-  PauseCircle,
-  PlayCircle,
   Plus,
   Repeat,
   Trash2,
@@ -53,6 +48,7 @@ type BeforeInstallPromptEvent = Event & {
 }
 
 const categoryPalette = ['#2F6EA4', '#4D7A67', '#C25E4E', '#8B5FD6', '#B36A1D', '#0E7C86']
+const categorySuggestionLabels = ['工作', '生活', '学习', '书影音', '项目-X']
 
 const filterLabels: Record<TaskFilter, string> = {
   all: '全部任务',
@@ -460,10 +456,6 @@ function App() {
     const targetCategory = categoryOverride ?? selectedCategory
 
     if (!workspaceId || !targetCategory) {
-      return
-    }
-
-    if (!window.confirm(`确认删除分类「${targetCategory.name}」吗？关联任务会回到未分类。`)) {
       return
     }
 
@@ -894,6 +886,7 @@ function Sidebar({
 }) {
   const [categoryDialogMode, setCategoryDialogMode] = useState<'create' | 'edit' | null>(null)
   const [menuCategoryId, setMenuCategoryId] = useState<string | null>(null)
+  const [pendingDeleteCategory, setPendingDeleteCategory] = useState<CategoryRecord | null>(null)
 
   const dialogTitle = categoryDialogMode === 'edit' ? '修改分类' : '新建分类'
 
@@ -1014,10 +1007,8 @@ function Sidebar({
                     role="menuitem"
                     className="danger"
                     onClick={() => {
-                      setSelectedCategoryId(category.id)
-                      setActiveFilter('all')
                       setMenuCategoryId(null)
-                      void handleDeleteCategory(category)
+                      setPendingDeleteCategory(category)
                     }}
                   >
                     删除分类
@@ -1046,6 +1037,15 @@ function Sidebar({
             </div>
 
             <form className="category-dialog-form" onSubmit={(event) => void handleCategoryDialogSubmit(event)}>
+              <div className="category-dialog-banner">
+                <button type="button" className="category-dialog-tab active">
+                  分类清单
+                </button>
+                <button type="button" className="category-dialog-tab" disabled>
+                  文件夹
+                </button>
+              </div>
+
               <label>
                 <span>{categoryDialogMode === 'edit' ? '分类名称' : '新分类'}</span>
                 <input
@@ -1060,6 +1060,23 @@ function Sidebar({
                   autoComplete="off"
                 />
               </label>
+
+              <div className="category-suggestion-row" aria-label="快捷分类名称">
+                {categorySuggestionLabels.map((label) => (
+                  <button
+                    key={label}
+                    type="button"
+                    className="category-suggestion-chip"
+                    onClick={() =>
+                      categoryDialogMode === 'edit'
+                        ? setCategoryEditorName(label)
+                        : setNewCategoryName(label)
+                    }
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
 
               <div className="palette-row" aria-label="分类颜色">
                 {categoryPalette.map((color) => {
@@ -1098,6 +1115,50 @@ function Sidebar({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {pendingDeleteCategory ? (
+        <div className="category-dialog-backdrop" role="presentation" onClick={() => setPendingDeleteCategory(null)}>
+          <div
+            className="category-confirm-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="category-confirm-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="category-dialog-head">
+              <h3 id="category-confirm-title">提示</h3>
+              <button
+                type="button"
+                className="detail-close"
+                aria-label="关闭删除分类对话框"
+                onClick={() => setPendingDeleteCategory(null)}
+              >
+                ×
+              </button>
+            </div>
+
+            <p className="category-confirm-copy">
+              删除分类后，分类里的事件会全部保留，是否确定删除？
+            </p>
+
+            <div className="category-dialog-actions">
+              <button
+                className="primary-button"
+                type="button"
+                onClick={() => {
+                  void handleDeleteCategory(pendingDeleteCategory)
+                  setPendingDeleteCategory(null)
+                }}
+              >
+                确定
+              </button>
+              <button className="secondary-button" type="button" onClick={() => setPendingDeleteCategory(null)}>
+                取消
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
@@ -1241,6 +1302,27 @@ function TodoDetailPane({
   const [showCategoryPicker, setShowCategoryPicker] = useState(false)
   const [showCalendarPicker, setShowCalendarPicker] = useState(false)
 
+  const visibleCategoryIds = new Set<string>()
+  const visibleCategories: CategoryRecord[] = []
+
+  if (selectedCategory) {
+    visibleCategoryIds.add(selectedCategory.id)
+    visibleCategories.push(selectedCategory)
+  }
+
+  for (const category of categories) {
+    if (visibleCategories.length >= 3) {
+      break
+    }
+    if (visibleCategoryIds.has(category.id)) {
+      continue
+    }
+    visibleCategoryIds.add(category.id)
+    visibleCategories.push(category)
+  }
+
+  const overflowCategories = categories.filter((category) => !visibleCategoryIds.has(category.id))
+
   const customDateSelected = Boolean(
     detailDraft?.dueDate &&
       detailDraft.dueDate !== todayDate() &&
@@ -1257,23 +1339,55 @@ function TodoDetailPane({
         <>
           <div className="detail-head">
             <div className="detail-list-picker">
-              <button
-                type="button"
-                className="detail-list-select"
-                aria-haspopup="listbox"
-                aria-expanded={showCategoryPicker}
-                onClick={() => setShowCategoryPicker((current) => !current)}
-              >
-                <span className="detail-list-name">
-                  <span
-                    className="detail-list-dot"
-                    style={{ backgroundColor: selectedCategory?.color ?? '#90A4AE' }}
-                    aria-hidden="true"
-                  />
-                  <span>{selectedCategory?.name ?? '未分类'}</span>
-                </span>
-                <ChevronDown size={14} strokeWidth={2.2} className="detail-list-arrow" aria-hidden="true" />
-              </button>
+              <div className="detail-category-strip" aria-label="任务分类">
+                {selectedCategory ? null : (
+                  <button
+                    type="button"
+                    className={!detailDraft.categoryId ? 'detail-category-chip active neutral' : 'detail-category-chip neutral'}
+                    onClick={() =>
+                      setDetailDraft({
+                        ...detailDraft,
+                        categoryId: '',
+                      })
+                    }
+                  >
+                    未分类
+                  </button>
+                )}
+
+                {visibleCategories.map((category) => (
+                  <button
+                    key={category.id}
+                    type="button"
+                    className={detailDraft.categoryId === category.id ? 'detail-category-chip active' : 'detail-category-chip'}
+                    style={
+                      {
+                        '--chip-tone': category.color,
+                      } as CSSProperties
+                    }
+                    onClick={() =>
+                      setDetailDraft({
+                        ...detailDraft,
+                        categoryId: category.id,
+                      })
+                    }
+                  >
+                    {category.name}
+                  </button>
+                ))}
+
+                {overflowCategories.length || selectedCategory ? (
+                  <button
+                    type="button"
+                    className="detail-list-select"
+                    aria-haspopup="listbox"
+                    aria-expanded={showCategoryPicker}
+                    onClick={() => setShowCategoryPicker((current) => !current)}
+                  >
+                    <ChevronDown size={14} strokeWidth={2.2} className="detail-list-arrow" aria-hidden="true" />
+                  </button>
+                ) : null}
+              </div>
 
               {showCategoryPicker ? (
                 <div className="detail-list-menu" role="listbox" aria-label="分类列表">
@@ -1289,9 +1403,9 @@ function TodoDetailPane({
                     }}
                   >
                     <span className="detail-list-dot neutral" aria-hidden="true" />
-                    <span>未分类</span>
+                    <span>不归入清单</span>
                   </button>
-                  {categories.map((category) => (
+                  {overflowCategories.map((category) => (
                     <button
                       key={category.id}
                       type="button"
@@ -1669,15 +1783,15 @@ function formatDateInputValue(date: Date) {
 function renderStatusIcon(status: TodoStatus) {
   switch (status) {
     case 'in_progress':
-      return <PlayCircle size={15} strokeWidth={2} />
+      return '•'
     case 'completed':
-      return <CheckCircle2 size={15} strokeWidth={2} />
+      return '✓'
     case 'blocked':
-      return <PauseCircle size={15} strokeWidth={2} />
+      return '!'
     case 'canceled':
-      return <Ban size={15} strokeWidth={2} />
+      return '−'
     default:
-      return <Circle size={15} strokeWidth={2} />
+      return ''
   }
 }
 
