@@ -8,9 +8,12 @@ import {
   ChevronRight,
   Circle,
   Inbox,
+  MoreHorizontal,
   PauseCircle,
   PlayCircle,
   Plus,
+  Repeat,
+  Trash2,
 } from 'lucide-react'
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import './App.css'
@@ -1268,7 +1271,7 @@ function TodoDetailPane({
           <div className="detail-head">
             <div className="detail-list-row">
               <span className="detail-list-name">
-              <span
+                <span
                   className="detail-list-dot"
                   style={{ backgroundColor: selectedCategory?.color ?? '#90A4AE' }}
                   aria-hidden="true"
@@ -1297,178 +1300,187 @@ function TodoDetailPane({
             autoComplete="off"
           />
 
-          <div className="detail-stack">
-            <section className="detail-section">
-              <div className="detail-card-head">
-                <span>状态</span>
-              </div>
-              <div className="detail-status-grid">
-                {(Object.keys(todoStatusMeta) as TodoStatus[]).map((status) => {
-                  const statusMeta = todoStatusMeta[status]
-                  const active = detailDraft.status === status
+          <div className="detail-scroll">
+            <div className="detail-stack">
+              <section className="detail-section">
+                <div className="detail-card-head">
+                  <span>状态</span>
+                </div>
+                <div className="detail-status-grid">
+                  {(Object.keys(todoStatusMeta) as TodoStatus[]).map((status) => {
+                    const statusMeta = todoStatusMeta[status]
+                    const active = detailDraft.status === status
 
-                  return (
-                    <button
-                      key={status}
-                      type="button"
-                      className={active ? 'detail-status-choice active' : 'detail-status-choice'}
-                      aria-label={`设置状态为${statusMeta.label}`}
-                      aria-pressed={active}
-                      style={active ? { backgroundColor: statusMeta.accent, color: statusMeta.tone } : undefined}
-                      onClick={() =>
-                        setDetailDraft({
-                          ...detailDraft,
-                          status,
-                        })
-                      }
-                    >
-                      <span className="detail-status-choice-icon" aria-hidden="true">
-                        {renderStatusIcon(status)}
-                      </span>
-                      {statusMeta.label}
-                    </button>
-                  )
-                })}
-              </div>
-            </section>
+                    return (
+                      <button
+                        key={status}
+                        type="button"
+                        className={active ? 'detail-status-choice active' : 'detail-status-choice'}
+                        aria-label={`设置状态为${statusMeta.label}`}
+                        aria-pressed={active}
+                        style={active ? { backgroundColor: statusMeta.accent, color: statusMeta.tone } : undefined}
+                        onClick={() =>
+                          setDetailDraft({
+                            ...detailDraft,
+                            status,
+                          })
+                        }
+                      >
+                        <span className="detail-status-choice-icon" aria-hidden="true">
+                          {renderStatusIcon(status)}
+                        </span>
+                        {statusMeta.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </section>
 
-            <section className="detail-section">
-              <div className="detail-card-head">
-                <span>分类</span>
-              </div>
-              <label className="detail-field">
-                <span>分类</span>
-                <select
-                  value={detailDraft.categoryId}
-                  onChange={(event) =>
-                    setDetailDraft({
-                      ...detailDraft,
-                      categoryId: event.target.value,
-                    })
-                  }
-                  name="detailCategoryId"
-                >
-                  <option value="">未分类</option>
-                  {categories.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </section>
+              <section className="detail-section detail-meta-section">
+                <div className="detail-card-head">
+                  <span>分类</span>
+                </div>
+                <label className="detail-field detail-inline-field">
+                  <span>分类</span>
+                  <select
+                    value={detailDraft.categoryId}
+                    onChange={(event) =>
+                      setDetailDraft({
+                        ...detailDraft,
+                        categoryId: event.target.value,
+                      })
+                    }
+                    name="detailCategoryId"
+                  >
+                    <option value="">未分类</option>
+                    {categories.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </section>
 
-            <section className="detail-section detail-date-block">
-              <div className="detail-card-head">
-                <span>日期</span>
-              </div>
-              <div className="detail-date-shortcuts">
-                <button
-                  type="button"
-                  className={detailDraft.dueDate === todayDate() ? 'ghost-button active' : 'ghost-button'}
-                  onClick={() =>
-                    setDetailDraft({
-                      ...detailDraft,
-                      dueDate: todayDate(),
-                    })
-                  }
-                >
-                  今天
-                </button>
-                <button
-                  type="button"
-                  className={detailDraft.dueDate === nextDate(1) ? 'ghost-button active' : 'ghost-button'}
-                  onClick={() =>
-                    setDetailDraft({
-                      ...detailDraft,
-                      dueDate: nextDate(1),
-                    })
-                  }
-                >
-                  明天
-                </button>
-                <button
-                  type="button"
-                  className={!detailDraft.dueDate ? 'ghost-button active' : 'ghost-button'}
-                  onClick={() =>
-                    setDetailDraft({
-                      ...detailDraft,
-                      dueDate: '',
-                    })
-                  }
-                >
-                  无日期
-                </button>
-              </div>
+              <section className="detail-section detail-date-block">
+                <div className="detail-card-head">
+                  <span>日期</span>
+                </div>
+                <div className="detail-date-shortcuts">
+                  <button
+                    type="button"
+                    className={detailDraft.dueDate === todayDate() ? 'ghost-button active' : 'ghost-button'}
+                    onClick={() =>
+                      setDetailDraft({
+                        ...detailDraft,
+                        dueDate: todayDate(),
+                      })
+                    }
+                  >
+                    今天
+                  </button>
+                  <button
+                    type="button"
+                    className={detailDraft.dueDate === nextDate(1) ? 'ghost-button active' : 'ghost-button'}
+                    onClick={() =>
+                      setDetailDraft({
+                        ...detailDraft,
+                        dueDate: nextDate(1),
+                      })
+                    }
+                  >
+                    明天
+                  </button>
+                  <button
+                    type="button"
+                    className={!detailDraft.dueDate ? 'ghost-button active' : 'ghost-button'}
+                    onClick={() =>
+                      setDetailDraft({
+                        ...detailDraft,
+                        dueDate: '',
+                      })
+                    }
+                  >
+                    无日期
+                  </button>
+                </div>
 
-              <label className="detail-field detail-date-picker">
-                <span>日期</span>
-                <input
-                  type="date"
-                  value={detailDraft.dueDate}
-                  onChange={(event) =>
-                    setDetailDraft({
-                      ...detailDraft,
-                      dueDate: event.target.value,
-                    })
-                  }
-                  aria-label="日期"
-                  name="detailDueDate"
-                />
-              </label>
-            </section>
+                <label className="detail-field detail-date-picker">
+                  <span>日期</span>
+                  <input
+                    type="date"
+                    value={detailDraft.dueDate}
+                    onChange={(event) =>
+                      setDetailDraft({
+                        ...detailDraft,
+                        dueDate: event.target.value,
+                      })
+                    }
+                    aria-label="日期"
+                    name="detailDueDate"
+                  />
+                </label>
+              </section>
 
-            <section className="detail-section">
-              <div className="detail-card-head">
-                <span>备注</span>
-              </div>
-              <label className="detail-field">
-                <span>备注</span>
-                <textarea
-                  value={detailDraft.note}
-                  onChange={(event) =>
-                    setDetailDraft({
-                      ...detailDraft,
-                      note: event.target.value,
-                    })
-                  }
-                  rows={8}
-                  placeholder="记录上下文、拆分步骤或补充说明…"
-                  aria-label="备注"
-                  name="detailNote"
-                  autoComplete="off"
-                />
-              </label>
-            </section>
-
-            <div className="detail-section detail-meta">
-              <div className="detail-card-head">
-                <span>记录</span>
-              </div>
-              <span>更新时间 {formatTimestamp(selectedTodo.updatedAt)}</span>
+              <section className="detail-section detail-note-section">
+                <div className="detail-card-head">
+                  <span>描述</span>
+                </div>
+                <label className="detail-field detail-note-field">
+                  <span>备注</span>
+                  <textarea
+                    value={detailDraft.note}
+                    onChange={(event) =>
+                      setDetailDraft({
+                        ...detailDraft,
+                        note: event.target.value,
+                      })
+                    }
+                    rows={8}
+                    placeholder="添加描述..."
+                    aria-label="备注"
+                    name="detailNote"
+                    autoComplete="off"
+                  />
+                </label>
+              </section>
             </div>
           </div>
 
-          <div className="detail-section detail-actions detail-danger-zone">
-            <div className="detail-card-head">
-              <span>危险操作</span>
-            </div>
+          <div className="detail-footer">
             {confirmDeleteTodo ? (
-              <div className="detail-delete-confirm">
-                <p>确认删除这条任务？删除后会立即从当前列表移除。</p>
-                <div className="detail-delete-actions">
+              <>
+                <p className="detail-footer-hint">确认删除这条任务？</p>
+                <div className="detail-footer-actions">
                   <button className="secondary-button" onClick={() => setConfirmDeleteTodo(false)} type="button">
                     取消
                   </button>
                   <button className="danger-button" onClick={() => void handleDeleteTodo()} disabled={busy} type="button">
-                    确认删除
+                    删除
                   </button>
                 </div>
-              </div>
+              </>
             ) : (
-              <button className="danger-button" onClick={() => setConfirmDeleteTodo(true)} disabled={busy} type="button">
-                删除任务
-              </button>
+              <>
+                <div className="detail-footer-actions">
+                  <button className="detail-footer-link" type="button" disabled>
+                    <Repeat size={15} strokeWidth={2.1} />
+                    <span>重复</span>
+                  </button>
+                  <button
+                    className="detail-footer-link is-danger"
+                    onClick={() => setConfirmDeleteTodo(true)}
+                    disabled={busy}
+                    type="button"
+                  >
+                    <Trash2 size={15} strokeWidth={2.1} />
+                    <span>删除</span>
+                  </button>
+                </div>
+                <button className="detail-footer-icon" type="button" disabled aria-label="更多操作">
+                  <MoreHorizontal size={16} strokeWidth={2.1} />
+                </button>
+              </>
             )}
           </div>
         </>
@@ -1610,15 +1622,6 @@ function formatMonthDay(value: string) {
     month: 'numeric',
     day: 'numeric',
   }).format(new Date(`${value}T00:00:00`))
-}
-
-function formatTimestamp(value: string) {
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: 'numeric',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(value))
 }
 
 function toggleTodoStatus(status: TodoStatus): TodoStatus {
