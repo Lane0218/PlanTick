@@ -1484,7 +1484,7 @@ function TodoDetailPane({
                     }}
                   >
                     <span className="detail-list-dot neutral" aria-hidden="true" />
-                    <span>不归入清单</span>
+                    <span>未分类</span>
                   </button>
                   {overflowCategories.map((category) => (
                     <button
@@ -1523,20 +1523,22 @@ function TodoDetailPane({
             </button>
           </div>
 
-          <input
-            className="detail-title-input"
-            value={detailDraft.title}
-            onChange={(event) =>
-              setDetailDraft({
-                ...detailDraft,
-                title: event.target.value,
-              })
-            }
-            placeholder="任务标题…"
-            aria-label="任务标题"
-            name="detailTitle"
-            autoComplete="off"
-          />
+          <div className="detail-title-shell">
+            <input
+              className="detail-title-input"
+              value={detailDraft.title}
+              onChange={(event) =>
+                setDetailDraft({
+                  ...detailDraft,
+                  title: event.target.value,
+                })
+              }
+              placeholder="任务标题…"
+              aria-label="任务标题"
+              name="detailTitle"
+              autoComplete="off"
+            />
+          </div>
 
           <div className="detail-scroll">
             <div className="detail-stack">

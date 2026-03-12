@@ -38,6 +38,8 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
 
   await page.getByLabel('快速新建任务').fill('123')
   await page.getByLabel('快速新建任务').press('Enter')
+  await page.getByRole('button', { name: '查看任务 123' }).click()
+  await expect(page.getByText('未分类', { exact: true })).toBeVisible()
   const noNoteTask = page.locator('article', {
     has: page.getByRole('button', { name: '查看任务 123' }),
   })
@@ -54,17 +56,33 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   await page.getByLabel('快速新建任务').press('Enter')
 
   await expect(page.getByLabel('任务标题')).toHaveValue('完成任务工作台 UI')
+  await page.getByLabel('任务标题').focus()
+  await expect(page.getByLabel('任务标题')).toHaveCSS('outline-style', 'none')
+  await expect(page.getByLabel('备注')).toHaveCSS('outline-style', 'none')
   const detailPane = page.getByLabel('任务详情')
   const detailPaneBox = await detailPane.boundingBox()
   expect(detailPaneBox?.width ?? 0).toBeGreaterThan(420)
   await expect(detailPane).toHaveCSS('overflow', 'visible')
+  await expect(page.locator('.board-pane')).toHaveCSS('border-right-width', '0px')
+  await expect(detailPane).toHaveCSS('border-left-width', '1px')
 
   await page.getByLabel('备注').fill('右侧详情支持完整编辑任务字段')
   await page.getByRole('button', { name: '选择日期' }).click()
-  await expect(page.locator('.detail-calendar-popover')).toBeVisible()
+  const calendarPopover = page.locator('.detail-calendar-popover')
+  await expect(calendarPopover).toBeVisible()
+  const calendarBox = await calendarPopover.boundingBox()
+  expect((calendarBox?.x ?? 0) + 1).toBeGreaterThanOrEqual(detailPaneBox?.x ?? 0)
   await expect(page.locator('.detail-calendar-popover .rdp-chevron').first()).toHaveCSS(
     'fill',
     'rgb(31, 110, 102)',
+  )
+  await expect(page.locator('.detail-calendar-popover .rdp-today .rdp-day_button')).toHaveCSS(
+    'border-top-color',
+    'rgb(31, 110, 102)',
+  )
+  await expect(page.locator('.detail-calendar-popover .rdp-outside').first()).toHaveCSS(
+    'opacity',
+    '0.42',
   )
   await page.getByRole('button', { name: '明天' }).click()
   const createdTask = page.locator('article', {
