@@ -604,11 +604,7 @@ function App() {
         <header className="board-header">
           <div className="board-heading">
             <p className="eyebrow">Task Console</p>
-            <div className="board-title-row">
-              <h1>{selectedCategory ? selectedCategory.name : filterLabels[activeFilter]}</h1>
-              <span className="board-counter">{visibleTodos.length} 项</span>
-            </div>
-            <p className="board-subtitle">默认聚焦任务列表，详情仅在选中任务时展开。</p>
+            <h1>{selectedCategory ? selectedCategory.name : filterLabels[activeFilter]}</h1>
           </div>
 
           <div className="board-actions">
@@ -660,7 +656,6 @@ function App() {
           categories={activeCategories}
           detailDraft={detailDraft}
           setDetailDraft={setDetailDraft}
-          handleToggleTodo={handleToggleTodo}
           handleSaveTodo={handleSaveTodo}
           handleDeleteTodo={handleDeleteTodo}
           closeDetail={() => setSelectedTodoId(null)}
@@ -1002,19 +997,11 @@ function Sidebar({
       </section>
 
       <footer className="sidebar-footer">
-        <div>
-          <span>会话</span>
-          <strong>{sessionLabel}</strong>
-        </div>
-        <div>
-          <span>同步</span>
-          <strong>{syncStatus}</strong>
-          <small>待同步 {pendingOutboxCount}</small>
-        </div>
-        <div>
-          <span>环境</span>
-          <strong>{envSummary}</strong>
-        </div>
+        <small>{sessionLabel}</small>
+        <small>
+          同步 {syncStatus} · 待同步 {pendingOutboxCount}
+        </small>
+        <small>{envSummary}</small>
         <button
           className="install-chip"
           onClick={() => void handleInstall()}
@@ -1059,19 +1046,19 @@ function TodoBoard({
   return (
     <section className="todo-board">
       <div className="board-toolbar">
-        <form className="quick-create" onSubmit={(event) => void handleQuickCreateTodo(event)}>
-          <input
-            value={quickTodoTitle}
-            onChange={(event) => setQuickTodoTitle(event.target.value)}
-            placeholder="快速新建任务，例如：整理待办详情面板"
-            aria-label="快速新建任务"
-          />
-          <button className="primary-button" type="submit" disabled={busy || !quickTodoTitle.trim()}>
-            新建任务
-          </button>
-        </form>
-
         <div className="board-toolbar-row">
+          <form className="quick-create" onSubmit={(event) => void handleQuickCreateTodo(event)}>
+            <input
+              value={quickTodoTitle}
+              onChange={(event) => setQuickTodoTitle(event.target.value)}
+              placeholder="快速新建任务"
+              aria-label="快速新建任务"
+            />
+            <button className="primary-button" type="submit" disabled={busy || !quickTodoTitle.trim()}>
+              新建
+            </button>
+          </form>
+
           <div className="filter-tabs" role="tablist" aria-label="任务筛选">
             {(['all', 'today', 'overdue', 'completed'] as TaskFilter[]).map((filter) => (
               <button
@@ -1083,17 +1070,7 @@ function TodoBoard({
               </button>
             ))}
           </div>
-
-          <div className="view-hint">
-            <span>默认视图</span>
-            <strong>列表</strong>
-          </div>
         </div>
-      </div>
-
-      <div className="list-summary">
-        <p>{selectedCategory ? `当前分类：${selectedCategory.name}` : filterLabels[activeFilter]}</p>
-        <span>{visibleTodos.length} 条任务</span>
       </div>
 
       {visibleTodos.length ? (
@@ -1102,7 +1079,6 @@ function TodoBoard({
             const category = categories.find((item) => item.id === todo.categoryId) ?? null
             const statusMeta = todoStatusMeta[todo.status]
             const dueLabel = formatDueDate(todo.dueDate, todo.status)
-            const recurrenceLabel = formatRecurrence(detailRecurrenceFallback(todo.recurrenceType))
 
             return (
               <article
@@ -1130,25 +1106,15 @@ function TodoBoard({
                   onClick={() => setSelectedTodoId(todo.id)}
                 >
                   <div className="todo-row">
-                    <div className="todo-primary">
-                      <div className="todo-line">
-                        <strong>{todo.title}</strong>
-                        {category ? (
-                          <span className="todo-badge" style={{ color: category.color }}>
-                            {category.name}
-                          </span>
-                        ) : (
-                          <span className="todo-badge muted">未分类</span>
-                        )}
-                      </div>
-
-                      <div className="todo-meta">
-                        <span>
-                          {todo.note
-                            ? truncate(todo.note, 52)
-                            : '添加备注、截止日期和重复规则，让列表里的上下文更完整。'}
+                    <div className="todo-line">
+                      <strong>{todo.title}</strong>
+                      {category ? (
+                        <span className="todo-badge" style={{ color: category.color }}>
+                          {category.name}
                         </span>
-                      </div>
+                      ) : (
+                        <span className="todo-badge muted">未分类</span>
+                      )}
                     </div>
 
                     <div className="todo-secondary">
@@ -1166,7 +1132,6 @@ function TodoBoard({
                       <span className={dueLabel.emphasis ? 'todo-due is-alert' : 'todo-due'}>
                         {dueLabel.label}
                       </span>
-                      <span className="todo-repeat">{recurrenceLabel}</span>
                     </div>
                   </div>
                 </button>
@@ -1190,7 +1155,6 @@ function TodoDetailPane({
   categories,
   detailDraft,
   setDetailDraft,
-  handleToggleTodo,
   handleSaveTodo,
   handleDeleteTodo,
   closeDetail,
@@ -1200,7 +1164,6 @@ function TodoDetailPane({
   categories: CategoryRecord[]
   detailDraft: TodoDraft | null
   setDetailDraft: (draft: TodoDraft | null) => void
-  handleToggleTodo: (todo: TodoRecord) => Promise<void>
   handleSaveTodo: () => Promise<void>
   handleDeleteTodo: () => Promise<void>
   closeDetail: () => void
@@ -1313,7 +1276,6 @@ function TodoDetailPane({
                       }
                     >
                       <strong>{meta.label}</strong>
-                      <span>{meta.detail}</span>
                     </button>
                   )
                 })}
@@ -1354,13 +1316,6 @@ function TodoDetailPane({
             </label>
 
             <div className="detail-meta">
-              <button
-                className={selectedTodo.status === 'completed' ? 'secondary-button active' : 'secondary-button'}
-                onClick={() => void handleToggleTodo(selectedTodo)}
-                disabled={busy}
-              >
-                {selectedTodo.status === 'completed' ? '恢复进行中' : '标记完成'}
-              </button>
               <span>更新时间 {formatTimestamp(selectedTodo.updatedAt)}</span>
             </div>
           </div>
@@ -1451,10 +1406,6 @@ function compareTodos(left: TodoRecord, right: TodoRecord) {
   return right.updatedAt.localeCompare(left.updatedAt)
 }
 
-function detailRecurrenceFallback(value: TodoRecurrenceType) {
-  return value || 'none'
-}
-
 function createTodoRecord(
   workspaceId: string,
   title: string,
@@ -1480,21 +1431,21 @@ function createTodoRecord(
 function formatDueDate(value: string | null, status: TodoStatus) {
   if (!value) {
     return {
-      label: status === 'completed' ? '已完成 · 无截止日期' : '未设置截止日期',
+      label: '--',
       emphasis: false,
     }
   }
 
   if (value === todayDate()) {
     return {
-      label: status === 'completed' ? '今天完成' : '今天截止',
+      label: '今天',
       emphasis: status !== 'completed',
     }
   }
 
   if (value < todayDate() && status !== 'completed') {
     return {
-      label: `${value} · 已逾期`,
+      label: value,
       emphasis: true,
     }
   }
@@ -1512,10 +1463,6 @@ function formatTimestamp(value: string) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value))
-}
-
-function truncate(value: string, maxLength: number) {
-  return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value
 }
 
 function toggleTodoStatus(status: TodoStatus): TodoStatus {
