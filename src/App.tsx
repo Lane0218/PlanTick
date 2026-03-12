@@ -1,5 +1,17 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent } from 'react'
+import {
+  Ban,
+  CheckCircle2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Circle,
+  Inbox,
+  PauseCircle,
+  PlayCircle,
+  Plus,
+} from 'lucide-react'
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import './App.css'
 import {
@@ -45,39 +57,31 @@ const filterLabels: Record<TaskFilter, string> = {
   completed: '已完成',
 }
 
-const todoStatusMeta: Record<
-  TodoStatus,
-  { label: string; tone: string; accent: string; detail: string }
-> = {
+const todoStatusMeta: Record<TodoStatus, { label: string; tone: string; accent: string }> = {
   not_started: {
     label: '未开始',
-    tone: '#617287',
-    accent: '#E9EFF6',
-    detail: '还没有开始推进',
+    tone: '#90A4AE',
+    accent: '#F5F7FA',
   },
   in_progress: {
     label: '进行中',
-    tone: '#2F6EA4',
-    accent: '#E3EFFB',
-    detail: '正在处理',
+    tone: '#42A5F5',
+    accent: '#EBF5FF',
   },
   completed: {
     label: '已完成',
-    tone: '#4D7A67',
-    accent: '#E4F0EA',
-    detail: '已经收口',
+    tone: '#26A69A',
+    accent: '#E8F5F3',
   },
   blocked: {
     label: '阻塞',
-    tone: '#C25E4E',
-    accent: '#F9E8E2',
-    detail: '受依赖或问题阻塞',
+    tone: '#EF5350',
+    accent: '#FFEBEE',
   },
   canceled: {
     label: '取消',
-    tone: '#7D6D8E',
-    accent: '#ECE8F3',
-    detail: '当前不再继续',
+    tone: '#90A4AE',
+    accent: '#F5F7FA',
   },
 }
 
@@ -656,7 +660,6 @@ function App() {
                 setSelectedTodoId={setSelectedTodoId}
                 categories={activeCategories}
                 handleToggleTodo={handleToggleTodo}
-                message={message}
               />
             }
           />
@@ -872,17 +875,11 @@ function Sidebar({
     <aside className="sidebar-pane">
       <div className="sidebar-brandbar">
         <div className="sidebar-brandmark" aria-hidden="true">
-          <span />
+          <Inbox size={18} strokeWidth={2.2} />
         </div>
         <div className="sidebar-brandcopy">
-          <h2 title={sessionLabel}>待办事项</h2>
-          <p>PlanTick Workspace</p>
+          <h2 title={sessionLabel}>PlanTick</h2>
         </div>
-      </div>
-
-      <div className="sidebar-top">
-        <p className="sidebar-session">设备会话</p>
-        <strong title={sessionLabel}>{sessionLabel}</strong>
       </div>
 
       <nav className="sidebar-section sidebar-nav" aria-label="任务筛选">
@@ -915,7 +912,7 @@ function Sidebar({
             aria-label="切换分类管理"
             onClick={() => setShowCategoryManager((current) => !current)}
           >
-            {showCategoryManager ? '收起' : '新建'}
+            <Plus size={16} strokeWidth={2.2} aria-hidden="true" />
           </button>
         </div>
 
@@ -1048,7 +1045,6 @@ function TodoBoard({
   setSelectedTodoId,
   categories,
   handleToggleTodo,
-  message,
 }: {
   quickTodoTitle: string
   setQuickTodoTitle: (value: string) => void
@@ -1062,7 +1058,6 @@ function TodoBoard({
   setSelectedTodoId: (id: string | null) => void
   categories: CategoryRecord[]
   handleToggleTodo: (todo: TodoRecord) => Promise<void>
-  message: string
 }) {
   const [currentDate, setCurrentDate] = useState(() => new Date())
 
@@ -1156,15 +1151,14 @@ function TodoBoard({
             <span>{formattedDate}</span>
             {currentDateIsToday ? <b>今天</b> : null}
           </div>
-          <p>{message}</p>
         </div>
 
         <div className="board-date-nav" aria-label="天数切换">
           <button type="button" onClick={() => moveCurrentDate(-1)} aria-label="查看前一天">
-            ‹
+            <ChevronLeft size={16} strokeWidth={2.1} />
           </button>
           <button type="button" onClick={() => moveCurrentDate(1)} aria-label="查看后一天">
-            ›
+            <ChevronRight size={16} strokeWidth={2.1} />
           </button>
         </div>
       </div>
@@ -1176,7 +1170,6 @@ function TodoBoard({
             const statusMeta = todoStatusMeta[todo.status]
             const dueLabel = formatDueDate(todo.dueDate, todo.status)
             const noteExcerpt = todo.note.trim().split('\n')[0]
-            const statusGlyph = statusSymbol(todo.status)
 
             return (
               <article
@@ -1202,7 +1195,7 @@ function TodoBoard({
                   onClick={() => void handleToggleTodo(todo)}
                 >
                   <span className="todo-status-icon" aria-hidden="true">
-                    {statusGlyph}
+                    {renderStatusIcon(todo.status)}
                   </span>
                 </button>
 
@@ -1214,9 +1207,6 @@ function TodoBoard({
                 >
                   <div className="todo-main-top">
                     <div className="todo-card-topline">
-                      <span className="todo-list-chip" style={{ '--chip-tone': category?.color ?? '#90A4AE' } as CSSProperties}>
-                        {category?.name ?? '收件箱'}
-                      </span>
                       <span className="todo-status-badge" style={{ backgroundColor: statusMeta.accent, color: statusMeta.tone }}>
                         {statusMeta.label}
                       </span>
@@ -1230,13 +1220,7 @@ function TodoBoard({
 
                   {noteExcerpt ? <p className="todo-excerpt">{noteExcerpt}</p> : null}
 
-                  <div className="todo-secondary">
-                    <span className="todo-category" style={{ color: category?.color ?? '#7b8280' }}>
-                      {category?.name ?? '未分类'}
-                    </span>
-                    <span className="todo-detail-copy">{statusMeta.label}</span>
-                    <span className="todo-detail-copy">更新于 {formatTimestamp(todo.updatedAt)}</span>
-                  </div>
+                  {category ? <p className="todo-secondary">{category.name}</p> : null}
                 </button>
 
                 <span className="todo-list-accent" style={{ backgroundColor: category?.color ?? '#cfd6db' }} aria-hidden="true" />
@@ -1247,7 +1231,7 @@ function TodoBoard({
       ) : (
         <div className="empty-state">
           <h2>这里还没有任务。</h2>
-          <p>{message}</p>
+          <p>从上方输入框开始添加第一条任务。</p>
         </div>
       )}
     </section>
@@ -1284,16 +1268,14 @@ function TodoDetailPane({
           <div className="detail-head">
             <div className="detail-list-row">
               <span className="detail-list-name">
-                <span
+              <span
                   className="detail-list-dot"
                   style={{ backgroundColor: selectedCategory?.color ?? '#90A4AE' }}
                   aria-hidden="true"
                 />
                 {selectedCategory?.name ?? '收件箱'}
               </span>
-              <span className="detail-list-arrow" aria-hidden="true">
-                ▾
-              </span>
+              <ChevronDown size={14} strokeWidth={2.2} className="detail-list-arrow" aria-hidden="true" />
             </div>
             <button className="detail-close" onClick={closeDetail} aria-label="关闭详情">
               ×
@@ -1315,31 +1297,6 @@ function TodoDetailPane({
             autoComplete="off"
           />
 
-          <div className="detail-overview">
-            <button
-              type="button"
-              className={`detail-status-rotator detail-status-${detailDraft.status}`}
-              style={
-                {
-                  '--status-tone': todoStatusMeta[detailDraft.status].tone,
-                  '--status-accent': todoStatusMeta[detailDraft.status].accent,
-                } as CSSProperties
-              }
-              onClick={() =>
-                setDetailDraft({
-                  ...detailDraft,
-                  status: nextTodoStatus(detailDraft.status),
-                })
-              }
-            >
-              {todoStatusMeta[detailDraft.status].label}
-            </button>
-
-            <span className="detail-overview-date">
-              {detailDraft.dueDate ? formatSlashDate(detailDraft.dueDate) : '无日期'}
-            </span>
-          </div>
-
           <div className="detail-stack">
             <section className="detail-section">
               <div className="detail-card-head">
@@ -1356,6 +1313,7 @@ function TodoDetailPane({
                       type="button"
                       className={active ? 'detail-status-choice active' : 'detail-status-choice'}
                       aria-label={`设置状态为${statusMeta.label}`}
+                      aria-pressed={active}
                       style={active ? { backgroundColor: statusMeta.accent, color: statusMeta.tone } : undefined}
                       onClick={() =>
                         setDetailDraft({
@@ -1364,7 +1322,9 @@ function TodoDetailPane({
                         })
                       }
                     >
-                      <span aria-hidden="true">{statusSymbol(status)}</span>
+                      <span className="detail-status-choice-icon" aria-hidden="true">
+                        {renderStatusIcon(status)}
+                      </span>
                       {statusMeta.label}
                     </button>
                   )
@@ -1645,10 +1605,6 @@ function formatDueDate(value: string | null, status: TodoStatus) {
   }
 }
 
-function formatSlashDate(value: string) {
-  return value.replaceAll('-', '/')
-}
-
 function formatMonthDay(value: string) {
   return new Intl.DateTimeFormat('zh-CN', {
     month: 'numeric',
@@ -1689,18 +1645,18 @@ function isSameDate(left: Date, right: Date) {
   )
 }
 
-function statusSymbol(status: TodoStatus) {
+function renderStatusIcon(status: TodoStatus) {
   switch (status) {
     case 'in_progress':
-      return '▶'
+      return <PlayCircle size={15} strokeWidth={2} />
     case 'completed':
-      return '✓'
+      return <CheckCircle2 size={15} strokeWidth={2} />
     case 'blocked':
-      return '⏸'
+      return <PauseCircle size={15} strokeWidth={2} />
     case 'canceled':
-      return '−'
+      return <Ban size={15} strokeWidth={2} />
     default:
-      return '○'
+      return <Circle size={15} strokeWidth={2} />
   }
 }
 

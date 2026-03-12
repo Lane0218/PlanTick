@@ -28,9 +28,12 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
 
   await page.getByLabel('备注').fill('右侧详情支持完整编辑任务字段')
   await page.getByLabel('日期').fill('2026-03-21')
-  await page.getByRole('button', { name: '未开始', exact: true }).click()
+  await page.getByRole('button', { name: '设置状态为进行中' }).click()
 
-  await expect(page.getByRole('button', { name: '进行中', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '设置状态为进行中' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
   await expect(page.getByLabel('日期')).toHaveValue('2026-03-21')
   await expect(page.getByLabel('备注')).toHaveValue('右侧详情支持完整编辑任务字段')
   await page.waitForTimeout(700)
@@ -44,5 +47,8 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
     '右侧详情支持完整编辑任务字段',
   )
   await expect(page.getByLabel('日期')).toHaveValue('2026-03-21')
-  await expect(page.getByRole('button', { name: '进行中', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '设置状态为进行中' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
 })
