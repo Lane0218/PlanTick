@@ -874,7 +874,9 @@
 }
 
 .todo-list {
-  overflow: hidden;
+  overflow: visible;
+  margin-right: -20px;
+  padding-right: 20px;
   border-top: 1px solid #f0f3f6;
   background: #ffffff;
 }
@@ -885,7 +887,8 @@
   grid-template-columns: 4px 36px minmax(0, 1fr);
   gap: 12px;
   align-items: start;
-  padding: 12px 0;
+  margin-right: -20px;
+  padding: 12px 20px 12px 0;
   border-bottom: 1px solid #f0f3f6;
   background: transparent;
 }
@@ -1094,14 +1097,17 @@
 .detail-list-picker {
   position: relative;
   flex: 1;
+  min-width: 0;
 }
 
 .detail-category-strip {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   width: 100%;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .detail-category-chip {
@@ -1162,6 +1168,16 @@
 .detail-list-menu button.active,
 .detail-list-menu button:hover {
   background: #f5f7fa;
+}
+
+.detail-category-measure {
+  position: absolute;
+  inset: auto auto auto -9999px;
+  visibility: hidden;
+  pointer-events: none;
+  display: inline-flex;
+  gap: 8px;
+  white-space: nowrap;
 }
 
 .detail-list-dot.neutral {
@@ -1462,9 +1478,69 @@
   color: #ef5350;
 }
 
+.detail-footer-link.is-active {
+  color: #1f6e66;
+}
+
 .detail-footer-link:disabled {
   opacity: 0.7;
   cursor: not-allowed;
+}
+
+.detail-recurrence-shell {
+  position: relative;
+}
+
+.detail-recurrence-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 12px);
+  z-index: 30;
+  min-width: 220px;
+  padding: 8px;
+  border: 1px solid #dfe6eb;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 18px 36px rgba(31, 42, 55, 0.12);
+  display: grid;
+  gap: 4px;
+}
+
+.detail-recurrence-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #2c3e50;
+  text-align: left;
+  font-size: 0.86rem;
+}
+
+.detail-recurrence-menu button:hover,
+.detail-recurrence-menu button.active {
+  background: #edf3f1;
+  color: #1f6e66;
+}
+
+.detail-recurrence-menu button:disabled {
+  color: #a0acb8;
+  cursor: not-allowed;
+}
+
+.detail-recurrence-menu button:disabled:hover {
+  background: transparent;
+  color: #a0acb8;
+}
+
+.detail-recurrence-hint {
+  margin: 2px 4px 0;
+  color: #90a4ae;
+  font-size: 0.74rem;
+  line-height: 1.5;
 }
 
 .detail-footer-icon {
@@ -1647,6 +1723,16 @@
   .quick-create-options {
     position: static;
     width: auto;
+  }
+
+  .todo-list {
+    margin-right: -16px;
+    padding-right: 16px;
+  }
+
+  .todo-card {
+    margin-right: -16px;
+    padding-right: 16px;
   }
 
   .detail-calendar-popover {

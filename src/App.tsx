@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent } from 'react'
 import { DayPicker } from 'react-day-picker'
 import 'react-day-picker/dist/style.css'
@@ -47,6 +47,14 @@ type TodoDraft = {
   status: TodoStatus
   note: string
   recurrenceType: TodoRecurrenceType
+}
+
+type CategoryChipOption = {
+  key: string
+  categoryId: string
+  label: string
+  color: string | null
+  neutral?: boolean
 }
 
 type BeforeInstallPromptEvent = Event & {
@@ -564,17 +572,30 @@ function App() {
         : todo
 
     const nextStatus = toggleTodoStatus(baseTodo.status)
+    const updatedAt = new Date().toISOString()
     const updated: TodoRecord = {
       ...baseTodo,
       status: nextStatus,
       completed: nextStatus === 'completed',
-      updatedAt: new Date().toISOString(),
+      updatedAt,
     }
+    const shouldCreateRecurringTodo =
+      nextStatus === 'completed' &&
+      baseTodo.recurrenceType !== 'none' &&
+      Boolean(baseTodo.dueDate)
+    const recurringTodo =
+      shouldCreateRecurringTodo && baseTodo.dueDate
+        ? createNextRecurringTodo(baseTodo, updatedAt)
+        : null
 
     setBusy(true)
     try {
       await upsertTodo(updated)
       await enqueueRecordMutation('todos', 'upsert', toSyncTodo(updated))
+      if (recurringTodo) {
+        await upsertTodo(recurringTodo)
+        await enqueueRecordMutation('todos', 'upsert', toSyncTodo(recurringTodo))
+      }
       lastSavedDraftRef.current = serializeTodoDraft({
         title: updated.title,
         categoryId: updated.categoryId ?? '',
@@ -584,7 +605,11 @@ function App() {
         recurrenceType: updated.recurrenceType,
       })
       await refreshWorkspaceData(workspaceId)
-      setMessage(`任务「${todo.title}」状态已切换为 ${todoStatusMeta[updated.status].label}。`)
+      setMessage(
+        recurringTodo
+          ? `任务「${todo.title}」已完成，并已生成下一次：${formatMonthDay(recurringTodo.dueDate!)}。`
+          : `任务「${todo.title}」状态已切换为 ${todoStatusMeta[updated.status].label}。`,
+      )
     } finally {
       setBusy(false)
     }
@@ -1382,27 +1407,119 @@ function TodoDetailPane({
   const selectedCategory = categories.find((category) => category.id === detailDraft?.categoryId) ?? null
   const [showCategoryPicker, setShowCategoryPicker] = useState(false)
   const [showCalendarPicker, setShowCalendarPicker] = useState(false)
+  const [visibleCategoryCount, setVisibleCategoryCount] = useState<number | null>(null)
+  const [showRecurrenceMenu, setShowRecurrenceMenu] = useState(false)
+  const categoryStripRef = useRef<HTMLDivElement | null>(null)
+  const categoryMeasureRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+  const dropdownMeasureRef = useRef<HTMLButtonElement | null>(null)
+  const orderedCategoryOptions = useMemo(() => {
+    const selectedId = detailDraft?.categoryId ?? ''
+    const options: CategoryChipOption[] = []
+    const consumedIds = new Set<string>()
 
-  const visibleCategoryIds = new Set<string>()
-  const visibleCategories: CategoryRecord[] = []
-
-  if (selectedCategory) {
-    visibleCategoryIds.add(selectedCategory.id)
-    visibleCategories.push(selectedCategory)
-  }
-
-  for (const category of categories) {
-    if (visibleCategories.length >= 3) {
-      break
+    if (!selectedId) {
+      options.push({
+        key: 'uncategorized',
+        categoryId: '',
+        label: '未分类',
+        color: null,
+        neutral: true,
+      })
     }
-    if (visibleCategoryIds.has(category.id)) {
-      continue
-    }
-    visibleCategoryIds.add(category.id)
-    visibleCategories.push(category)
-  }
 
-  const overflowCategories = categories.filter((category) => !visibleCategoryIds.has(category.id))
+    if (selectedCategory) {
+      options.push({
+        key: selectedCategory.id,
+        categoryId: selectedCategory.id,
+        label: selectedCategory.name,
+        color: selectedCategory.color,
+      })
+      consumedIds.add(selectedCategory.id)
+    }
+
+    for (const category of categories) {
+      if (consumedIds.has(category.id)) {
+        continue
+      }
+
+      options.push({
+        key: category.id,
+        categoryId: category.id,
+        label: category.name,
+        color: category.color,
+      })
+    }
+
+    return options
+  }, [categories, detailDraft?.categoryId, selectedCategory])
+
+  useLayoutEffect(() => {
+    const strip = categoryStripRef.current
+    if (!strip || !orderedCategoryOptions.length) {
+      setVisibleCategoryCount(null)
+      return
+    }
+
+    let frame = 0
+    const gap = 8
+    const computeVisibleCategories = () => {
+      const containerWidth = strip.clientWidth
+      if (!containerWidth) {
+        return
+      }
+
+      const chipWidths = orderedCategoryOptions.map(
+        (option) => categoryMeasureRefs.current[option.key]?.offsetWidth ?? 0,
+      )
+      const totalChipWidth = chipWidths.reduce(
+        (sum, width, index) => sum + width + (index > 0 ? gap : 0),
+        0,
+      )
+
+      if (totalChipWidth <= containerWidth) {
+        setVisibleCategoryCount(orderedCategoryOptions.length)
+        return
+      }
+
+      const dropdownWidth = dropdownMeasureRef.current?.offsetWidth ?? 34
+      const availableWidth = Math.max(containerWidth - dropdownWidth - gap, 0)
+      let usedWidth = 0
+      let nextVisibleCount = 0
+
+      for (const width of chipWidths) {
+        const projectedWidth = nextVisibleCount === 0 ? width : usedWidth + gap + width
+        if (projectedWidth > availableWidth) {
+          break
+        }
+
+        usedWidth = projectedWidth
+        nextVisibleCount += 1
+      }
+
+      setVisibleCategoryCount(Math.max(1, nextVisibleCount))
+    }
+
+    computeVisibleCategories()
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame)
+      frame = window.requestAnimationFrame(computeVisibleCategories)
+    })
+    observer.observe(strip)
+
+    return () => {
+      cancelAnimationFrame(frame)
+      observer.disconnect()
+    }
+  }, [orderedCategoryOptions])
+
+  const visibleCategoryOptions =
+    visibleCategoryCount === null
+      ? orderedCategoryOptions
+      : orderedCategoryOptions.slice(0, visibleCategoryCount)
+  const overflowCategoryOptions =
+    visibleCategoryCount === null
+      ? []
+      : orderedCategoryOptions.slice(visibleCategoryCount)
 
   const customDateSelected = Boolean(
     detailDraft?.dueDate &&
@@ -1413,6 +1530,31 @@ function TodoDetailPane({
     customDateSelected && detailDraft?.dueDate
       ? formatMonthDay(detailDraft.dueDate)
       : '选择日期'
+  const recurrenceSummaryLabel = detailDraft
+    ? formatRecurrenceSummary(detailDraft.recurrenceType, detailDraft.dueDate)
+    : '重复'
+  const recurrenceOptions = detailDraft
+    ? [
+        { type: 'none' as const, label: '不重复', disabled: false },
+        { type: 'daily' as const, label: '每天', disabled: !detailDraft.dueDate },
+        {
+          type: 'weekly' as const,
+          label: formatRecurrenceOptionLabel('weekly', detailDraft.dueDate),
+          disabled: !detailDraft.dueDate,
+        },
+        {
+          type: 'monthly' as const,
+          label: formatRecurrenceOptionLabel('monthly', detailDraft.dueDate),
+          disabled: !detailDraft.dueDate,
+        },
+      ]
+    : []
+
+  useEffect(() => {
+    if (!overflowCategoryOptions.length) {
+      setShowCategoryPicker(false)
+    }
+  }, [overflowCategoryOptions.length])
 
   return (
     <aside className={selectedTodo ? 'detail-pane is-open' : 'detail-pane'} aria-label="任务详情">
@@ -1420,44 +1562,38 @@ function TodoDetailPane({
         <>
           <div className="detail-head">
             <div className="detail-list-picker">
-              <div className="detail-category-strip" aria-label="任务分类">
-                {selectedCategory ? null : (
+              <div ref={categoryStripRef} className="detail-category-strip" aria-label="任务分类">
+                {visibleCategoryOptions.map((option) => (
                   <button
+                    key={option.key}
                     type="button"
-                    className={!detailDraft.categoryId ? 'detail-category-chip active neutral' : 'detail-category-chip neutral'}
-                    onClick={() =>
-                      setDetailDraft({
-                        ...detailDraft,
-                        categoryId: '',
-                      })
+                    className={
+                      [
+                        detailDraft.categoryId === option.categoryId
+                          ? 'detail-category-chip active'
+                          : 'detail-category-chip',
+                        option.neutral ? 'neutral' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')
                     }
-                  >
-                    未分类
-                  </button>
-                )}
-
-                {visibleCategories.map((category) => (
-                  <button
-                    key={category.id}
-                    type="button"
-                    className={detailDraft.categoryId === category.id ? 'detail-category-chip active' : 'detail-category-chip'}
                     style={
                       {
-                        '--chip-tone': category.color,
+                        '--chip-tone': option.color ?? '#dfe6eb',
                       } as CSSProperties
                     }
                     onClick={() =>
                       setDetailDraft({
                         ...detailDraft,
-                        categoryId: category.id,
+                        categoryId: option.categoryId,
                       })
                     }
                   >
-                    {category.name}
+                    {option.label}
                   </button>
                 ))}
 
-                {overflowCategories.length || selectedCategory ? (
+                {overflowCategoryOptions.length ? (
                   <button
                     type="button"
                     className="detail-list-select"
@@ -1470,41 +1606,62 @@ function TodoDetailPane({
                 ) : null}
               </div>
 
+              <div className="detail-category-measure" aria-hidden="true">
+                {orderedCategoryOptions.map((option) => (
+                  <button
+                    key={option.key}
+                    ref={(node) => {
+                      categoryMeasureRefs.current[option.key] = node
+                    }}
+                    type="button"
+                    className={[
+                      detailDraft.categoryId === option.categoryId
+                        ? 'detail-category-chip active'
+                        : 'detail-category-chip',
+                      option.neutral ? 'neutral' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                    style={
+                      {
+                        '--chip-tone': option.color ?? '#dfe6eb',
+                      } as CSSProperties
+                    }
+                  >
+                    {option.label}
+                  </button>
+                ))}
+                <button
+                  ref={dropdownMeasureRef}
+                  type="button"
+                  className="detail-list-select"
+                  tabIndex={-1}
+                >
+                  <ChevronDown size={14} strokeWidth={2.2} className="detail-list-arrow" aria-hidden="true" />
+                </button>
+              </div>
+
               {showCategoryPicker ? (
                 <div className="detail-list-menu" role="listbox" aria-label="分类列表">
-                  <button
-                    type="button"
-                    className={!detailDraft.categoryId ? 'active' : ''}
-                    onClick={() => {
-                      setDetailDraft({
-                        ...detailDraft,
-                        categoryId: '',
-                      })
-                      setShowCategoryPicker(false)
-                    }}
-                  >
-                    <span className="detail-list-dot neutral" aria-hidden="true" />
-                    <span>未分类</span>
-                  </button>
-                  {overflowCategories.map((category) => (
+                  {overflowCategoryOptions.map((option) => (
                     <button
-                      key={category.id}
+                      key={option.key}
                       type="button"
-                      className={detailDraft.categoryId === category.id ? 'active' : ''}
+                      className={detailDraft.categoryId === option.categoryId ? 'active' : ''}
                       onClick={() => {
                         setDetailDraft({
                           ...detailDraft,
-                          categoryId: category.id,
+                          categoryId: option.categoryId,
                         })
                         setShowCategoryPicker(false)
                       }}
                     >
                       <span
-                        className="detail-list-dot"
-                        style={{ backgroundColor: category.color }}
+                        className={option.neutral ? 'detail-list-dot neutral' : 'detail-list-dot'}
+                        style={option.neutral ? undefined : { backgroundColor: option.color ?? '#cfd8e3' }}
                         aria-hidden="true"
                       />
-                      <span>{category.name}</span>
+                      <span>{option.label}</span>
                     </button>
                   ))}
                 </div>
@@ -1515,6 +1672,7 @@ function TodoDetailPane({
               onClick={() => {
                 setShowCategoryPicker(false)
                 setShowCalendarPicker(false)
+                setShowRecurrenceMenu(false)
                 closeDetail()
               }}
               aria-label="关闭详情"
@@ -1627,6 +1785,7 @@ function TodoDetailPane({
                     setDetailDraft({
                       ...detailDraft,
                       dueDate: '',
+                      recurrenceType: 'none',
                     })
                   }}
                 >
@@ -1652,10 +1811,52 @@ function TodoDetailPane({
             ) : (
               <>
                 <div className="detail-footer-actions">
-                  <button className="detail-footer-link" type="button" disabled>
-                    <Repeat size={15} strokeWidth={2.1} />
-                    <span>重复</span>
-                  </button>
+                  <div className="detail-recurrence-shell">
+                    <button
+                      className={
+                        showRecurrenceMenu || detailDraft.recurrenceType !== 'none'
+                          ? 'detail-footer-link is-active'
+                          : 'detail-footer-link'
+                      }
+                      onClick={() => setShowRecurrenceMenu((current) => !current)}
+                      disabled={busy}
+                      type="button"
+                    >
+                      <Repeat size={15} strokeWidth={2.1} />
+                      <span>{recurrenceSummaryLabel}</span>
+                    </button>
+
+                    {showRecurrenceMenu ? (
+                      <div className="detail-recurrence-menu" role="menu" aria-label="重复规则">
+                        {recurrenceOptions.map((option) => (
+                          <button
+                            key={option.type}
+                            className={detailDraft.recurrenceType === option.type ? 'active' : ''}
+                            type="button"
+                            role="menuitemradio"
+                            aria-checked={detailDraft.recurrenceType === option.type}
+                            disabled={option.disabled}
+                            onClick={() => {
+                              if (option.disabled) {
+                                return
+                              }
+
+                              setDetailDraft({
+                                ...detailDraft,
+                                recurrenceType: option.type,
+                              })
+                              setShowRecurrenceMenu(false)
+                            }}
+                          >
+                            <span>{option.label}</span>
+                          </button>
+                        ))}
+                        {!detailDraft.dueDate ? (
+                          <p className="detail-recurrence-hint">先设置日期后才能开启每天、每周或每月重复。</p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
                   <button
                     className="detail-footer-link is-danger"
                     onClick={() => setConfirmDeleteTodo(true)}
@@ -1842,6 +2043,88 @@ function nextTodoStatus(status: TodoStatus): TodoStatus {
   const cycle: TodoStatus[] = ['not_started', 'in_progress', 'completed', 'blocked', 'canceled']
   const currentIndex = cycle.indexOf(status)
   return cycle[(currentIndex + 1) % cycle.length]
+}
+
+function formatRecurrenceSummary(recurrenceType: TodoRecurrenceType, dueDate: string) {
+  if (recurrenceType === 'none') {
+    return '重复'
+  }
+
+  return formatRecurrenceOptionLabel(recurrenceType, dueDate)
+}
+
+function formatRecurrenceOptionLabel(recurrenceType: Exclude<TodoRecurrenceType, 'none'>, dueDate: string) {
+  switch (recurrenceType) {
+    case 'daily':
+      return '每天'
+    case 'weekly':
+      return `每周（${formatWeekday(dueDate)}）`
+    case 'monthly':
+      return `每月（${formatMonthDayOfMonth(dueDate)}）`
+  }
+}
+
+function formatWeekday(value: string) {
+  if (!value) {
+    return '周'
+  }
+
+  const weekdayLabels = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+  return weekdayLabels[new Date(`${value}T00:00:00`).getDay()]
+}
+
+function formatMonthDayOfMonth(value: string) {
+  if (!value) {
+    return '日期'
+  }
+
+  return `${new Date(`${value}T00:00:00`).getDate()}日`
+}
+
+function createNextRecurringTodo(baseTodo: TodoRecord, updatedAt: string): TodoRecord | null {
+  const nextDueDate = getNextRecurringDueDate(baseTodo.dueDate, baseTodo.recurrenceType)
+  if (!nextDueDate) {
+    return null
+  }
+
+  return {
+    ...baseTodo,
+    id: crypto.randomUUID(),
+    dueDate: nextDueDate,
+    status: 'not_started',
+    completed: false,
+    updatedAt,
+    deleted: false,
+  }
+}
+
+function getNextRecurringDueDate(
+  dueDate: string | null,
+  recurrenceType: TodoRecurrenceType,
+) {
+  if (!dueDate || recurrenceType === 'none') {
+    return null
+  }
+
+  const baseDate = new Date(`${dueDate}T00:00:00`)
+
+  if (recurrenceType === 'daily') {
+    baseDate.setDate(baseDate.getDate() + 1)
+    return formatDateInputValue(baseDate)
+  }
+
+  if (recurrenceType === 'weekly') {
+    baseDate.setDate(baseDate.getDate() + 7)
+    return formatDateInputValue(baseDate)
+  }
+
+  const year = baseDate.getFullYear()
+  const month = baseDate.getMonth()
+  const day = baseDate.getDate()
+  const targetMonthDate = new Date(year, month + 2, 0)
+  const nextMonthLastDay = targetMonthDate.getDate()
+  const nextMonthDate = new Date(year, month + 1, Math.min(day, nextMonthLastDay))
+  return formatDateInputValue(nextMonthDate)
 }
 
 function nextDate(days: number) {
