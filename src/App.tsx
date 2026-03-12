@@ -36,7 +36,7 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
 }
 
-const categoryPalette = ['#4E79A7', '#5C86B4', '#6B8FB6', '#7B8FAF', '#5E768F', '#7D8EA3']
+const categoryPalette = ['#2F6EA4', '#4D7A67', '#C25E4E', '#8B5FD6', '#B36A1D', '#0E7C86']
 
 const filterLabels: Record<TaskFilter, string> = {
   all: '全部任务',
@@ -147,7 +147,7 @@ function App() {
           case 'completed':
             return todo.status === 'completed'
           default:
-            return todo.status !== 'completed'
+            return true
         }
       }),
     [activeFilter, activeTodos, selectedCategoryId],
@@ -157,7 +157,7 @@ function App() {
 
   const sidebarCounts = useMemo(
     () => ({
-      all: activeTodos.filter((todo) => todo.status !== 'completed').length,
+      all: activeTodos.length,
       today: activeTodos.filter(
         (todo) => todo.dueDate === todayDate() && todo.status !== 'completed',
       ).length,
@@ -561,7 +561,6 @@ function App() {
   return (
     <main className={shellClassName}>
       <Sidebar
-        workspaceId={workspaceId}
         sessionLabel={sessionLabel}
         activeFilter={activeFilter}
         setActiveFilter={setActiveFilter}
@@ -775,7 +774,6 @@ function OnboardingLayout({
 }
 
 function Sidebar({
-  workspaceId,
   sessionLabel,
   activeFilter,
   setActiveFilter,
@@ -797,7 +795,6 @@ function Sidebar({
   handleDeleteCategory,
   busy,
 }: {
-  workspaceId: string
   sessionLabel: string
   activeFilter: TaskFilter
   setActiveFilter: (filter: TaskFilter) => void
@@ -824,11 +821,8 @@ function Sidebar({
   return (
     <aside className="sidebar-pane">
       <div className="sidebar-top">
-        <p className="eyebrow">Workspace</p>
-        <h2>PlanTick</h2>
-        <p className="workspace-token" title={sessionLabel}>
-          {workspaceId}
-        </p>
+        <p className="eyebrow">工作区</p>
+        <h2 title={sessionLabel}>PlanTick</h2>
       </div>
 
       <nav className="sidebar-section" aria-label="任务筛选">
@@ -860,24 +854,43 @@ function Sidebar({
               aria-label="切换分类管理"
               onClick={() => setShowCategoryManager((current) => !current)}
             >
-              管理
+              +
             </button>
           </div>
         </div>
 
         <div className="category-list">
           {categories.map((category) => (
-            <button
+            <div
               key={category.id}
-              className={selectedCategoryId === category.id ? 'category-item active' : 'category-item'}
-              onClick={() => {
-                setSelectedCategoryId(category.id)
-                setActiveFilter('all')
-              }}
+              className={selectedCategoryId === category.id ? 'category-row active' : 'category-row'}
             >
-              <span className="color-dot" style={{ backgroundColor: category.color }} />
-              <span>{category.name}</span>
-            </button>
+              <button
+                className={selectedCategoryId === category.id ? 'category-item active' : 'category-item'}
+                onClick={() => {
+                  setSelectedCategoryId(category.id)
+                  setActiveFilter('all')
+                }}
+              >
+                <span className="color-dot" style={{ backgroundColor: category.color }} />
+                <span className="category-name" style={{ color: category.color }}>
+                  {category.name}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                className="category-more"
+                aria-label={`编辑分类 ${category.name}`}
+                onClick={() => {
+                  setSelectedCategoryId(category.id)
+                  setActiveFilter('all')
+                  setShowCategoryManager(true)
+                }}
+              >
+                ⋯
+              </button>
+            </div>
           ))}
         </div>
 
@@ -983,7 +996,7 @@ function TodoBoard({
           <input
             value={quickTodoTitle}
             onChange={(event) => setQuickTodoTitle(event.target.value)}
-            placeholder="输入任务后回车创建"
+            placeholder="回车新建任务"
             aria-label="快速新建任务"
           />
         </form>
@@ -1027,7 +1040,14 @@ function TodoBoard({
                     <strong>{todo.title}</strong>
 
                     <div className="todo-secondary">
-                      <span className="todo-badge" style={{ color: category?.color ?? statusMeta.tone }}>
+                      <span
+                        className="todo-badge"
+                        style={
+                          {
+                            '--category-color': category?.color ?? statusMeta.tone,
+                          } as CSSProperties
+                        }
+                      >
                         {category?.name ?? '未分类'}
                       </span>
                       <span className={dueLabel.emphasis ? 'todo-due is-alert' : 'todo-due'}>
@@ -1042,7 +1062,6 @@ function TodoBoard({
         </div>
       ) : (
         <div className="empty-state">
-          <p className="eyebrow">No Tasks</p>
           <h2>这里还没有任务。</h2>
           <p>{message}</p>
         </div>
@@ -1076,7 +1095,6 @@ function TodoDetailPane({
         <>
           <div className="detail-head">
             <div>
-              <p className="eyebrow">Task Detail</p>
               <h2>{selectedTodo.title}</h2>
             </div>
             <button className="icon-button" onClick={closeDetail} aria-label="关闭详情">

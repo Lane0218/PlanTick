@@ -366,9 +366,10 @@
 
 .section-tools .icon-button {
   min-height: 34px;
-  padding: 0 10px;
+  min-width: 34px;
+  padding: 0;
   border-radius: 10px;
-  font-size: 0.78rem;
+  font-size: 1rem;
 }
 
 .sidebar-item,
@@ -405,6 +406,12 @@
   text-align: right;
 }
 
+.category-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .category-list {
   display: grid;
   gap: 4px;
@@ -412,6 +419,26 @@
 
 .category-item {
   justify-content: flex-start;
+  flex: 1;
+}
+
+.category-name {
+  font-weight: 600;
+}
+
+.category-more {
+  width: 32px;
+  min-height: 32px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.category-more:hover {
+  background: rgba(237, 243, 249, 0.84);
 }
 
 .sidebar-drawer {
@@ -498,7 +525,7 @@
 .todo-card {
   position: relative;
   display: grid;
-  grid-template-columns: 56px minmax(0, 1fr);
+  grid-template-columns: 78px minmax(0, 1fr);
   gap: 10px;
   padding: 12px 6px 12px 2px;
   border-bottom: 1px solid rgba(219, 227, 238, 0.8);
@@ -540,41 +567,47 @@
 
 .todo-status-trigger,
 .detail-status-rotator {
-  border: 0;
-  background: transparent;
-  font-size: 0.74rem;
+  font-size: 0.76rem;
   font-weight: 700;
   letter-spacing: 0.02em;
 }
 
 .todo-status-trigger {
-  padding: 0 0 0 10px;
-  text-align: left;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  text-align: center;
 }
 
 .todo-status-not_started,
 .detail-status-not_started {
   color: #617287;
+  background: rgba(233, 239, 246, 0.92);
 }
 
 .todo-status-in_progress,
 .detail-status-in_progress {
   color: #2f6ea4;
+  background: rgba(227, 239, 251, 0.96);
 }
 
 .todo-status-blocked,
 .detail-status-blocked {
   color: #c25e4e;
+  background: rgba(249, 232, 226, 0.96);
 }
 
 .todo-status-completed,
 .detail-status-completed {
   color: #4d7a67;
+  background: rgba(228, 240, 234, 0.96);
 }
 
 .todo-status-canceled,
 .detail-status-canceled {
   color: #7d6d8e;
+  background: rgba(236, 232, 243, 0.96);
 }
 
 .todo-secondary {
@@ -590,8 +623,10 @@
   display: inline-flex;
   align-items: center;
   min-height: auto;
-  padding: 0;
-  background: transparent;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--category-color) 14%, white);
+  color: var(--category-color);
   font-size: 0.75rem;
   font-weight: 600;
   white-space: nowrap;
@@ -632,6 +667,7 @@
 .todo-card.status-completed .todo-main strong,
 .todo-card.status-canceled .todo-main strong {
   opacity: 0.72;
+  text-decoration: line-through;
 }
 
 .empty-state {
