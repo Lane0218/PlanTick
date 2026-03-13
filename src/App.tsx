@@ -2236,7 +2236,6 @@ function CalendarDayPopover({
       <div className="calendar-day-popover-head">
         <div>
           <strong>{formatCalendarFullDate(date)}</strong>
-          <span>{formatDayOfMonth(date)} 日任务</span>
         </div>
         <button type="button" className="calendar-day-popover-close" aria-label="关闭当天任务浮层" onClick={onClose}>
           <X size={16} strokeWidth={2.2} />
