@@ -84,14 +84,28 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   const noNoteTask = page.locator('article', {
     has: page.getByRole('button', { name: '查看任务 123' }),
   })
+  const noNoteTaskBox = await noNoteTask.boundingBox()
   const noNoteStatusBox = await noNoteTask.getByRole('button', { name: '切换任务状态，当前未开始' }).boundingBox()
   const noNoteTitleBox = await noNoteTask.locator('.todo-main strong').boundingBox()
+  const noNoteAccentBox = await noNoteTask.locator('.todo-list-accent').boundingBox()
   expect(
     Math.abs(
       (noNoteStatusBox?.y ?? 0) + (noNoteStatusBox?.height ?? 0) / 2 -
         ((noNoteTitleBox?.y ?? 0) + (noNoteTitleBox?.height ?? 0) / 2),
     ),
   ).toBeLessThan(8)
+  expect(Math.abs((noNoteAccentBox?.y ?? 0) - (noNoteTaskBox?.y ?? 0))).toBeLessThan(2)
+  expect(
+    Math.abs(
+      (noNoteAccentBox?.y ?? 0) + (noNoteAccentBox?.height ?? 0) - ((noNoteTaskBox?.y ?? 0) + (noNoteTaskBox?.height ?? 0)),
+    ),
+  ).toBeLessThan(2)
+  expect(
+    Math.abs(
+      (noNoteAccentBox?.x ?? 0) + (noNoteAccentBox?.width ?? 0) / 2 -
+        ((noNoteStatusBox?.x ?? 0) + (noNoteStatusBox?.width ?? 0) / 2),
+    ),
+  ).toBeLessThan(2)
 
   await page.locator('.sidebar-category-section').getByRole('button', { name: '丙', exact: true }).click()
   await page.getByLabel('快速新建任务').fill('完成任务工作台 UI')
