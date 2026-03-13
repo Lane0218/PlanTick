@@ -36,6 +36,7 @@ export type TodoRecord = {
   title: string
   categoryId: EntityId | null
   dueDate: string | null
+  myDayDate: string | null
   status: TodoStatus
   completed: boolean
   note: string

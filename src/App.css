@@ -1494,7 +1494,15 @@
 .detail-footer-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 14px;
+}
+
+.detail-footer-meta {
+  margin: 0;
+  color: #1f6e66;
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
 .detail-footer-link {

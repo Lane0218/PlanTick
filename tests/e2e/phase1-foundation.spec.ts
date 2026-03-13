@@ -72,6 +72,15 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   await expect(page.getByRole('menuitemradio', { name: '每天' })).toBeDisabled()
   await expect(page.getByText('先设置日期后才能开启每天、每周或每月重复。')).toBeVisible()
   await page.getByRole('button', { name: '重复' }).click()
+  await expect(page.getByRole('button', { name: '添加到我的一天' })).toBeVisible()
+  await page.getByRole('button', { name: '添加到我的一天' }).click()
+  await expect(page.getByRole('button', { name: '从我的一天移除' })).toBeVisible()
+  await page.locator('.sidebar-nav').getByRole('button', { name: /^我的一天/ }).click()
+  await expect(page.getByRole('button', { name: '查看任务 123' })).toBeVisible()
+  await page.getByRole('button', { name: '查看任务 123' }).click()
+  await page.getByRole('button', { name: '从我的一天移除' }).click()
+  await expect(page.getByRole('button', { name: '查看任务 123' })).toHaveCount(0)
+  await page.locator('.sidebar-nav').getByRole('button', { name: /^待办箱/ }).click()
   const noNoteTask = page.locator('article', {
     has: page.getByRole('button', { name: '查看任务 123' }),
   })
@@ -180,6 +189,8 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   await page.getByLabel('快速新建任务').fill('每周例行')
   await page.getByLabel('快速新建任务').press('Enter')
   await page.getByRole('button', { name: '今天' }).click()
+  await expect(page.getByText('今天截止，自动出现在“我的一天”')).toBeVisible()
+  await expect(page.getByRole('button', { name: '从我的一天移除' })).toHaveCount(0)
   await page.getByRole('button', { name: '重复' }).click()
   await page.getByRole('menuitemradio', { name: `每周（${weekdayLabel(today)}）` }).click()
   const weeklyTask = page.locator('article', {

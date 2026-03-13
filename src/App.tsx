@@ -45,6 +45,7 @@ type TodoDraft = {
   title: string
   categoryId: string
   dueDate: string
+  myDayDate: string
   status: TodoStatus
   note: string
   recurrenceType: TodoRecurrenceType
@@ -179,7 +180,7 @@ function App() {
 
         switch (activeFilter) {
           case 'today':
-            return todo.status !== 'completed' && todo.dueDate === todayDate()
+            return isTodoInMyDay(todo)
           case 'overdue':
             return todo.status !== 'completed' && Boolean(todo.dueDate) && todo.dueDate! < todayDate()
           case 'completed':
@@ -196,9 +197,7 @@ function App() {
   const sidebarCounts = useMemo(
     () => ({
       all: activeTodos.length,
-      today: activeTodos.filter(
-        (todo) => todo.dueDate === todayDate() && todo.status !== 'completed',
-      ).length,
+      today: activeTodos.filter((todo) => isTodoInMyDay(todo)).length,
       overdue: activeTodos.filter(
         (todo) => todo.status !== 'completed' && Boolean(todo.dueDate) && todo.dueDate! < todayDate(),
       ).length,
@@ -275,6 +274,7 @@ function App() {
       title: selectedTodo.title,
       categoryId: selectedTodo.categoryId ?? '',
       dueDate: selectedTodo.dueDate ?? '',
+      myDayDate: selectedTodo.myDayDate ?? '',
       status: selectedTodo.status,
       note: selectedTodo.note,
       recurrenceType: selectedTodo.recurrenceType,
@@ -295,6 +295,7 @@ function App() {
       title: draft.title.trim(),
       categoryId: draft.categoryId || null,
       dueDate: draft.dueDate || null,
+      myDayDate: draft.myDayDate || null,
       status: draft.status,
       note: draft.note,
       recurrenceType: draft.recurrenceType,
@@ -308,6 +309,7 @@ function App() {
       title: updated.title,
       categoryId: updated.categoryId ?? '',
       dueDate: updated.dueDate ?? '',
+      myDayDate: updated.myDayDate ?? '',
       status: updated.status,
       note: updated.note,
       recurrenceType: updated.recurrenceType,
@@ -567,6 +569,7 @@ function App() {
             title: detailDraft.title.trim() || todo.title,
             categoryId: detailDraft.categoryId || null,
             dueDate: detailDraft.dueDate || null,
+            myDayDate: detailDraft.myDayDate || null,
             note: detailDraft.note,
             recurrenceType: detailDraft.recurrenceType,
           }
@@ -601,6 +604,7 @@ function App() {
         title: updated.title,
         categoryId: updated.categoryId ?? '',
         dueDate: updated.dueDate ?? '',
+        myDayDate: updated.myDayDate ?? '',
         status: updated.status,
         note: updated.note,
         recurrenceType: updated.recurrenceType,
@@ -1527,6 +1531,12 @@ function TodoDetailPane({
   const recurrenceSummaryLabel = detailDraft
     ? formatRecurrenceSummary(detailDraft.recurrenceType, detailDraft.dueDate)
     : '重复'
+  const myDayMembership = detailDraft
+    ? getMyDayMembership({
+        dueDate: detailDraft.dueDate || null,
+        myDayDate: detailDraft.myDayDate || null,
+      })
+    : 'none'
   const recurrenceOptions = detailDraft
     ? [
         { type: 'none' as const, label: '不重复', disabled: false },
@@ -1799,6 +1809,24 @@ function TodoDetailPane({
             ) : (
               <>
                 <div className="detail-footer-actions">
+                  {myDayMembership === 'auto' ? (
+                    <p className="detail-footer-meta">今天截止，自动出现在“我的一天”</p>
+                  ) : (
+                    <button
+                      className={myDayMembership === 'manual' ? 'detail-footer-link is-active' : 'detail-footer-link'}
+                      onClick={() =>
+                        setDetailDraft({
+                          ...detailDraft,
+                          myDayDate: myDayMembership === 'manual' ? '' : todayDate(),
+                        })
+                      }
+                      disabled={busy || (detailDraft.status === 'completed' && myDayMembership === 'none')}
+                      type="button"
+                    >
+                      <Sun size={15} strokeWidth={2.1} />
+                      <span>{myDayMembership === 'manual' ? '从我的一天移除' : '添加到我的一天'}</span>
+                    </button>
+                  )}
                   <div className="detail-recurrence-shell">
                     <button
                       className={
@@ -1914,6 +1942,28 @@ function todayDate() {
   return formatDateInputValue(new Date())
 }
 
+function getMyDayMembership(
+  todo: Pick<TodoRecord, 'dueDate' | 'myDayDate'>,
+  targetDate = todayDate(),
+) {
+  if (todo.dueDate === targetDate) {
+    return 'auto' as const
+  }
+
+  if (todo.myDayDate === targetDate) {
+    return 'manual' as const
+  }
+
+  return 'none' as const
+}
+
+function isTodoInMyDay(
+  todo: Pick<TodoRecord, 'dueDate' | 'myDayDate' | 'status'>,
+  targetDate = todayDate(),
+) {
+  return todo.status !== 'completed' && getMyDayMembership(todo, targetDate) !== 'none'
+}
+
 function compareTodos(left: TodoRecord, right: TodoRecord) {
   if (left.status === 'completed' && right.status !== 'completed') {
     return 1
@@ -1951,6 +2001,7 @@ function createTodoRecord(
     title,
     categoryId,
     dueDate,
+    myDayDate: null,
     status: 'not_started',
     completed: false,
     note: '',
@@ -2079,6 +2130,7 @@ function createNextRecurringTodo(baseTodo: TodoRecord, updatedAt: string): TodoR
     ...baseTodo,
     id: crypto.randomUUID(),
     dueDate: nextDueDate,
+    myDayDate: null,
     status: 'not_started',
     completed: false,
     updatedAt,
@@ -2165,6 +2217,7 @@ function serializeTodoDraft(draft: TodoDraft) {
     draft.title.trim(),
     draft.categoryId,
     draft.dueDate,
+    draft.myDayDate,
     draft.status,
     draft.note,
     draft.recurrenceType,
@@ -2189,6 +2242,7 @@ function toSyncTodo(record: TodoRecord) {
     title: record.title,
     category_id: record.categoryId,
     due_date: record.dueDate,
+    my_day_date: record.myDayDate,
     status: record.status,
     completed: record.completed,
     note: record.note,

@@ -32,6 +32,7 @@ interface PlantickDBSchema extends DBSchema {
     indexes: {
       'by-workspace': string
       'by-due-date': string
+      'by-my-day-date': string
       'by-updated-at': string
     }
   }
@@ -91,8 +92,8 @@ function normalizeTodoStatus(
 
 export async function getDatabase() {
   if (!databasePromise) {
-    databasePromise = openDB<PlantickDBSchema>(databaseName, 2, {
-      upgrade(database, oldVersion) {
+    databasePromise = openDB<PlantickDBSchema>(databaseName, 3, {
+      upgrade(database, oldVersion, _newVersion, transaction) {
         if (oldVersion < 1 && !database.objectStoreNames.contains(legacyStoreName)) {
           database.createObjectStore(legacyStoreName)
         }
@@ -122,6 +123,7 @@ export async function getDatabase() {
             })
             store.createIndex('by-workspace', 'workspaceId')
             store.createIndex('by-due-date', 'dueDate')
+            store.createIndex('by-my-day-date', 'myDayDate')
             store.createIndex('by-updated-at', 'updatedAt')
           }
 
@@ -141,6 +143,13 @@ export async function getDatabase() {
             store.createIndex('by-workspace', 'workspaceId')
             store.createIndex('by-created-at', 'createdAt')
             store.createIndex('by-retry-count', 'retryCount')
+          }
+        }
+
+        if (oldVersion < 3 && database.objectStoreNames.contains('todos')) {
+          const store = transaction.objectStore('todos')
+          if (!store.indexNames.contains('by-my-day-date')) {
+            store.createIndex('by-my-day-date', 'myDayDate')
           }
         }
       },
@@ -275,6 +284,7 @@ export async function listTodos(workspaceId: string) {
   const records = await database.getAllFromIndex('todos', 'by-workspace', workspaceId)
   return records.map((record) => ({
     ...record,
+    myDayDate: typeof record.myDayDate === 'string' ? record.myDayDate : null,
     status: normalizeTodoStatus(record),
     completed: normalizeTodoStatus(record) === 'completed',
   }))
@@ -347,6 +357,7 @@ export async function applyRemoteChanges(changes: RemoteChangeSet) {
         categoryId:
           typeof record.category_id === 'string' ? record.category_id : null,
         dueDate: typeof record.due_date === 'string' ? record.due_date : null,
+        myDayDate: typeof record.my_day_date === 'string' ? record.my_day_date : null,
         status: normalizeTodoStatus(record),
         completed: normalizeTodoStatus(record) === 'completed',
         note: String(record.note ?? ''),
