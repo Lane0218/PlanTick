@@ -338,7 +338,11 @@
   resize: vertical;
 }
 
-.quick-create-shell:focus-within,
+.quick-create-shell:focus-within {
+  border-color: #e0e5ea;
+  box-shadow: none;
+}
+
 .detail-field input:focus-visible,
 .detail-field select:focus-visible,
 .detail-field textarea:focus-visible,
