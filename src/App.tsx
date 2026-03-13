@@ -1696,6 +1696,113 @@ function TodoDetailPane({
                 </div>
               </section>
 
+              <section className="detail-section detail-section-tight" aria-label="任务分类">
+                <div className="detail-card-head">
+                  <span>分类</span>
+                </div>
+                <div className="detail-list-picker">
+                  <div ref={categoryStripRef} className="detail-category-strip" aria-label="任务分类">
+                    {visibleCategoryOptions.map((option) => (
+                      <button
+                        key={option.key}
+                        type="button"
+                        className={
+                          [
+                            detailDraft.categoryId === option.categoryId
+                              ? 'detail-category-chip active'
+                              : 'detail-category-chip',
+                            option.neutral ? 'neutral' : '',
+                          ]
+                            .filter(Boolean)
+                            .join(' ')
+                        }
+                        style={
+                          {
+                            '--chip-tone': option.color ?? '#dfe6eb',
+                          } as CSSProperties
+                        }
+                        onClick={() =>
+                          setDetailDraft({
+                            ...detailDraft,
+                            categoryId: option.categoryId,
+                          })
+                        }
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+
+                    {overflowCategoryOptions.length ? (
+                      <button
+                        type="button"
+                        className="detail-list-select"
+                        aria-haspopup="listbox"
+                        aria-expanded={isCategoryPickerOpen}
+                        onClick={() => setShowCategoryPicker((current) => !current)}
+                      >
+                        <ChevronDown size={14} strokeWidth={2.2} className="detail-list-arrow" aria-hidden="true" />
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className="detail-category-measure" aria-hidden="true">
+                    {orderedCategoryOptions.map((option) => (
+                      <button
+                        key={option.key}
+                        ref={(node) => {
+                          categoryMeasureRefs.current[option.key] = node
+                        }}
+                        type="button"
+                        className={[
+                          detailDraft.categoryId === option.categoryId
+                            ? 'detail-category-chip active'
+                            : 'detail-category-chip',
+                          option.neutral ? 'neutral' : '',
+                        ]
+                          .filter(Boolean)
+                          .join(' ')}
+                        style={
+                          {
+                            '--chip-tone': option.color ?? '#dfe6eb',
+                          } as CSSProperties
+                        }
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                    <button ref={dropdownMeasureRef} type="button" className="detail-list-select" tabIndex={-1}>
+                      <ChevronDown size={14} strokeWidth={2.2} className="detail-list-arrow" aria-hidden="true" />
+                    </button>
+                  </div>
+
+                  {isCategoryPickerOpen ? (
+                    <div className="detail-list-menu" role="listbox" aria-label="分类列表">
+                      {overflowCategoryOptions.map((option) => (
+                        <button
+                          key={option.key}
+                          type="button"
+                          className={detailDraft.categoryId === option.categoryId ? 'active' : ''}
+                          onClick={() => {
+                            setDetailDraft({
+                              ...detailDraft,
+                              categoryId: option.categoryId,
+                            })
+                            setShowCategoryPicker(false)
+                          }}
+                        >
+                          <span
+                            className={option.neutral ? 'detail-list-dot neutral' : 'detail-list-dot'}
+                            style={option.neutral ? undefined : { backgroundColor: option.color ?? '#cfd8e3' }}
+                            aria-hidden="true"
+                          />
+                          <span>{option.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+
               <section className="detail-section detail-section-tight" aria-label="截止日期设置">
                 <div className="detail-card-head">
                   <span>截止日期</span>
@@ -1801,113 +1908,6 @@ function TodoDetailPane({
                       {option.label}
                     </button>
                   ))}
-                </div>
-              </section>
-
-              <section className="detail-section detail-section-tight" aria-label="任务分类">
-                <div className="detail-card-head">
-                  <span>分类</span>
-                </div>
-                <div className="detail-list-picker">
-                  <div ref={categoryStripRef} className="detail-category-strip" aria-label="任务分类">
-                    {visibleCategoryOptions.map((option) => (
-                      <button
-                        key={option.key}
-                        type="button"
-                        className={
-                          [
-                            detailDraft.categoryId === option.categoryId
-                              ? 'detail-category-chip active'
-                              : 'detail-category-chip',
-                            option.neutral ? 'neutral' : '',
-                          ]
-                            .filter(Boolean)
-                            .join(' ')
-                        }
-                        style={
-                          {
-                            '--chip-tone': option.color ?? '#dfe6eb',
-                          } as CSSProperties
-                        }
-                        onClick={() =>
-                          setDetailDraft({
-                            ...detailDraft,
-                            categoryId: option.categoryId,
-                          })
-                        }
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-
-                    {overflowCategoryOptions.length ? (
-                      <button
-                        type="button"
-                        className="detail-list-select"
-                        aria-haspopup="listbox"
-                        aria-expanded={isCategoryPickerOpen}
-                        onClick={() => setShowCategoryPicker((current) => !current)}
-                      >
-                        <ChevronDown size={14} strokeWidth={2.2} className="detail-list-arrow" aria-hidden="true" />
-                      </button>
-                    ) : null}
-                  </div>
-
-                  <div className="detail-category-measure" aria-hidden="true">
-                    {orderedCategoryOptions.map((option) => (
-                      <button
-                        key={option.key}
-                        ref={(node) => {
-                          categoryMeasureRefs.current[option.key] = node
-                        }}
-                        type="button"
-                        className={[
-                          detailDraft.categoryId === option.categoryId
-                            ? 'detail-category-chip active'
-                            : 'detail-category-chip',
-                          option.neutral ? 'neutral' : '',
-                        ]
-                          .filter(Boolean)
-                          .join(' ')}
-                        style={
-                          {
-                            '--chip-tone': option.color ?? '#dfe6eb',
-                          } as CSSProperties
-                        }
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                    <button ref={dropdownMeasureRef} type="button" className="detail-list-select" tabIndex={-1}>
-                      <ChevronDown size={14} strokeWidth={2.2} className="detail-list-arrow" aria-hidden="true" />
-                    </button>
-                  </div>
-
-                  {isCategoryPickerOpen ? (
-                    <div className="detail-list-menu" role="listbox" aria-label="分类列表">
-                      {overflowCategoryOptions.map((option) => (
-                        <button
-                          key={option.key}
-                          type="button"
-                          className={detailDraft.categoryId === option.categoryId ? 'active' : ''}
-                          onClick={() => {
-                            setDetailDraft({
-                              ...detailDraft,
-                              categoryId: option.categoryId,
-                            })
-                            setShowCategoryPicker(false)
-                          }}
-                        >
-                          <span
-                            className={option.neutral ? 'detail-list-dot neutral' : 'detail-list-dot'}
-                            style={option.neutral ? undefined : { backgroundColor: option.color ?? '#cfd8e3' }}
-                            aria-hidden="true"
-                          />
-                          <span>{option.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
                 </div>
               </section>
 
