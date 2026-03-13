@@ -101,11 +101,9 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
     ),
   ).toBeLessThan(2)
   expect(
-    Math.abs(
-      (noNoteAccentBox?.x ?? 0) + (noNoteAccentBox?.width ?? 0) / 2 -
-        ((noNoteStatusBox?.x ?? 0) + (noNoteStatusBox?.width ?? 0) / 2),
-    ),
-  ).toBeLessThan(2)
+    ((noNoteStatusBox?.x ?? 0) + (noNoteStatusBox?.width ?? 0) / 2) -
+      ((noNoteAccentBox?.x ?? 0) + (noNoteAccentBox?.width ?? 0) / 2),
+  ).toBeGreaterThan(10)
 
   await page.locator('.sidebar-category-section').getByRole('button', { name: '丙', exact: true }).click()
   await page.getByLabel('快速新建任务').fill('完成任务工作台 UI')

@@ -920,11 +920,11 @@
 .todo-card {
   position: relative;
   display: grid;
-  grid-template-columns: 36px minmax(0, 1fr);
+  grid-template-columns: 4px 36px minmax(0, 1fr);
   gap: 12px;
   align-items: start;
   margin-right: -20px;
-  padding: 12px 20px 12px 16px;
+  padding: 12px 20px 12px 0;
   border-bottom: 1px solid #f0f3f6;
   background: transparent;
 }
@@ -938,6 +938,7 @@
 }
 
 .todo-status-trigger {
+  grid-column: 2;
   position: relative;
   z-index: 1;
   align-self: start;
@@ -974,6 +975,7 @@
 }
 
 .todo-main {
+  grid-column: 3;
   position: relative;
   z-index: 1;
   width: 100%;
@@ -1040,7 +1042,7 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 30px;
+  left: 0;
   width: 4px;
   border-radius: 999px;
   background: var(--todo-category-tone, #cfd6db);
