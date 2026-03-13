@@ -740,7 +740,6 @@ function App() {
 
         {activeView === 'calendar' ? (
           <CalendarBoard
-            categories={activeCategories}
             todosByDate={calendarTodosByDate}
             selectedDate={selectedCalendarDate}
             selectedTodoId={selectedTodoId}
@@ -1949,7 +1948,6 @@ function TodoDetailPane({
 }
 
 function CalendarBoard({
-  categories,
   todosByDate,
   selectedDate,
   selectedTodoId,
@@ -1958,7 +1956,6 @@ function CalendarBoard({
   setSelectedDate,
   setSelectedTodoId,
 }: {
-  categories: CategoryRecord[]
   todosByDate: Map<string, TodoRecord[]>
   selectedDate: string
   selectedTodoId: string | null
@@ -1967,10 +1964,6 @@ function CalendarBoard({
   setSelectedDate: (value: string) => void
   setSelectedTodoId: (value: string | null) => void
 }) {
-  const categoryMap = useMemo(
-    () => new Map(categories.map((category) => [category.id, category])),
-    [categories],
-  )
   const [expandedDate, setExpandedDate] = useState<string | null>(null)
   const [showMonthPicker, setShowMonthPicker] = useState(false)
   const [pickerYear, setPickerYear] = useState(() => getCalendarYear(visibleMonth))
@@ -2226,8 +2219,6 @@ function CalendarBoard({
 
                 <div className="calendar-cell-items">
                   {visibleTodos.map((todo) => {
-                    const category = todo.categoryId ? categoryMap.get(todo.categoryId) ?? null : null
-
                     return (
                       <button
                         key={todo.id}
@@ -2246,11 +2237,6 @@ function CalendarBoard({
                           setExpandedDate(null)
                         }}
                       >
-                        <span
-                          className="calendar-item-accent"
-                          style={{ backgroundColor: category?.color ?? '#cfd8e3' }}
-                          aria-hidden="true"
-                        />
                         <span className="calendar-item-title">{todo.title}</span>
                       </button>
                     )
@@ -2278,7 +2264,6 @@ function CalendarBoard({
                     date={cell.date}
                     todos={cell.todos}
                     selectedTodoId={selectedTodoId}
-                    categoryMap={categoryMap}
                     onClose={() => setExpandedDate(null)}
                     onSelectTodo={(todoId) => {
                       setSelectedDate(cell.date)
@@ -2302,7 +2287,6 @@ function CalendarDayPopover({
   date,
   todos,
   selectedTodoId,
-  categoryMap,
   onClose,
   onSelectTodo,
 }: {
@@ -2311,7 +2295,6 @@ function CalendarDayPopover({
   date: string
   todos: TodoRecord[]
   selectedTodoId: string | null
-  categoryMap: Map<string, CategoryRecord>
   onClose: () => void
   onSelectTodo: (todoId: string) => void
 }) {
@@ -2335,8 +2318,6 @@ function CalendarDayPopover({
 
       <div className="calendar-day-popover-list">
         {todos.map((todo) => {
-          const category = todo.categoryId ? categoryMap.get(todo.categoryId) ?? null : null
-
           return (
             <button
               key={todo.id}
@@ -2351,11 +2332,6 @@ function CalendarDayPopover({
                 .join(' ')}
               onClick={() => onSelectTodo(todo.id)}
             >
-              <span
-                className="calendar-item-accent"
-                style={{ backgroundColor: category?.color ?? '#cfd8e3' }}
-                aria-hidden="true"
-              />
               <span className="calendar-item-title">{todo.title}</span>
             </button>
           )
