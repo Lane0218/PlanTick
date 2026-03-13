@@ -11,7 +11,6 @@ import {
   ChevronRight,
   Circle,
   Inbox,
-  MoreHorizontal,
   PauseCircle,
   Pencil,
   PlayCircle,
@@ -1926,9 +1925,6 @@ function TodoDetailPane({
                     <span>删除</span>
                   </button>
                 </div>
-                <button className="detail-footer-icon" type="button" disabled aria-label="更多操作">
-                  <MoreHorizontal size={16} strokeWidth={2.1} />
-                </button>
               </>
             )}
           </div>
