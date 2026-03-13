@@ -1708,8 +1708,8 @@
 .calendar-month-picker-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  justify-content: center;
+  gap: 96px;
   margin-bottom: 12px;
 }
 
@@ -1721,11 +1721,15 @@
 
 .calendar-year-nav {
   gap: 0;
-  width: 28px;
-  min-width: 28px;
-  height: 28px;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
   border-radius: 8px;
   color: #2f3135;
+}
+
+.calendar-year-nav svg + svg {
+  margin-left: -7px;
 }
 
 .calendar-month-grid {
@@ -1778,22 +1782,22 @@
 
 .calendar-weekdays {
   margin-top: 10px;
-  border-top: 1px solid #eef2f5;
-  border-left: 1px solid #eef2f5;
+  border-top: 1px solid #dce4ea;
+  border-left: 1px solid #dce4ea;
 }
 
 .calendar-weekdays span {
   min-width: 0;
   padding: 10px 12px;
-  border-right: 1px solid #eef2f5;
-  border-bottom: 1px solid #eef2f5;
+  border-right: 1px solid #dce4ea;
+  border-bottom: 1px solid #dce4ea;
   color: #5d8f88;
   font-size: 0.78rem;
   font-weight: 600;
 }
 
 .calendar-grid {
-  border-left: 1px solid #eef2f5;
+  border-left: 1px solid #dce4ea;
   overflow: visible;
 }
 
@@ -1803,8 +1807,8 @@
   min-width: 0;
   min-height: 150px;
   padding: 10px 12px 8px;
-  border-right: 1px solid #eef2f5;
-  border-bottom: 1px solid #eef2f5;
+  border-right: 1px solid #dce4ea;
+  border-bottom: 1px solid #dce4ea;
   background: #ffffff;
   text-align: left;
   display: grid;
