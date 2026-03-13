@@ -461,10 +461,6 @@
   text-align: left;
 }
 
-.sidebar-item:hover {
-  background: #e8eaec;
-}
-
 .sidebar-item.active,
 .category-row.active {
   background: #e8eaec;
@@ -525,7 +521,6 @@
   background: transparent;
 }
 
-.category-row:hover,
 .category-row:focus-within {
   background: #e8eaec;
 }
@@ -564,7 +559,6 @@
   pointer-events: none;
 }
 
-.category-row:hover .category-edit-button,
 .category-row.active .category-edit-button,
 .category-row:focus-within .category-edit-button {
   opacity: 1;
@@ -573,7 +567,6 @@
 }
 
 .category-row.active .category-edit-button,
-.category-row:hover .category-edit-button,
 .category-row:focus-within .category-edit-button {
   background: transparent;
 }
@@ -919,7 +912,7 @@
   display: grid;
   grid-template-columns: 36px minmax(0, 1fr);
   gap: 12px;
-  align-items: start;
+  align-items: center;
   min-height: 72px;
   margin-left: -20px;
   margin-right: -20px;
@@ -940,7 +933,7 @@
   grid-column: 1;
   position: relative;
   z-index: 1;
-  align-self: start;
+  align-self: center;
   width: 32px;
   min-width: 32px;
   height: 32px;
@@ -965,14 +958,6 @@
   height: 28px;
 }
 
-.todo-card.no-note {
-  align-items: center;
-}
-
-.todo-card.no-note .todo-status-trigger {
-  align-self: center;
-}
-
 .todo-main {
   grid-column: 2;
   position: relative;
@@ -987,6 +972,10 @@
   gap: 4px;
 }
 
+.todo-main.has-note {
+  align-content: center;
+}
+
 .todo-main.no-note {
   align-content: center;
   min-height: 32px;
@@ -996,7 +985,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
-  align-items: start;
+  align-items: center;
 }
 
 .todo-row.no-note {
@@ -2066,18 +2055,12 @@
 }
 
 @media (hover: hover) {
-  .sidebar-item:hover,
   .category-item:hover,
   .category-edit-button:hover {
     transform: translateY(-1px);
   }
 
-  .sidebar-item:hover {
-    background: #e8eaec;
-  }
-
-  .category-row:hover,
-  .category-row:focus-within {
+  .category-row:hover {
     background: #e8eaec;
   }
 
@@ -2101,14 +2084,12 @@
 }
 
 @media (hover: none) {
-  .sidebar-item:hover,
   .category-row:hover,
   .category-item:hover,
   .category-edit-button:hover {
     transform: none;
   }
 
-  .sidebar-item:hover,
   .category-row:hover {
     background: transparent;
   }

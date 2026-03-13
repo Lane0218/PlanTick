@@ -21,7 +21,6 @@ import {
   X,
 } from 'lucide-react'
 import { zhCN } from 'date-fns/locale'
-import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import './App.css'
 import {
   getCurrentWorkspaceMeta,
@@ -40,6 +39,7 @@ import { enqueueRecordMutation } from './lib/sync'
 import { ensureAnonymousSession, invokeWorkspaceFunction } from './lib/supabase'
 
 type WorkspaceMode = 'create' | 'join'
+type WorkspaceView = 'todos' | 'calendar'
 type TaskFilter = 'all' | 'today' | 'overdue' | 'completed'
 
 type TodoDraft = {
@@ -74,16 +74,16 @@ type BeforeInstallPromptEvent = Event & {
 }
 
 const categoryPalette = [
-  '#2F6EA4',
-  '#4D7A67',
-  '#C25E4E',
-  '#8B5FD6',
-  '#B36A1D',
-  '#0E7C86',
-  '#D46A7A',
-  '#556FB5',
-  '#7C8F49',
-  '#C78A3B',
+  '#2563EB',
+  '#16A34A',
+  '#F97316',
+  '#DC2626',
+  '#9333EA',
+  '#DB2777',
+  '#0891B2',
+  '#65A30D',
+  '#EA580C',
+  '#0F766E',
 ]
 const categorySuggestionLabels = ['工作', '生活', '学习', '书影音', '项目-X']
 
@@ -130,8 +130,8 @@ declare global {
 }
 
 function App() {
-  const location = useLocation()
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>('create')
+  const [activeView, setActiveView] = useState<WorkspaceView>('todos')
   const [passphrase, setPassphrase] = useState('')
   const [workspaceId, setWorkspaceId] = useState('')
   const [sessionLabel, setSessionLabel] = useState('尚未建立匿名会话')
@@ -296,7 +296,7 @@ function App() {
   }, [selectedTodo])
 
   useEffect(() => {
-    if (location.pathname !== '/calendar' || !selectedTodo?.dueDate) {
+    if (activeView !== 'calendar' || !selectedTodo?.dueDate) {
       return
     }
 
@@ -305,7 +305,7 @@ function App() {
       const nextMonth = startOfMonthIso(selectedTodo.dueDate!)
       return current === nextMonth ? current : nextMonth
     })
-  }, [location.pathname, selectedTodo?.dueDate])
+  }, [activeView, selectedTodo?.dueDate])
 
   const persistTodoDraft = useEffectEvent(async (draft: TodoDraft, baseTodo: TodoRecord) => {
     if (!workspaceId || !draft.title.trim()) {
@@ -664,7 +664,7 @@ function App() {
 
   const shellClassName = [
     'workspace-shell',
-    location.pathname === '/calendar' ? 'calendar-layout' : '',
+    activeView === 'calendar' ? 'calendar-layout' : '',
     selectedTodoId ? 'has-detail' : '',
   ]
     .filter(Boolean)
@@ -689,7 +689,7 @@ function App() {
   }
 
   const boardTitle =
-    location.pathname === '/calendar'
+    activeView === 'calendar'
       ? '日程概览'
       : selectedUncategorized
         ? '未分类'
@@ -701,6 +701,8 @@ function App() {
     <main className={shellClassName}>
       <Sidebar
         sessionLabel={sessionLabel}
+        activeView={activeView}
+        setActiveView={setActiveView}
         activeFilter={activeFilter}
         setActiveFilter={setActiveFilter}
         selectedCategoryId={selectedCategoryId}
@@ -734,42 +736,32 @@ function App() {
           </div>
         </header>
 
-        <Routes>
-          <Route path="/" element={<Navigate to="/todos" replace />} />
-          <Route
-            path="/todos"
-            element={
-              <TodoBoard
-                quickTodoTitle={quickTodoTitle}
-                setQuickTodoTitle={setQuickTodoTitle}
-                handleQuickCreateTodo={handleQuickCreateTodo}
-                visibleTodos={visibleTodos}
-                selectedTodoId={selectedTodoId}
-                setSelectedTodoId={setSelectedTodoId}
-                categories={activeCategories}
-                handleToggleTodo={handleToggleTodo}
-              />
-            }
+        {activeView === 'calendar' ? (
+          <CalendarBoard
+            categories={activeCategories}
+            todosByDate={calendarTodosByDate}
+            selectedDate={selectedCalendarDate}
+            selectedTodoId={selectedTodoId}
+            visibleMonth={calendarMonth}
+            setVisibleMonth={setCalendarMonth}
+            setSelectedDate={setSelectedCalendarDate}
+            setSelectedTodoId={setSelectedTodoId}
           />
-          <Route
-            path="/calendar"
-            element={
-              <CalendarBoard
-                categories={activeCategories}
-                todosByDate={calendarTodosByDate}
-                selectedDate={selectedCalendarDate}
-                selectedTodoId={selectedTodoId}
-                visibleMonth={calendarMonth}
-                setVisibleMonth={setCalendarMonth}
-                setSelectedDate={setSelectedCalendarDate}
-                setSelectedTodoId={setSelectedTodoId}
-              />
-            }
+        ) : (
+          <TodoBoard
+            quickTodoTitle={quickTodoTitle}
+            setQuickTodoTitle={setQuickTodoTitle}
+            handleQuickCreateTodo={handleQuickCreateTodo}
+            visibleTodos={visibleTodos}
+            selectedTodoId={selectedTodoId}
+            setSelectedTodoId={setSelectedTodoId}
+            categories={activeCategories}
+            handleToggleTodo={handleToggleTodo}
           />
-        </Routes>
+        )}
       </section>
 
-      {location.pathname === '/calendar' ? (
+      {activeView === 'calendar' ? (
         selectedTodo ? (
           <TodoDetailPane
             selectedTodo={selectedTodo}
@@ -935,6 +927,8 @@ function OnboardingLayout({
 
 function Sidebar({
   sessionLabel,
+  activeView,
+  setActiveView,
   activeFilter,
   setActiveFilter,
   selectedCategoryId,
@@ -959,6 +953,8 @@ function Sidebar({
   busy,
 }: {
   sessionLabel: string
+  activeView: WorkspaceView
+  setActiveView: (view: WorkspaceView) => void
   activeFilter: TaskFilter
   setActiveFilter: (filter: TaskFilter) => void
   selectedCategoryId: string | null
@@ -984,8 +980,6 @@ function Sidebar({
 }) {
   const [categoryDialogMode, setCategoryDialogMode] = useState<'create' | 'edit' | null>(null)
   const [pendingDeleteCategory, setPendingDeleteCategory] = useState<CategoryRecord | null>(null)
-  const navigate = useNavigate()
-  const location = useLocation()
 
   const dialogTitle = categoryDialogMode === 'edit' ? '编辑分类' : '新建分类'
 
@@ -994,6 +988,7 @@ function Sidebar({
   }
 
   const openEditDialog = (category: CategoryRecord) => {
+    setActiveView('todos')
     setSelectedCategoryId(category.id)
     setSelectedUncategorized(false)
     setActiveFilter('all')
@@ -1041,16 +1036,19 @@ function Sidebar({
         ).map((item) => (
           <button
             key={item.id}
+            type="button"
             className={
-              activeFilter === item.id && !selectedCategoryId && !selectedUncategorized
+              activeView === 'todos' && activeFilter === item.id && !selectedCategoryId && !selectedUncategorized
                 ? 'sidebar-item active'
                 : 'sidebar-item'
             }
-            onClick={() => {
-              navigate('/todos')
+            onClick={(event) => {
+              event.currentTarget.blur()
+              setActiveView('todos')
               setSelectedCategoryId(null)
               setSelectedUncategorized(false)
               setActiveFilter(item.id)
+              setSelectedTodoId(null)
             }}
           >
             <span className="sidebar-item-main">
@@ -1064,12 +1062,14 @@ function Sidebar({
         ))}
 
         <button
-          className={location.pathname === '/calendar' ? 'sidebar-item active' : 'sidebar-item'}
-          onClick={() => {
+          type="button"
+          className={activeView === 'calendar' ? 'sidebar-item active' : 'sidebar-item'}
+          onClick={(event) => {
+            event.currentTarget.blur()
+            setActiveView('calendar')
             setSelectedCategoryId(null)
             setSelectedUncategorized(false)
             setSelectedTodoId(null)
-            navigate('/calendar')
           }}
         >
           <span className="sidebar-item-main">
@@ -1099,12 +1099,15 @@ function Sidebar({
         <div className="category-list">
           <div className={selectedUncategorized ? 'category-row active' : 'category-row'}>
             <button
+              type="button"
               className={selectedUncategorized ? 'category-item active' : 'category-item'}
-              onClick={() => {
-                navigate('/todos')
+              onClick={(event) => {
+                event.currentTarget.blur()
+                setActiveView('todos')
                 setSelectedCategoryId(null)
                 setSelectedUncategorized(true)
                 setActiveFilter('all')
+                setSelectedTodoId(null)
               }}
             >
               <span className="color-dot neutral" />
@@ -1118,12 +1121,15 @@ function Sidebar({
               className={selectedCategoryId === category.id ? 'category-row active' : 'category-row'}
             >
               <button
+                type="button"
                 className={selectedCategoryId === category.id ? 'category-item active' : 'category-item'}
-                onClick={() => {
-                  navigate('/todos')
+                onClick={(event) => {
+                  event.currentTarget.blur()
+                  setActiveView('todos')
                   setSelectedCategoryId(category.id)
                   setSelectedUncategorized(false)
                   setActiveFilter('all')
+                  setSelectedTodoId(null)
                 }}
               >
                 <span className="color-dot" style={{ backgroundColor: category.color }} />
