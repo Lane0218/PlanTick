@@ -1882,14 +1882,16 @@
 }
 
 .calendar-month-switcher {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
+  display: grid;
+  grid-template-columns: 30px minmax(132px, auto) 30px;
+  align-items: stretch;
+  gap: 0;
   min-height: 40px;
-  padding: 2px 6px;
+  padding: 2px;
   border: 0;
   border-radius: 10px;
   background: #f5f6f7;
+  overflow: hidden;
 }
 
 .calendar-nav-button,
@@ -1914,18 +1916,27 @@
 .calendar-today-icon {
   width: 30px;
   min-width: 30px;
-  height: 30px;
-  border-radius: 7px;
+  height: 36px;
+  border-radius: 0;
 }
 
 .calendar-month-trigger {
   gap: 6px;
   min-width: 132px;
+  height: 36px;
   padding: 0 6px;
-  border-radius: 7px;
+  border-radius: 0;
   color: #0891b2;
   font-size: 0.92rem;
   font-weight: 600;
+}
+
+.calendar-month-switcher > :first-child {
+  border-radius: 8px 0 0 8px;
+}
+
+.calendar-month-switcher > :last-child {
+  border-radius: 0 8px 8px 0;
 }
 
 .calendar-month-picker {
@@ -2007,6 +2018,11 @@
 .calendar-month-trigger.active {
   background: #eceeef;
   outline: none;
+}
+
+.calendar-nav-button:hover,
+.calendar-nav-button:focus-visible {
+  background: #eceeef;
 }
 
 .calendar-month-trigger.active {
