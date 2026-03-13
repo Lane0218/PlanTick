@@ -1650,11 +1650,11 @@
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  min-height: 44px;
-  padding: 0;
+  min-height: 40px;
+  padding: 2px 6px;
   border: 0;
-  border-radius: 0;
-  background: transparent;
+  border-radius: 10px;
+  background: #f5f6f7;
 }
 
 .calendar-nav-button,
@@ -1677,19 +1677,19 @@
 
 .calendar-nav-button,
 .calendar-today-icon {
-  width: 34px;
-  min-width: 34px;
-  height: 34px;
-  border-radius: 8px;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  border-radius: 7px;
 }
 
 .calendar-month-trigger {
-  gap: 8px;
-  min-width: 144px;
+  gap: 6px;
+  min-width: 132px;
   padding: 0 6px;
-  border-radius: 8px;
+  border-radius: 7px;
   color: #0891b2;
-  font-size: 0.96rem;
+  font-size: 0.92rem;
   font-weight: 600;
 }
 
@@ -1699,7 +1699,7 @@
   left: 0;
   z-index: 30;
   width: 420px;
-  padding: 18px 22px 20px;
+  padding: 14px 18px 16px;
   border: 1px solid #dde4e8;
   background: #ffffff;
   box-shadow: 0 14px 32px rgba(15, 23, 42, 0.12);
@@ -1709,8 +1709,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 18px;
-  margin-bottom: 18px;
+  gap: 10px;
+  margin-bottom: 12px;
 }
 
 .calendar-month-picker-head strong {
@@ -1721,24 +1721,24 @@
 
 .calendar-year-nav {
   gap: 0;
-  width: 36px;
-  min-width: 36px;
-  height: 36px;
-  border-radius: 10px;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  border-radius: 8px;
   color: #2f3135;
 }
 
 .calendar-month-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px 18px;
+  gap: 4px 12px;
 }
 
 .calendar-month-option {
-  min-height: 56px;
+  min-height: 42px;
   border-radius: 0;
   color: #3f3f46;
-  font-size: 0.96rem;
+  font-size: 0.92rem;
 }
 
 .calendar-month-option.active {
