@@ -1670,24 +1670,24 @@
 
 .detail-status-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .detail-status-choice {
   display: inline-flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: 7px;
-  min-height: 46px;
-  padding: 0 13px;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 10px;
   border: 1px solid transparent;
   border-radius: 12px;
   background: #f5f7fa;
   color: #8ea0ad;
-  font-size: 0.84rem;
+  font-size: 0.8rem;
   font-weight: 600;
-  text-align: left;
+  text-align: center;
 }
 
 .detail-status-choice.active {
@@ -1699,13 +1699,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
 }
 
 .detail-status-choice-icon svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
 .detail-date-actions {
@@ -1773,7 +1774,7 @@
 
 @media (max-width: 980px) {
   .detail-status-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
