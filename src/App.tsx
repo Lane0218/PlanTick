@@ -26,7 +26,6 @@ import './App.css'
 import {
   getCurrentWorkspaceMeta,
   listCategories,
-  listPendingOutbox,
   listTodos,
   loadWorkspaceId,
   runIndexedDbProbe,
@@ -143,7 +142,6 @@ function App() {
 
   const [categories, setCategories] = useState<CategoryRecord[]>([])
   const [todos, setTodos] = useState<TodoRecord[]>([])
-  const [pendingOutboxCount, setPendingOutboxCount] = useState(0)
 
   const [activeFilter, setActiveFilter] = useState<TaskFilter>('all')
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
@@ -206,15 +204,6 @@ function App() {
 
   const selectedTodo = activeTodos.find((todo) => todo.id === selectedTodoId) ?? null
   const calendarTodosByDate = useMemo(() => groupTodosByDueDate(activeTodos), [activeTodos])
-  const selectedCalendarTodos = useMemo(
-    () => calendarTodosByDate.get(selectedCalendarDate) ?? [],
-    [calendarTodosByDate, selectedCalendarDate],
-  )
-  const currentMonthTodoCount = useMemo(
-    () => activeTodos.filter((todo) => todo.dueDate?.startsWith(calendarMonth.slice(0, 7))).length,
-    [activeTodos, calendarMonth],
-  )
-
   const sidebarCounts = useMemo(
     () => ({
       all: activeTodos.length,
@@ -373,22 +362,19 @@ function App() {
       setWorkspaceId('')
       setCategories([])
       setTodos([])
-      setPendingOutboxCount(0)
       setSelectedTodoId(null)
       return
     }
 
-    const [workspaceMeta, nextCategories, nextTodos, outbox] = await Promise.all([
+    const [workspaceMeta, nextCategories, nextTodos] = await Promise.all([
       getCurrentWorkspaceMeta(),
       listCategories(resolvedWorkspaceId),
       listTodos(resolvedWorkspaceId),
-      listPendingOutbox(resolvedWorkspaceId),
     ])
 
     setWorkspaceId(resolvedWorkspaceId)
     setCategories(nextCategories)
     setTodos(nextTodos)
-    setPendingOutboxCount(outbox.length)
     setSessionLabel(
       workspaceMeta?.anonymousUserId
         ? `设备会话 ${workspaceMeta.anonymousUserId.slice(0, 8)}`
@@ -679,7 +665,7 @@ function App() {
   const shellClassName = [
     'workspace-shell',
     location.pathname === '/calendar' ? 'calendar-layout' : '',
-    selectedTodoId || location.pathname === '/calendar' ? 'has-detail' : '',
+    selectedTodoId ? 'has-detail' : '',
   ]
     .filter(Boolean)
     .join(' ')
@@ -777,8 +763,6 @@ function App() {
                 setVisibleMonth={setCalendarMonth}
                 setSelectedDate={setSelectedCalendarDate}
                 setSelectedTodoId={setSelectedTodoId}
-                todosInMonth={currentMonthTodoCount}
-                pendingOutboxCount={pendingOutboxCount}
               />
             }
           />
@@ -798,14 +782,7 @@ function App() {
             closeDetail={() => setSelectedTodoId(null)}
             busy={busy}
           />
-        ) : (
-          <CalendarDatePanel
-            selectedDate={selectedCalendarDate}
-            todos={selectedCalendarTodos}
-            categories={activeCategories}
-            setSelectedTodoId={setSelectedTodoId}
-          />
-        )
+        ) : null
       ) : (
         <TodoDetailPane
           selectedTodo={selectedTodo}
@@ -1975,8 +1952,6 @@ function CalendarBoard({
   setVisibleMonth,
   setSelectedDate,
   setSelectedTodoId,
-  todosInMonth,
-  pendingOutboxCount,
 }: {
   categories: CategoryRecord[]
   todosByDate: Map<string, TodoRecord[]>
@@ -1986,8 +1961,6 @@ function CalendarBoard({
   setVisibleMonth: (value: string) => void
   setSelectedDate: (value: string) => void
   setSelectedTodoId: (value: string | null) => void
-  todosInMonth: number
-  pendingOutboxCount: number
 }) {
   const categoryMap = useMemo(
     () => new Map(categories.map((category) => [category.id, category])),
@@ -2002,58 +1975,43 @@ function CalendarBoard({
     <section className="calendar-board">
       <div className="calendar-shell">
         <header className="calendar-toolbar">
-          <div className="calendar-toolbar-main">
-            <p className="eyebrow">Schedule Overview</p>
-            <h2>{formatCalendarMonthTitle(visibleMonth)}</h2>
-            <p>点击日期查看当天截止事项，点击事项后在右侧直接编辑。</p>
-          </div>
+          <h2>{formatCalendarMonthTitle(visibleMonth)}</h2>
 
           <div className="calendar-toolbar-actions">
-            <div className="calendar-nav">
-              <button
-                type="button"
-                className="calendar-nav-button"
-                aria-label="上一个月"
-                onClick={() => setVisibleMonth(shiftMonth(visibleMonth, -1))}
-              >
-                <ChevronLeft size={16} strokeWidth={2.2} />
-              </button>
-              <button
-                type="button"
-                className="calendar-nav-today"
-                onClick={() => {
-                  const today = todayDate()
-                  setVisibleMonth(startOfMonthIso(today))
-                  setSelectedDate(today)
-                  setSelectedTodoId(null)
-                }}
-              >
-                今天
-              </button>
-              <button
-                type="button"
-                className="calendar-nav-button"
-                aria-label="下一个月"
-                onClick={() => setVisibleMonth(shiftMonth(visibleMonth, 1))}
-              >
-                <ChevronRight size={16} strokeWidth={2.2} />
-              </button>
-            </div>
-
-            <div className="calendar-summary">
-              <div>
-                <span>分类</span>
-                <strong>{categories.length}</strong>
-              </div>
-              <div>
-                <span>本月事项</span>
-                <strong>{todosInMonth}</strong>
-              </div>
-              <div>
-                <span>待同步</span>
-                <strong>{pendingOutboxCount}</strong>
-              </div>
-            </div>
+            <button
+              type="button"
+              className="calendar-nav-button"
+              aria-label="上一个月"
+              onClick={() => {
+                setVisibleMonth(shiftMonth(visibleMonth, -1))
+                setSelectedTodoId(null)
+              }}
+            >
+              <ChevronLeft size={16} strokeWidth={2.2} />
+            </button>
+            <button
+              type="button"
+              className="calendar-nav-today"
+              onClick={() => {
+                const today = todayDate()
+                setVisibleMonth(startOfMonthIso(today))
+                setSelectedDate(today)
+                setSelectedTodoId(null)
+              }}
+            >
+              今天
+            </button>
+            <button
+              type="button"
+              className="calendar-nav-button"
+              aria-label="下一个月"
+              onClick={() => {
+                setVisibleMonth(shiftMonth(visibleMonth, 1))
+                setSelectedTodoId(null)
+              }}
+            >
+              <ChevronRight size={16} strokeWidth={2.2} />
+            </button>
           </div>
         </header>
 
@@ -2069,11 +2027,11 @@ function CalendarBoard({
             const overflowCount = Math.max(cell.todos.length - visibleTodos.length, 0)
 
             return (
-              <button
+              <div
                 key={cell.date}
-                type="button"
                 role="gridcell"
                 aria-selected={cell.isSelected}
+                tabIndex={0}
                 className={[
                   'calendar-cell',
                   cell.inCurrentMonth ? '' : 'is-muted',
@@ -2089,10 +2047,21 @@ function CalendarBoard({
                     setVisibleMonth(startOfMonthIso(cell.date))
                   }
                 }}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' && event.key !== ' ') {
+                    return
+                  }
+
+                  event.preventDefault()
+                  setSelectedDate(cell.date)
+                  setSelectedTodoId(null)
+                  if (!cell.inCurrentMonth) {
+                    setVisibleMonth(startOfMonthIso(cell.date))
+                  }
+                }}
               >
                 <div className="calendar-cell-head">
                   <span className="calendar-cell-day">{formatDayOfMonth(cell.date)}</span>
-                  {cell.todos.length ? <span className="calendar-cell-count">{cell.todos.length}</span> : null}
                 </div>
 
                 <div className="calendar-cell-items">
@@ -2100,8 +2069,9 @@ function CalendarBoard({
                     const category = todo.categoryId ? categoryMap.get(todo.categoryId) ?? null : null
 
                     return (
-                      <span
+                      <button
                         key={todo.id}
+                        type="button"
                         className={[
                           'calendar-item',
                           `status-${todo.status}`,
@@ -2121,85 +2091,18 @@ function CalendarBoard({
                           aria-hidden="true"
                         />
                         <span className="calendar-item-title">{todo.title}</span>
-                      </span>
+                      </button>
                     )
                   })}
 
                   {overflowCount ? <span className="calendar-item-overflow">+{overflowCount}</span> : null}
                 </div>
-              </button>
+              </div>
             )
           })}
         </div>
       </div>
     </section>
-  )
-}
-
-function CalendarDatePanel({
-  selectedDate,
-  todos,
-  categories,
-  setSelectedTodoId,
-}: {
-  selectedDate: string
-  todos: TodoRecord[]
-  categories: CategoryRecord[]
-  setSelectedTodoId: (value: string | null) => void
-}) {
-  const categoryMap = useMemo(
-    () => new Map(categories.map((category) => [category.id, category])),
-    [categories],
-  )
-
-  return (
-    <aside className="detail-pane is-open calendar-detail-pane" aria-label="日期详情">
-      <div className="calendar-date-panel">
-        <div className="calendar-date-head">
-          <p className="eyebrow">Date Focus</p>
-          <h2>{formatFullDateLabel(selectedDate)}</h2>
-          <p>{formatWeekday(selectedDate)} · {todos.length} 条截止事项</p>
-        </div>
-
-        {todos.length ? (
-          <div className="calendar-date-list" role="list">
-            {todos.map((todo) => {
-              const category = todo.categoryId ? categoryMap.get(todo.categoryId) ?? null : null
-              const noteExcerpt = todo.note.trim().split('\n')[0]
-              const statusMeta = todoStatusMeta[todo.status]
-
-              return (
-                <button
-                  key={todo.id}
-                  type="button"
-                  className={['calendar-date-item', `status-${todo.status}`].join(' ')}
-                  onClick={() => setSelectedTodoId(todo.id)}
-                >
-                  <span
-                    className="calendar-date-item-accent"
-                    style={{ backgroundColor: category?.color ?? '#cfd8e3' }}
-                    aria-hidden="true"
-                  />
-                  <span className="calendar-date-item-main">
-                    <span className="calendar-date-item-title">{todo.title}</span>
-                    <span className="calendar-date-item-meta">
-                      <span>{statusMeta.label}</span>
-                      <span>{category?.name ?? '未分类'}</span>
-                    </span>
-                    {noteExcerpt ? <span className="calendar-date-item-note">{noteExcerpt}</span> : null}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-        ) : (
-          <div className="calendar-date-empty">
-            <h3>当天没有截止事项</h3>
-            <p>切换月份或点击其他日期，右侧会同步展示对应日期的任务摘要。</p>
-          </div>
-        )}
-      </div>
-    </aside>
   )
 }
 
@@ -2386,11 +2289,6 @@ function formatDueDate(value: string | null, status: TodoStatus) {
 function formatMonthDay(value: string) {
   const date = new Date(`${value}T00:00:00`)
   return `${date.getMonth() + 1}月${date.getDate()}日`
-}
-
-function formatFullDateLabel(value: string) {
-  const date = new Date(`${value}T00:00:00`)
-  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`
 }
 
 function formatCalendarMonthTitle(value: string) {

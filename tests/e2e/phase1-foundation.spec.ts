@@ -84,6 +84,8 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   const noNoteTask = page.locator('article', {
     has: page.getByRole('button', { name: '查看任务 123' }),
   })
+  await noNoteTask.getByRole('button', { name: '查看任务 123' }).click()
+  const sidebarPaneBox = await page.locator('.sidebar-pane').boundingBox()
   const noNoteTaskBox = await noNoteTask.boundingBox()
   const noNoteStatusBox = await noNoteTask.getByRole('button', { name: '切换任务状态，当前未开始' }).boundingBox()
   const noNoteTitleBox = await noNoteTask.locator('.todo-main strong').boundingBox()
@@ -101,9 +103,9 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
     ),
   ).toBeLessThan(2)
   expect(
-    ((noNoteStatusBox?.x ?? 0) + (noNoteStatusBox?.width ?? 0) / 2) -
-      ((noNoteAccentBox?.x ?? 0) + (noNoteAccentBox?.width ?? 0) / 2),
-  ).toBeGreaterThan(10)
+    Math.abs((noNoteAccentBox?.x ?? 0) - ((sidebarPaneBox?.x ?? 0) + (sidebarPaneBox?.width ?? 0))),
+  ).toBeLessThan(2)
+  expect(Math.abs((noNoteAccentBox?.x ?? 0) - (noNoteTaskBox?.x ?? 0))).toBeLessThan(2)
 
   await page.locator('.sidebar-category-section').getByRole('button', { name: '丙', exact: true }).click()
   await page.getByLabel('快速新建任务').fill('完成任务工作台 UI')
@@ -235,17 +237,12 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
       hasText: '每月例行',
     }).getByText(monthlyDueLabel),
   ).toBeVisible()
-  const visibleAccents = page.locator('.todo-list article .todo-list-accent')
-  expect(await visibleAccents.count()).toBeGreaterThan(1)
-  const firstVisibleAccentBox = await visibleAccents.nth(0).boundingBox()
-  const secondVisibleAccentBox = await visibleAccents.nth(1).boundingBox()
-  expect(Math.abs((firstVisibleAccentBox?.x ?? 0) - (secondVisibleAccentBox?.x ?? 0))).toBeLessThan(1)
-  expect(
-    Math.abs(
-      ((firstVisibleAccentBox?.y ?? 0) + (firstVisibleAccentBox?.height ?? 0)) -
-        (secondVisibleAccentBox?.y ?? 0),
-    ),
-  ).toBeLessThan(2)
+  const activeAccent = page.locator('.todo-list article.active .todo-list-accent')
+  await expect(activeAccent).toHaveCount(1)
+  const activeTask = page.locator('.todo-list article.active')
+  const activeTaskBox = await activeTask.boundingBox()
+  const activeAccentBox = await activeAccent.boundingBox()
+  expect(Math.abs((activeAccentBox?.x ?? 0) - (activeTaskBox?.x ?? 0))).toBeLessThan(2)
   await page.waitForTimeout(700)
 
   await page.reload()
@@ -305,14 +302,15 @@ test('phase 4 日程概览：月历展示截止事项并支持在日历中改期
   await expect(page.locator('.calendar-grid')).toBeVisible()
   await expect(page.locator('.calendar-grid').getByText('月历任务一')).toBeVisible()
   await expect(page.locator('.calendar-grid').getByText('月历已完成')).toBeVisible()
-  await expect(page.getByText('2 条截止事项')).toBeVisible()
+  await expect(page.locator('.detail-pane.is-open')).toHaveCount(0)
 
   await page.locator('.calendar-grid').getByText('月历任务一').click()
   await expect(page.getByLabel('任务标题')).toHaveValue('月历任务一')
+  await expect(page.locator('.detail-pane.is-open')).toHaveCount(1)
   await page.getByRole('button', { name: '明天' }).click()
   await page.waitForTimeout(500)
   await page.getByRole('button', { name: '关闭详情' }).click()
 
-  await expect(page.getByText('1 条截止事项')).toBeVisible()
+  await expect(page.locator('.detail-pane.is-open')).toHaveCount(0)
   await expect(page.locator('.calendar-grid').getByText('月历任务一')).toBeVisible()
 })
