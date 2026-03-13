@@ -7,6 +7,8 @@ import {
   CalendarDays,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Circle,
   Inbox,
   MoreHorizontal,
@@ -57,6 +59,14 @@ type CategoryChipOption = {
   label: string
   color: string | null
   neutral?: boolean
+}
+
+type CalendarCell = {
+  date: string
+  inCurrentMonth: boolean
+  isToday: boolean
+  isSelected: boolean
+  todos: TodoRecord[]
 }
 
 type BeforeInstallPromptEvent = Event & {
@@ -139,6 +149,8 @@ function App() {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
   const [selectedUncategorized, setSelectedUncategorized] = useState(false)
   const [selectedTodoId, setSelectedTodoId] = useState<string | null>(null)
+  const [calendarMonth, setCalendarMonth] = useState(() => startOfMonthIso(todayDate()))
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState(() => todayDate())
   const [quickTodoTitle, setQuickTodoTitle] = useState('')
   const [newCategoryName, setNewCategoryName] = useState('')
   const [newCategoryColor, setNewCategoryColor] = useState(categoryPalette[0])
@@ -193,6 +205,15 @@ function App() {
   )
 
   const selectedTodo = activeTodos.find((todo) => todo.id === selectedTodoId) ?? null
+  const calendarTodosByDate = useMemo(() => groupTodosByDueDate(activeTodos), [activeTodos])
+  const selectedCalendarTodos = useMemo(
+    () => calendarTodosByDate.get(selectedCalendarDate) ?? [],
+    [calendarTodosByDate, selectedCalendarDate],
+  )
+  const currentMonthTodoCount = useMemo(
+    () => activeTodos.filter((todo) => todo.dueDate?.startsWith(calendarMonth.slice(0, 7))).length,
+    [activeTodos, calendarMonth],
+  )
 
   const sidebarCounts = useMemo(
     () => ({
@@ -284,6 +305,18 @@ function App() {
     setConfirmDeleteTodo(false)
     lastSavedDraftRef.current = serializeTodoDraft(nextDraft)
   }, [selectedTodo])
+
+  useEffect(() => {
+    if (location.pathname !== '/calendar' || !selectedTodo?.dueDate) {
+      return
+    }
+
+    setSelectedCalendarDate(selectedTodo.dueDate)
+    setCalendarMonth((current) => {
+      const nextMonth = startOfMonthIso(selectedTodo.dueDate!)
+      return current === nextMonth ? current : nextMonth
+    })
+  }, [location.pathname, selectedTodo?.dueDate])
 
   const persistTodoDraft = useEffectEvent(async (draft: TodoDraft, baseTodo: TodoRecord) => {
     if (!workspaceId || !draft.title.trim()) {
@@ -645,7 +678,8 @@ function App() {
 
   const shellClassName = [
     'workspace-shell',
-    selectedTodoId && location.pathname !== '/calendar' ? 'has-detail' : '',
+    location.pathname === '/calendar' ? 'calendar-layout' : '',
+    selectedTodoId || location.pathname === '/calendar' ? 'has-detail' : '',
   ]
     .filter(Boolean)
     .join(' ')
@@ -687,6 +721,7 @@ function App() {
         setSelectedCategoryId={setSelectedCategoryId}
         selectedUncategorized={selectedUncategorized}
         setSelectedUncategorized={setSelectedUncategorized}
+        setSelectedTodoId={setSelectedTodoId}
         sidebarCounts={sidebarCounts}
         categories={activeCategories}
         newCategoryName={newCategoryName}
@@ -734,8 +769,15 @@ function App() {
             path="/calendar"
             element={
               <CalendarBoard
-                categories={activeCategories.length}
-                todos={activeTodos.filter((todo) => todo.status !== 'completed').length}
+                categories={activeCategories}
+                todosByDate={calendarTodosByDate}
+                selectedDate={selectedCalendarDate}
+                selectedTodoId={selectedTodoId}
+                visibleMonth={calendarMonth}
+                setVisibleMonth={setCalendarMonth}
+                setSelectedDate={setSelectedCalendarDate}
+                setSelectedTodoId={setSelectedTodoId}
+                todosInMonth={currentMonthTodoCount}
                 pendingOutboxCount={pendingOutboxCount}
               />
             }
@@ -743,7 +785,28 @@ function App() {
         </Routes>
       </section>
 
-      {location.pathname !== '/calendar' ? (
+      {location.pathname === '/calendar' ? (
+        selectedTodo ? (
+          <TodoDetailPane
+            selectedTodo={selectedTodo}
+            categories={activeCategories}
+            detailDraft={detailDraft}
+            setDetailDraft={setDetailDraft}
+            handleDeleteTodo={handleDeleteTodo}
+            confirmDeleteTodo={confirmDeleteTodo}
+            setConfirmDeleteTodo={setConfirmDeleteTodo}
+            closeDetail={() => setSelectedTodoId(null)}
+            busy={busy}
+          />
+        ) : (
+          <CalendarDatePanel
+            selectedDate={selectedCalendarDate}
+            todos={selectedCalendarTodos}
+            categories={activeCategories}
+            setSelectedTodoId={setSelectedTodoId}
+          />
+        )
+      ) : (
         <TodoDetailPane
           selectedTodo={selectedTodo}
           categories={activeCategories}
@@ -755,7 +818,7 @@ function App() {
           closeDetail={() => setSelectedTodoId(null)}
           busy={busy}
         />
-      ) : null}
+      )}
     </main>
   )
 }
@@ -901,6 +964,7 @@ function Sidebar({
   setSelectedCategoryId,
   selectedUncategorized,
   setSelectedUncategorized,
+  setSelectedTodoId,
   sidebarCounts,
   categories,
   newCategoryName,
@@ -924,6 +988,7 @@ function Sidebar({
   setSelectedCategoryId: (id: string | null) => void
   selectedUncategorized: boolean
   setSelectedUncategorized: (value: boolean) => void
+  setSelectedTodoId: (value: string | null) => void
   sidebarCounts: Record<TaskFilter, number>
   categories: CategoryRecord[]
   newCategoryName: string
@@ -1026,6 +1091,7 @@ function Sidebar({
           onClick={() => {
             setSelectedCategoryId(null)
             setSelectedUncategorized(false)
+            setSelectedTodoId(null)
             navigate('/calendar')
           }}
         >
@@ -1902,44 +1968,292 @@ function TodoDetailPane({
 
 function CalendarBoard({
   categories,
-  todos,
+  todosByDate,
+  selectedDate,
+  selectedTodoId,
+  visibleMonth,
+  setVisibleMonth,
+  setSelectedDate,
+  setSelectedTodoId,
+  todosInMonth,
   pendingOutboxCount,
 }: {
-  categories: number
-  todos: number
+  categories: CategoryRecord[]
+  todosByDate: Map<string, TodoRecord[]>
+  selectedDate: string
+  selectedTodoId: string | null
+  visibleMonth: string
+  setVisibleMonth: (value: string) => void
+  setSelectedDate: (value: string) => void
+  setSelectedTodoId: (value: string | null) => void
+  todosInMonth: number
   pendingOutboxCount: number
 }) {
+  const categoryMap = useMemo(
+    () => new Map(categories.map((category) => [category.id, category])),
+    [categories],
+  )
+  const cells = useMemo(
+    () => buildCalendarCells(visibleMonth, selectedDate, todosByDate),
+    [visibleMonth, selectedDate, todosByDate],
+  )
+
   return (
     <section className="calendar-board">
-      <div className="calendar-hero">
-        <p className="eyebrow">Calendar Route</p>
-        <h2>月历页面保留同一套壳，但业务仍在下一阶段接入。</h2>
-        <p>
-          当前先统一视觉基线，避免后续再从展示页迁移。待办与分类会继续作为 Phase 3 的主线，
-          月历页在 Phase 4 承接日程投影和日期格布局。
-        </p>
-      </div>
+      <div className="calendar-shell">
+        <header className="calendar-toolbar">
+          <div className="calendar-toolbar-main">
+            <p className="eyebrow">Schedule Overview</p>
+            <h2>{formatCalendarMonthTitle(visibleMonth)}</h2>
+            <p>点击日期查看当天截止事项，点击事项后在右侧直接编辑。</p>
+          </div>
 
-      <div className="calendar-metrics">
-        <div>
-          <span>分类</span>
-          <strong>{categories}</strong>
+          <div className="calendar-toolbar-actions">
+            <div className="calendar-nav">
+              <button
+                type="button"
+                className="calendar-nav-button"
+                aria-label="上一个月"
+                onClick={() => setVisibleMonth(shiftMonth(visibleMonth, -1))}
+              >
+                <ChevronLeft size={16} strokeWidth={2.2} />
+              </button>
+              <button
+                type="button"
+                className="calendar-nav-today"
+                onClick={() => {
+                  const today = todayDate()
+                  setVisibleMonth(startOfMonthIso(today))
+                  setSelectedDate(today)
+                  setSelectedTodoId(null)
+                }}
+              >
+                今天
+              </button>
+              <button
+                type="button"
+                className="calendar-nav-button"
+                aria-label="下一个月"
+                onClick={() => setVisibleMonth(shiftMonth(visibleMonth, 1))}
+              >
+                <ChevronRight size={16} strokeWidth={2.2} />
+              </button>
+            </div>
+
+            <div className="calendar-summary">
+              <div>
+                <span>分类</span>
+                <strong>{categories.length}</strong>
+              </div>
+              <div>
+                <span>本月事项</span>
+                <strong>{todosInMonth}</strong>
+              </div>
+              <div>
+                <span>待同步</span>
+                <strong>{pendingOutboxCount}</strong>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <div className="calendar-weekdays" aria-hidden="true">
+          {['周一', '周二', '周三', '周四', '周五', '周六', '周日'].map((weekday) => (
+            <span key={weekday}>{weekday}</span>
+          ))}
         </div>
-        <div>
-          <span>未完成任务</span>
-          <strong>{todos}</strong>
-        </div>
-        <div>
-          <span>待同步 outbox</span>
-          <strong>{pendingOutboxCount}</strong>
+
+        <div className="calendar-grid" role="grid" aria-label={formatCalendarMonthTitle(visibleMonth)}>
+          {cells.map((cell) => {
+            const visibleTodos = cell.todos.slice(0, 3)
+            const overflowCount = Math.max(cell.todos.length - visibleTodos.length, 0)
+
+            return (
+              <button
+                key={cell.date}
+                type="button"
+                role="gridcell"
+                aria-selected={cell.isSelected}
+                className={[
+                  'calendar-cell',
+                  cell.inCurrentMonth ? '' : 'is-muted',
+                  cell.isToday ? 'is-today' : '',
+                  cell.isSelected ? 'is-selected' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+                onClick={() => {
+                  setSelectedDate(cell.date)
+                  setSelectedTodoId(null)
+                  if (!cell.inCurrentMonth) {
+                    setVisibleMonth(startOfMonthIso(cell.date))
+                  }
+                }}
+              >
+                <div className="calendar-cell-head">
+                  <span className="calendar-cell-day">{formatDayOfMonth(cell.date)}</span>
+                  {cell.todos.length ? <span className="calendar-cell-count">{cell.todos.length}</span> : null}
+                </div>
+
+                <div className="calendar-cell-items">
+                  {visibleTodos.map((todo) => {
+                    const category = todo.categoryId ? categoryMap.get(todo.categoryId) ?? null : null
+
+                    return (
+                      <span
+                        key={todo.id}
+                        className={[
+                          'calendar-item',
+                          `status-${todo.status}`,
+                          selectedTodoId === todo.id ? 'active' : '',
+                        ]
+                          .filter(Boolean)
+                          .join(' ')}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setSelectedDate(cell.date)
+                          setSelectedTodoId(todo.id)
+                        }}
+                      >
+                        <span
+                          className="calendar-item-accent"
+                          style={{ backgroundColor: category?.color ?? '#cfd8e3' }}
+                          aria-hidden="true"
+                        />
+                        <span className="calendar-item-title">{todo.title}</span>
+                      </span>
+                    )
+                  })}
+
+                  {overflowCount ? <span className="calendar-item-overflow">+{overflowCount}</span> : null}
+                </div>
+              </button>
+            )
+          })}
         </div>
       </div>
     </section>
   )
 }
 
+function CalendarDatePanel({
+  selectedDate,
+  todos,
+  categories,
+  setSelectedTodoId,
+}: {
+  selectedDate: string
+  todos: TodoRecord[]
+  categories: CategoryRecord[]
+  setSelectedTodoId: (value: string | null) => void
+}) {
+  const categoryMap = useMemo(
+    () => new Map(categories.map((category) => [category.id, category])),
+    [categories],
+  )
+
+  return (
+    <aside className="detail-pane is-open calendar-detail-pane" aria-label="日期详情">
+      <div className="calendar-date-panel">
+        <div className="calendar-date-head">
+          <p className="eyebrow">Date Focus</p>
+          <h2>{formatFullDateLabel(selectedDate)}</h2>
+          <p>{formatWeekday(selectedDate)} · {todos.length} 条截止事项</p>
+        </div>
+
+        {todos.length ? (
+          <div className="calendar-date-list" role="list">
+            {todos.map((todo) => {
+              const category = todo.categoryId ? categoryMap.get(todo.categoryId) ?? null : null
+              const noteExcerpt = todo.note.trim().split('\n')[0]
+              const statusMeta = todoStatusMeta[todo.status]
+
+              return (
+                <button
+                  key={todo.id}
+                  type="button"
+                  className={['calendar-date-item', `status-${todo.status}`].join(' ')}
+                  onClick={() => setSelectedTodoId(todo.id)}
+                >
+                  <span
+                    className="calendar-date-item-accent"
+                    style={{ backgroundColor: category?.color ?? '#cfd8e3' }}
+                    aria-hidden="true"
+                  />
+                  <span className="calendar-date-item-main">
+                    <span className="calendar-date-item-title">{todo.title}</span>
+                    <span className="calendar-date-item-meta">
+                      <span>{statusMeta.label}</span>
+                      <span>{category?.name ?? '未分类'}</span>
+                    </span>
+                    {noteExcerpt ? <span className="calendar-date-item-note">{noteExcerpt}</span> : null}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="calendar-date-empty">
+            <h3>当天没有截止事项</h3>
+            <p>切换月份或点击其他日期，右侧会同步展示对应日期的任务摘要。</p>
+          </div>
+        )}
+      </div>
+    </aside>
+  )
+}
+
 function todayDate() {
   return formatDateInputValue(new Date())
+}
+
+function groupTodosByDueDate(todos: TodoRecord[]) {
+  const grouped = new Map<string, TodoRecord[]>()
+
+  for (const todo of todos) {
+    if (!todo.dueDate) {
+      continue
+    }
+
+    const items = grouped.get(todo.dueDate) ?? []
+    items.push(todo)
+    grouped.set(todo.dueDate, items)
+  }
+
+  for (const [key, value] of grouped.entries()) {
+    grouped.set(key, value.sort((left, right) => compareTodos(left, right)))
+  }
+
+  return grouped
+}
+
+function buildCalendarCells(
+  visibleMonth: string,
+  selectedDate: string,
+  todosByDate: Map<string, TodoRecord[]>,
+) {
+  const firstOfMonth = new Date(`${visibleMonth}T00:00:00`)
+  const gridStart = new Date(firstOfMonth)
+  const mondayOffset = (firstOfMonth.getDay() + 6) % 7
+  gridStart.setDate(firstOfMonth.getDate() - mondayOffset)
+
+  const cells: CalendarCell[] = []
+
+  for (let index = 0; index < 42; index += 1) {
+    const current = new Date(gridStart)
+    current.setDate(gridStart.getDate() + index)
+    const isoDate = formatDateInputValue(current)
+
+    cells.push({
+      date: isoDate,
+      inCurrentMonth: isoDate.slice(0, 7) === visibleMonth.slice(0, 7),
+      isToday: isoDate === todayDate(),
+      isSelected: isoDate === selectedDate,
+      todos: todosByDate.get(isoDate) ?? [],
+    })
+  }
+
+  return cells
 }
 
 function getMyDayMembership(
@@ -2074,6 +2388,20 @@ function formatMonthDay(value: string) {
   return `${date.getMonth() + 1}月${date.getDate()}日`
 }
 
+function formatFullDateLabel(value: string) {
+  const date = new Date(`${value}T00:00:00`)
+  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`
+}
+
+function formatCalendarMonthTitle(value: string) {
+  const date = new Date(`${value}T00:00:00`)
+  return `${date.getFullYear()}年 ${date.getMonth() + 1}月`
+}
+
+function formatDayOfMonth(value: string) {
+  return String(new Date(`${value}T00:00:00`).getDate())
+}
+
 function toggleTodoStatus(status: TodoStatus): TodoStatus {
   return nextTodoStatus(status)
 }
@@ -2171,6 +2499,16 @@ function nextDate(days: number) {
   const next = new Date()
   next.setDate(next.getDate() + days)
   return formatDateInputValue(next)
+}
+
+function startOfMonthIso(value: string) {
+  return `${value.slice(0, 7)}-01`
+}
+
+function shiftMonth(value: string, delta: number) {
+  const monthDate = new Date(`${value}T00:00:00`)
+  monthDate.setMonth(monthDate.getMonth() + delta, 1)
+  return formatDateInputValue(monthDate)
 }
 
 function diffDaysFromToday(value: string) {

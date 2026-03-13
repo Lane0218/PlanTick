@@ -265,3 +265,54 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   ).toBeVisible()
   await expect(restoredTask.getByText('明天')).toBeVisible()
 })
+
+test('phase 4 日程概览：月历展示截止事项并支持在日历中改期', async ({ page, baseURL }) => {
+  const passphrase = `phase4-${Date.now()}-pw`
+
+  await page.goto(baseURL!)
+  await page.setViewportSize({ width: 1440, height: 960 })
+
+  const createTask = async (title: string) => {
+    await page.getByLabel('快速新建任务').fill(title)
+    await page.getByLabel('快速新建任务').press('Enter')
+    await expect(page.getByLabel('任务标题')).toHaveValue(title)
+  }
+
+  await page.getByRole('button', { name: '匿名登录并检查 Supabase' }).click()
+  await expect(page.getByText('匿名会话已建立，可以创建或加入工作区。')).toBeVisible()
+
+  await page.getByPlaceholder('至少 6 个字符…').fill(passphrase)
+  await page.getByRole('button', { name: '调用 workspace-create' }).click()
+  await expect(page.getByRole('heading', { name: '待办箱' })).toBeVisible()
+
+  await createTask('月历任务一')
+  await page.getByRole('button', { name: '今天' }).click()
+  await page.waitForTimeout(500)
+
+  await createTask('月历已完成')
+  await page.getByRole('button', { name: '今天' }).click()
+  await page.waitForTimeout(500)
+  const completedTask = page.locator('article', {
+    has: page.getByRole('button', { name: '查看任务 月历已完成' }),
+  })
+  await completedTask.getByRole('button', { name: '切换任务状态，当前未开始' }).click()
+  await completedTask.getByRole('button', { name: '切换任务状态，当前进行中' }).click()
+  await expect(
+    completedTask.getByRole('button', { name: '切换任务状态，当前已完成' }),
+  ).toBeVisible()
+
+  await page.getByRole('button', { name: '日程概览' }).click()
+  await expect(page.locator('.calendar-grid')).toBeVisible()
+  await expect(page.locator('.calendar-grid').getByText('月历任务一')).toBeVisible()
+  await expect(page.locator('.calendar-grid').getByText('月历已完成')).toBeVisible()
+  await expect(page.getByText('2 条截止事项')).toBeVisible()
+
+  await page.locator('.calendar-grid').getByText('月历任务一').click()
+  await expect(page.getByLabel('任务标题')).toHaveValue('月历任务一')
+  await page.getByRole('button', { name: '明天' }).click()
+  await page.waitForTimeout(500)
+  await page.getByRole('button', { name: '关闭详情' }).click()
+
+  await expect(page.getByText('1 条截止事项')).toBeVisible()
+  await expect(page.locator('.calendar-grid').getByText('月历任务一')).toBeVisible()
+})
