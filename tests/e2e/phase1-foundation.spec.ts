@@ -275,6 +275,12 @@ test('phase 4 日程概览：月历展示截止事项并支持在日历中改期
     await expect(page.getByLabel('任务标题')).toHaveValue(title)
   }
 
+  const createTodayTask = async (title: string) => {
+    await createTask(title)
+    await page.getByRole('button', { name: '今天' }).click()
+    await page.waitForTimeout(500)
+  }
+
   await page.getByRole('button', { name: '匿名登录并检查 Supabase' }).click()
   await expect(page.getByText('匿名会话已建立，可以创建或加入工作区。')).toBeVisible()
 
@@ -282,13 +288,11 @@ test('phase 4 日程概览：月历展示截止事项并支持在日历中改期
   await page.getByRole('button', { name: '调用 workspace-create' }).click()
   await expect(page.getByRole('heading', { name: '待办箱' })).toBeVisible()
 
-  await createTask('月历任务一')
-  await page.getByRole('button', { name: '今天' }).click()
-  await page.waitForTimeout(500)
+  await createTodayTask('月历任务一')
+  await createTodayTask('月历已完成')
+  await createTodayTask('月历任务三')
+  await createTodayTask('月历任务四')
 
-  await createTask('月历已完成')
-  await page.getByRole('button', { name: '今天' }).click()
-  await page.waitForTimeout(500)
   const completedTask = page.locator('article', {
     has: page.getByRole('button', { name: '查看任务 月历已完成' }),
   })
@@ -301,7 +305,44 @@ test('phase 4 日程概览：月历展示截止事项并支持在日历中改期
   await page.getByRole('button', { name: '日程概览' }).click()
   await expect(page.locator('.calendar-grid')).toBeVisible()
   await expect(page.locator('.calendar-grid').getByText('月历任务一')).toBeVisible()
-  await expect(page.locator('.calendar-grid').getByText('月历已完成')).toBeVisible()
+  await expect(page.locator('.calendar-grid').getByText('月历任务三')).toBeVisible()
+  await expect(page.locator('.calendar-grid').getByText('月历任务四')).toBeVisible()
+  await expect(page.locator('.detail-pane.is-open')).toHaveCount(0)
+
+  const overflowButton = page.getByRole('button', { name: /查看 .*剩余 1 项任务/ })
+  await expect(overflowButton).toBeVisible()
+
+  const targetCell = page.locator('.calendar-cell').filter({ has: overflowButton })
+  const cellBox = await targetCell.boundingBox()
+  expect(cellBox).not.toBeNull()
+  await page.mouse.click((cellBox?.x ?? 0) + 18, (cellBox?.y ?? 0) + 18)
+
+  const dayPopover = page.locator('.calendar-day-popover')
+  await expect(dayPopover).toBeVisible()
+  await expect(dayPopover.getByText('月历已完成')).toBeVisible()
+  await expect(dayPopover.locator('.calendar-item.status-completed .calendar-item-title')).toHaveCSS(
+    'text-decoration-line',
+    'line-through',
+  )
+
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.calendar-day-popover')).toHaveCount(0)
+
+  await overflowButton.click()
+  await expect(dayPopover).toBeVisible()
+  await page.locator('.calendar-toolbar h2').click()
+  await expect(page.locator('.calendar-day-popover')).toHaveCount(0)
+
+  await overflowButton.click()
+  await expect(dayPopover).toBeVisible()
+  await page.getByRole('button', { name: '关闭当天任务浮层' }).click()
+  await expect(page.locator('.calendar-day-popover')).toHaveCount(0)
+
+  await overflowButton.click()
+  await dayPopover.getByText('月历已完成').click()
+  await expect(page.getByLabel('任务标题')).toHaveValue('月历已完成')
+  await expect(page.locator('.detail-pane.is-open')).toHaveCount(1)
+  await page.getByRole('button', { name: '关闭详情' }).click()
   await expect(page.locator('.detail-pane.is-open')).toHaveCount(0)
 
   await page.locator('.calendar-grid').getByText('月历任务一').click()

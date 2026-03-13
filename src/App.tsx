@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, FormEvent } from 'react'
+import type { CSSProperties, FormEvent, RefObject } from 'react'
 import { DayPicker } from 'react-day-picker'
 import 'react-day-picker/dist/style.css'
 import {
@@ -18,6 +18,7 @@ import {
   Repeat,
   Sun,
   Trash2,
+  X,
 } from 'lucide-react'
 import { zhCN } from 'date-fns/locale'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
@@ -1962,10 +1963,59 @@ function CalendarBoard({
     () => new Map(categories.map((category) => [category.id, category])),
     [categories],
   )
+  const [expandedDate, setExpandedDate] = useState<string | null>(null)
+  const expandedPopoverRef = useRef<HTMLDivElement | null>(null)
   const cells = useMemo(
     () => buildCalendarCells(visibleMonth, selectedDate, todosByDate),
     [visibleMonth, selectedDate, todosByDate],
   )
+
+  useEffect(() => {
+    if (!expandedDate) {
+      return
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!(event.target instanceof Node)) {
+        return
+      }
+
+      if (expandedPopoverRef.current?.contains(event.target)) {
+        return
+      }
+
+      setExpandedDate(null)
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') {
+        return
+      }
+
+      setExpandedDate(null)
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [expandedDate])
+
+  const focusCalendarDate = (date: string, inCurrentMonth: boolean) => {
+    setSelectedDate(date)
+    setSelectedTodoId(null)
+    if (!inCurrentMonth) {
+      setVisibleMonth(startOfMonthIso(date))
+    }
+  }
+
+  const toggleExpandedDate = (date: string, inCurrentMonth: boolean) => {
+    focusCalendarDate(date, inCurrentMonth)
+    setExpandedDate((current) => (current === date ? null : date))
+  }
 
   return (
     <section className="calendar-board">
@@ -1981,6 +2031,7 @@ function CalendarBoard({
               onClick={() => {
                 setVisibleMonth(shiftMonth(visibleMonth, -1))
                 setSelectedTodoId(null)
+                setExpandedDate(null)
               }}
             >
               <ChevronLeft size={16} strokeWidth={2.2} />
@@ -1993,6 +2044,7 @@ function CalendarBoard({
                 setVisibleMonth(startOfMonthIso(today))
                 setSelectedDate(today)
                 setSelectedTodoId(null)
+                setExpandedDate(null)
               }}
             >
               今天
@@ -2004,6 +2056,7 @@ function CalendarBoard({
               onClick={() => {
                 setVisibleMonth(shiftMonth(visibleMonth, 1))
                 setSelectedTodoId(null)
+                setExpandedDate(null)
               }}
             >
               <ChevronRight size={16} strokeWidth={2.2} />
@@ -2018,9 +2071,19 @@ function CalendarBoard({
         </div>
 
         <div className="calendar-grid" role="grid" aria-label={formatCalendarMonthTitle(visibleMonth)}>
-          {cells.map((cell) => {
+          {cells.map((cell, index) => {
             const visibleTodos = cell.todos.slice(0, 3)
             const overflowCount = Math.max(cell.todos.length - visibleTodos.length, 0)
+            const isExpanded = expandedDate === cell.date
+            const columnIndex = index % 7
+            const rowIndex = Math.floor(index / 7)
+            const popoverClassName = [
+              'calendar-day-popover',
+              columnIndex >= 5 ? 'align-right' : '',
+              rowIndex >= 4 ? 'open-upward' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')
 
             return (
               <div
@@ -2033,27 +2096,37 @@ function CalendarBoard({
                   cell.inCurrentMonth ? '' : 'is-muted',
                   cell.isToday ? 'is-today' : '',
                   cell.isSelected ? 'is-selected' : '',
+                  isExpanded ? 'is-expanded' : '',
                 ]
                   .filter(Boolean)
                   .join(' ')}
                 onClick={() => {
-                  setSelectedDate(cell.date)
-                  setSelectedTodoId(null)
-                  if (!cell.inCurrentMonth) {
-                    setVisibleMonth(startOfMonthIso(cell.date))
+                  if (overflowCount > 0) {
+                    toggleExpandedDate(cell.date, cell.inCurrentMonth)
+                    return
                   }
+
+                  focusCalendarDate(cell.date, cell.inCurrentMonth)
+                  setExpandedDate(null)
                 }}
                 onKeyDown={(event) => {
+                  if (event.target !== event.currentTarget) {
+                    return
+                  }
+
                   if (event.key !== 'Enter' && event.key !== ' ') {
                     return
                   }
 
                   event.preventDefault()
-                  setSelectedDate(cell.date)
-                  setSelectedTodoId(null)
-                  if (!cell.inCurrentMonth) {
-                    setVisibleMonth(startOfMonthIso(cell.date))
+
+                  if (overflowCount > 0) {
+                    toggleExpandedDate(cell.date, cell.inCurrentMonth)
+                    return
                   }
+
+                  focusCalendarDate(cell.date, cell.inCurrentMonth)
+                  setExpandedDate(null)
                 }}
               >
                 <div className="calendar-cell-head">
@@ -2079,6 +2152,7 @@ function CalendarBoard({
                           event.stopPropagation()
                           setSelectedDate(cell.date)
                           setSelectedTodoId(todo.id)
+                          setExpandedDate(null)
                         }}
                       >
                         <span
@@ -2091,14 +2165,113 @@ function CalendarBoard({
                     )
                   })}
 
-                  {overflowCount ? <span className="calendar-item-overflow">+{overflowCount}</span> : null}
+                  {overflowCount ? (
+                    <button
+                      type="button"
+                      className="calendar-item-overflow"
+                      aria-label={`查看 ${formatCalendarFullDate(cell.date)} 剩余 ${overflowCount} 项任务`}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        toggleExpandedDate(cell.date, cell.inCurrentMonth)
+                      }}
+                    >
+                      +{overflowCount}
+                    </button>
+                  ) : null}
                 </div>
+
+                {isExpanded ? (
+                  <CalendarDayPopover
+                    popoverRef={expandedPopoverRef}
+                    className={popoverClassName}
+                    date={cell.date}
+                    todos={cell.todos}
+                    selectedTodoId={selectedTodoId}
+                    categoryMap={categoryMap}
+                    onClose={() => setExpandedDate(null)}
+                    onSelectTodo={(todoId) => {
+                      setSelectedDate(cell.date)
+                      setSelectedTodoId(todoId)
+                      setExpandedDate(null)
+                    }}
+                  />
+                ) : null}
               </div>
             )
           })}
         </div>
       </div>
     </section>
+  )
+}
+
+function CalendarDayPopover({
+  popoverRef,
+  className,
+  date,
+  todos,
+  selectedTodoId,
+  categoryMap,
+  onClose,
+  onSelectTodo,
+}: {
+  popoverRef: RefObject<HTMLDivElement | null>
+  className: string
+  date: string
+  todos: TodoRecord[]
+  selectedTodoId: string | null
+  categoryMap: Map<string, CategoryRecord>
+  onClose: () => void
+  onSelectTodo: (todoId: string) => void
+}) {
+  return (
+    <div
+      ref={popoverRef}
+      className={className}
+      role="dialog"
+      aria-label={`${formatCalendarFullDate(date)} 任务列表`}
+      onClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => event.stopPropagation()}
+    >
+      <div className="calendar-day-popover-head">
+        <div>
+          <strong>{formatCalendarFullDate(date)}</strong>
+          <span>{formatDayOfMonth(date)} 日任务</span>
+        </div>
+        <button type="button" className="calendar-day-popover-close" aria-label="关闭当天任务浮层" onClick={onClose}>
+          <X size={16} strokeWidth={2.2} />
+        </button>
+      </div>
+
+      <div className="calendar-day-popover-list">
+        {todos.map((todo) => {
+          const category = todo.categoryId ? categoryMap.get(todo.categoryId) ?? null : null
+
+          return (
+            <button
+              key={todo.id}
+              type="button"
+              className={[
+                'calendar-item',
+                'calendar-day-popover-item',
+                `status-${todo.status}`,
+                selectedTodoId === todo.id ? 'active' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              onClick={() => onSelectTodo(todo.id)}
+            >
+              <span
+                className="calendar-item-accent"
+                style={{ backgroundColor: category?.color ?? '#cfd8e3' }}
+                aria-hidden="true"
+              />
+              <span className="calendar-item-title">{todo.title}</span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 
@@ -2290,6 +2463,11 @@ function formatMonthDay(value: string) {
 function formatCalendarMonthTitle(value: string) {
   const date = new Date(`${value}T00:00:00`)
   return `${date.getFullYear()}年 ${date.getMonth() + 1}月`
+}
+
+function formatCalendarFullDate(value: string) {
+  const date = new Date(`${value}T00:00:00`)
+  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`
 }
 
 function formatDayOfMonth(value: string) {

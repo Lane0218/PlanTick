@@ -1621,7 +1621,7 @@
   border-left: 0;
   border-right: 0;
   border-radius: 0;
-  overflow: hidden;
+  overflow: visible;
   box-shadow: none;
 }
 
@@ -1703,9 +1703,12 @@
 
 .calendar-grid {
   border-left: 1px solid #eef2f5;
+  overflow: visible;
 }
 
 .calendar-cell {
+  position: relative;
+  z-index: 0;
   min-width: 0;
   min-height: 150px;
   padding: 10px 12px 8px;
@@ -1717,6 +1720,7 @@
   align-content: start;
   gap: 10px;
   outline: none;
+  overflow: visible;
 }
 
 .calendar-cell:hover,
@@ -1735,6 +1739,10 @@
 
 .calendar-cell.is-today {
   box-shadow: inset 0 0 0 1px rgba(31, 110, 102, 0.22);
+}
+
+.calendar-cell.is-expanded {
+  z-index: 7;
 }
 
 .calendar-cell-head {
@@ -1805,10 +1813,100 @@
 }
 
 .calendar-item-overflow {
-  padding-left: 8px;
+  width: fit-content;
+  padding: 0 0 0 8px;
+  border: 0;
+  background: transparent;
   color: #7b8c98;
   font-size: 0.76rem;
   font-weight: 600;
+  line-height: 1.4;
+}
+
+.calendar-item-overflow:hover,
+.calendar-item-overflow:focus-visible {
+  color: #1f6e66;
+}
+
+.calendar-day-popover {
+  position: absolute;
+  top: calc(100% - 24px);
+  left: 10px;
+  z-index: 20;
+  width: min(360px, calc(100vw - 96px));
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.18);
+  backdrop-filter: blur(10px);
+}
+
+.calendar-day-popover.align-right {
+  right: 10px;
+  left: auto;
+}
+
+.calendar-day-popover.open-upward {
+  top: auto;
+  bottom: calc(100% - 36px);
+}
+
+.calendar-day-popover-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.calendar-day-popover-head div {
+  display: grid;
+  gap: 4px;
+}
+
+.calendar-day-popover-head strong {
+  color: #334155;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.calendar-day-popover-head span {
+  color: #7b8c98;
+  font-size: 0.76rem;
+}
+
+.calendar-day-popover-close {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #7b8c98;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.calendar-day-popover-close:hover,
+.calendar-day-popover-close:focus-visible {
+  background: #f3f6f8;
+  color: #334155;
+}
+
+.calendar-day-popover-list {
+  display: grid;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.calendar-day-popover-item {
+  min-height: 30px;
+}
+
+.calendar-day-popover-item .calendar-item-title {
+  padding-right: 2px;
 }
 
 .todo-status-not_started,
