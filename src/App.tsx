@@ -11,6 +11,7 @@ import {
   Inbox,
   MoreHorizontal,
   PauseCircle,
+  Pencil,
   PlayCircle,
   Plus,
   Repeat,
@@ -936,28 +937,25 @@ function Sidebar({
   busy: boolean
 }) {
   const [categoryDialogMode, setCategoryDialogMode] = useState<'create' | 'edit' | null>(null)
-  const [menuCategoryId, setMenuCategoryId] = useState<string | null>(null)
   const [pendingDeleteCategory, setPendingDeleteCategory] = useState<CategoryRecord | null>(null)
   const navigate = useNavigate()
   const location = useLocation()
 
-  const dialogTitle = categoryDialogMode === 'edit' ? '修改分类' : '新建分类'
+  const dialogTitle = categoryDialogMode === 'edit' ? '编辑分类' : '新建分类'
 
   const openCreateDialog = () => {
-    setMenuCategoryId(null)
     setCategoryDialogMode('create')
   }
 
   const openEditDialog = (category: CategoryRecord) => {
     setSelectedCategoryId(category.id)
+    setSelectedUncategorized(false)
     setActiveFilter('all')
-    setMenuCategoryId(null)
     setCategoryDialogMode('edit')
   }
 
   const closeCategoryDialog = () => {
     setCategoryDialogMode(null)
-    setMenuCategoryId(null)
   }
 
   const handleCategoryDialogSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -1087,33 +1085,12 @@ function Sidebar({
 
               <button
                 type="button"
-                className="category-more"
-                aria-label={`分类操作 ${category.name}`}
-                onClick={() => {
-                  setMenuCategoryId((current) => (current === category.id ? null : category.id))
-                }}
+                className="category-edit-button"
+                aria-label={`编辑分类 ${category.name}`}
+                onClick={() => openEditDialog(category)}
               >
-                <MoreHorizontal size={16} strokeWidth={2.1} aria-hidden="true" />
+                <Pencil size={15} strokeWidth={2.2} aria-hidden="true" />
               </button>
-
-              {menuCategoryId === category.id ? (
-                <div className="category-menu" role="menu" aria-label={`${category.name} 分类操作`}>
-                  <button type="button" role="menuitem" onClick={() => openEditDialog(category)}>
-                    修改分类
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="danger"
-                    onClick={() => {
-                      setMenuCategoryId(null)
-                      setPendingDeleteCategory(category)
-                    }}
-                  >
-                    删除分类
-                  </button>
-                </div>
-              ) : null}
             </div>
           ))}
         </div>
@@ -1137,16 +1114,8 @@ function Sidebar({
 
             <form className="category-dialog-form" onSubmit={(event) => void handleCategoryDialogSubmit(event)}>
               <label className="category-name-field">
-                <span>分类名称</span>
+                <span>名称</span>
                 <div className="category-name-input-shell">
-                  <span
-                    className="category-name-color"
-                    style={{
-                      backgroundColor:
-                        categoryDialogMode === 'edit' ? categoryEditorColor : newCategoryColor,
-                    }}
-                    aria-hidden="true"
-                  />
                   <input
                     value={categoryDialogMode === 'edit' ? categoryEditorName : newCategoryName}
                     onChange={(event) =>
@@ -1161,24 +1130,24 @@ function Sidebar({
                 </div>
               </label>
 
-              <div className="category-suggestion-row" aria-label="快捷分类名称">
-                {categorySuggestionLabels.map((label) => (
-                  <button
-                    key={label}
-                    type="button"
-                    className="category-suggestion-chip"
-                    onClick={() =>
-                      categoryDialogMode === 'edit'
-                        ? setCategoryEditorName(label)
-                        : setNewCategoryName(label)
-                    }
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
+              {categoryDialogMode === 'create' ? (
+                <div className="category-suggestion-row" aria-label="快捷分类名称">
+                  {categorySuggestionLabels.map((label) => (
+                    <button
+                      key={label}
+                      type="button"
+                      className="category-suggestion-chip"
+                      onClick={() => setNewCategoryName(label)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
 
-              <div className="palette-row" aria-label="分类颜色">
+              <label className="category-color-field">
+                <span>颜色</span>
+                <div className="palette-row" aria-label="分类颜色">
                 {categoryPalette.map((color) => {
                   const activeColor = categoryDialogMode === 'edit' ? categoryEditorColor : newCategoryColor
 
@@ -1197,22 +1166,45 @@ function Sidebar({
                     />
                   )
                 })}
-              </div>
+                </div>
+              </label>
 
               <div className="category-dialog-actions category-form-actions">
-                <button
-                  className="primary-button"
-                  type="submit"
-                  disabled={
-                    busy ||
-                    !(categoryDialogMode === 'edit' ? categoryEditorName.trim() : newCategoryName.trim())
-                  }
-                >
-                  {categoryDialogMode === 'edit' ? '保存分类' : '添加分类'}
-                </button>
-                <button className="secondary-button" type="button" onClick={closeCategoryDialog}>
-                  取消
-                </button>
+                {categoryDialogMode === 'edit' ? (
+                  <>
+                    <button
+                      className="danger-button category-dialog-delete"
+                      type="button"
+                      disabled={busy || !selectedCategory}
+                      onClick={() => {
+                        if (!selectedCategory) {
+                          return
+                        }
+
+                        setPendingDeleteCategory(selectedCategory)
+                        closeCategoryDialog()
+                      }}
+                    >
+                      删除
+                    </button>
+                    <button
+                      className="primary-button"
+                      type="submit"
+                      disabled={busy || !categoryEditorName.trim()}
+                    >
+                      保存
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button className="secondary-button" type="button" onClick={closeCategoryDialog}>
+                      取消
+                    </button>
+                    <button className="primary-button" type="submit" disabled={busy || !newCategoryName.trim()}>
+                      添加分类
+                    </button>
+                  </>
+                )}
               </div>
             </form>
           </div>
@@ -1375,8 +1367,7 @@ function TodoBoard({
         </div>
       ) : (
         <div className="empty-state">
-          <h2>这里还没有任务。</h2>
-          <p>从上方输入框开始添加第一条任务。</p>
+          <h2>暂无任务</h2>
         </div>
       )}
     </section>
@@ -1456,7 +1447,9 @@ function TodoDetailPane({
   useLayoutEffect(() => {
     const strip = categoryStripRef.current
     if (!strip || !orderedCategoryOptions.length) {
-      setVisibleCategoryCount(null)
+      window.requestAnimationFrame(() => {
+        setVisibleCategoryCount(null)
+      })
       return
     }
 
@@ -1499,7 +1492,7 @@ function TodoDetailPane({
       setVisibleCategoryCount(Math.max(1, nextVisibleCount))
     }
 
-    computeVisibleCategories()
+    frame = window.requestAnimationFrame(computeVisibleCategories)
     const observer = new ResizeObserver(() => {
       cancelAnimationFrame(frame)
       frame = window.requestAnimationFrame(computeVisibleCategories)
@@ -1520,6 +1513,7 @@ function TodoDetailPane({
     visibleCategoryCount === null
       ? []
       : orderedCategoryOptions.slice(visibleCategoryCount)
+  const isCategoryPickerOpen = showCategoryPicker && overflowCategoryOptions.length > 0
 
   const customDateSelected = Boolean(
     detailDraft?.dueDate &&
@@ -1549,12 +1543,6 @@ function TodoDetailPane({
         },
       ]
     : []
-
-  useEffect(() => {
-    if (!overflowCategoryOptions.length) {
-      setShowCategoryPicker(false)
-    }
-  }, [overflowCategoryOptions.length])
 
   return (
     <aside className={selectedTodo ? 'detail-pane is-open' : 'detail-pane'} aria-label="任务详情">
@@ -1598,7 +1586,7 @@ function TodoDetailPane({
                     type="button"
                     className="detail-list-select"
                     aria-haspopup="listbox"
-                    aria-expanded={showCategoryPicker}
+                    aria-expanded={isCategoryPickerOpen}
                     onClick={() => setShowCategoryPicker((current) => !current)}
                   >
                     <ChevronDown size={14} strokeWidth={2.2} className="detail-list-arrow" aria-hidden="true" />
@@ -1641,7 +1629,7 @@ function TodoDetailPane({
                 </button>
               </div>
 
-              {showCategoryPicker ? (
+              {isCategoryPickerOpen ? (
                 <div className="detail-list-menu" role="listbox" aria-label="分类列表">
                   {overflowCategoryOptions.map((option) => (
                     <button

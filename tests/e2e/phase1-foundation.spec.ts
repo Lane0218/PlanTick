@@ -44,14 +44,15 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   await expect(page.getByLabel('快速新建任务')).toHaveCSS('outline-style', 'none')
 
   await createCategory('产品设计')
+  await expect(page.getByRole('heading', { name: '暂无任务' })).toBeVisible()
+  await expect(page.getByText('从上方输入框开始添加第一条任务。')).toHaveCount(0)
 
-  await page.getByRole('button', { name: '分类操作 产品设计' }).click()
-  await page.getByRole('menuitem', { name: '修改分类' }).click()
-  await expect(page.getByText('修改分类', { exact: true })).toHaveCount(1)
-  await page.getByRole('button', { name: '取消' }).click()
+  await page.getByRole('button', { name: '编辑分类 产品设计' }).click()
+  await expect(page.getByText('编辑分类', { exact: true })).toHaveCount(1)
+  await page.getByLabel('关闭分类对话框').click()
 
-  await page.getByRole('button', { name: '分类操作 产品设计' }).click()
-  await page.getByRole('menuitem', { name: '删除分类' }).click()
+  await page.getByRole('button', { name: '编辑分类 产品设计' }).click()
+  await page.getByRole('button', { name: '删除' }).click()
   await expect(page.getByText('自动移动到“未分类”')).toBeVisible()
   await expect(page.locator('.category-confirm-actions button')).toHaveText(['取消', '确定'])
   await page.locator('.category-confirm-actions button').first().click()
