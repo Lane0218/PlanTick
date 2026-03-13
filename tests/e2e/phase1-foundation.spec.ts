@@ -68,19 +68,19 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   await page.getByLabel('快速新建任务').press('Enter')
   await page.getByRole('button', { name: '查看任务 123' }).click()
   await expect(page.getByLabel('任务分类').getByRole('button', { name: '未分类' })).toBeVisible()
-  await page.getByRole('button', { name: '重复' }).click()
+  await page.locator('.detail-info-card').filter({ hasText: '重复规则' }).getByRole('button', { name: /设置重复|调整重复/ }).click()
   await expect(page.getByRole('menuitemradio', { name: '每天' })).toBeDisabled()
   await expect(page.getByText('先设置日期后才能开启每天、每周或每月重复。')).toBeVisible()
-  await page.getByRole('button', { name: '重复' }).click()
-  await expect(page.getByRole('button', { name: '添加到我的一天' })).toBeVisible()
-  await page.getByRole('button', { name: '添加到我的一天' }).click()
-  await expect(page.getByRole('button', { name: '从我的一天移除' })).toBeVisible()
+  await page.locator('.detail-info-card').filter({ hasText: '重复规则' }).getByRole('button', { name: /设置重复|调整重复/ }).click()
+  await expect(page.locator('.detail-info-card').filter({ hasText: '我的一天' }).getByRole('button', { name: '加入今天关注' })).toBeVisible()
+  await page.locator('.detail-info-card').filter({ hasText: '我的一天' }).getByRole('button', { name: '加入今天关注' }).click()
+  await expect(page.locator('.detail-info-card').filter({ hasText: '我的一天' }).getByRole('button', { name: '移出今天关注' })).toBeVisible()
   const myDayButton = page.locator('.sidebar-nav').getByRole('button', { name: /^我的一天/ })
   await expect(myDayButton).toContainText('1')
   await myDayButton.click()
   await expect(page.getByRole('button', { name: '查看任务 123' })).toBeVisible()
   await page.getByRole('button', { name: '查看任务 123' }).click()
-  await page.getByRole('button', { name: '从我的一天移除' }).click()
+  await page.locator('.detail-info-card').filter({ hasText: '我的一天' }).getByRole('button', { name: '移出今天关注' }).click()
   await expect(myDayButton).toContainText('0')
   await expect(page.getByRole('button', { name: '查看任务 123' })).toHaveCount(0)
   await page.locator('.sidebar-nav').getByRole('button', { name: /^待办箱/ }).click()
@@ -148,7 +148,7 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
     'opacity',
     '0.42',
   )
-  await page.getByRole('button', { name: '明天' }).click()
+  await page.locator('.detail-info-card').first().getByRole('button', { name: '明天', exact: true }).click()
   const createdTask = page.locator('article', {
     has: page.getByRole('button', { name: '查看任务 完成任务工作台 UI' }),
   })
@@ -181,15 +181,15 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
     createdTask.getByRole('button', { name: '切换任务状态，当前未开始' }),
   ).toBeVisible()
   await createdTask.getByRole('button', { name: '切换任务状态，当前未开始' }).click()
-  await expect(page.getByRole('button', { name: '明天' })).toHaveClass(/active/)
+  await expect(page.locator('.detail-info-card').first().getByRole('button', { name: '明天', exact: true })).toHaveClass(/active/)
   await expect(page.getByLabel('备注')).toHaveValue('右侧详情支持完整编辑任务字段')
 
   await page.getByLabel('快速新建任务').fill('每日例行')
   await page.getByLabel('快速新建任务').press('Enter')
-  await page.getByRole('button', { name: '明天' }).click()
-  await page.getByRole('button', { name: '重复' }).click()
+  await page.locator('.detail-info-card').first().getByRole('button', { name: '明天', exact: true }).click()
+  await page.locator('.detail-info-card').filter({ hasText: '重复规则' }).getByRole('button', { name: /设置重复|调整重复/ }).click()
   await page.getByRole('menuitemradio', { name: '每天' }).click()
-  await expect(page.getByRole('button', { name: '每天' })).toBeVisible()
+  await expect(page.locator('.detail-pane.is-open').getByLabel('重复规则').getByText('每天', { exact: true })).toBeVisible()
   const dailyTask = page.locator('article', {
     has: page.getByRole('button', { name: '查看任务 每日例行' }),
   })
@@ -205,10 +205,10 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
 
   await page.getByLabel('快速新建任务').fill('每周例行')
   await page.getByLabel('快速新建任务').press('Enter')
-  await page.getByRole('button', { name: '今天' }).click()
-  await expect(page.getByText('今天截止，自动出现在“我的一天”')).toBeVisible()
-  await expect(page.getByRole('button', { name: '从我的一天移除' })).toHaveCount(0)
-  await page.getByRole('button', { name: '重复' }).click()
+  await page.locator('.detail-info-card').first().getByRole('button', { name: '今天', exact: true }).click()
+  await expect(page.locator('.detail-pane.is-open').getByText('今日自动归入“我的一天”')).toBeVisible()
+  await expect(page.locator('.detail-info-card').filter({ hasText: '我的一天' }).getByRole('button', { name: '移出今天关注' })).toHaveCount(0)
+  await page.locator('.detail-info-card').filter({ hasText: '重复规则' }).getByRole('button', { name: /设置重复|调整重复/ }).click()
   await page.getByRole('menuitemradio', { name: `每周（${weekdayLabel(today)}）` }).click()
   const weeklyTask = page.locator('article', {
     has: page.getByRole('button', { name: '查看任务 每周例行' }),
@@ -225,8 +225,8 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
 
   await page.getByLabel('快速新建任务').fill('每月例行')
   await page.getByLabel('快速新建任务').press('Enter')
-  await page.getByRole('button', { name: '今天' }).click()
-  await page.getByRole('button', { name: '重复' }).click()
+  await page.locator('.detail-info-card').first().getByRole('button', { name: '今天', exact: true }).click()
+  await page.locator('.detail-info-card').filter({ hasText: '重复规则' }).getByRole('button', { name: /设置重复|调整重复/ }).click()
   await page.getByRole('menuitemradio', { name: `每月（${today.getDate()}日）` }).click()
   const monthlyTask = page.locator('article', {
     has: page.getByRole('button', { name: '查看任务 每月例行' }),
@@ -259,7 +259,7 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   await expect(page.getByLabel('备注')).toHaveValue(
     '右侧详情支持完整编辑任务字段',
   )
-  await expect(page.getByRole('button', { name: '明天' })).toHaveClass(/active/)
+  await expect(page.locator('.detail-info-card').first().getByRole('button', { name: '明天', exact: true })).toHaveClass(/active/)
   await expect(
     restoredTask.getByRole('button', { name: '切换任务状态，当前进行中' }),
   ).toBeVisible()
@@ -280,7 +280,7 @@ test('phase 4 日程概览：月历展示截止事项并支持在日历中改期
 
   const createTodayTask = async (title: string) => {
     await createTask(title)
-    await page.getByRole('button', { name: '今天' }).click()
+    await page.locator('.detail-info-card').first().getByRole('button', { name: '今天', exact: true }).click()
     await page.waitForTimeout(500)
   }
 
@@ -361,13 +361,18 @@ test('phase 4 日程概览：月历展示截止事项并支持在日历中改期
   await dayPopover.getByText('月历已完成').click()
   await expect(page.getByLabel('任务标题')).toHaveValue('月历已完成')
   await expect(page.locator('.detail-pane.is-open')).toHaveCount(1)
+  const detailPane = page.locator('.detail-pane.is-open')
+  await expect(detailPane.getByLabel('时间安排').getByText('时间安排', { exact: true })).toBeVisible()
+  await expect(detailPane.getByLabel('专注安排').getByText('我的一天', { exact: true })).toBeVisible()
+  await expect(detailPane.getByLabel('重复规则').getByText('重复规则', { exact: true })).toBeVisible()
+  await expect(detailPane.getByText('修改会自动保存到当前工作区。')).toBeVisible()
   await page.getByRole('button', { name: '关闭详情' }).click()
   await expect(page.locator('.detail-pane.is-open')).toHaveCount(0)
 
   await page.locator('.calendar-grid').getByText('月历任务一').click()
   await expect(page.getByLabel('任务标题')).toHaveValue('月历任务一')
   await expect(page.locator('.detail-pane.is-open')).toHaveCount(1)
-  await page.getByRole('button', { name: '明天' }).click()
+  await page.locator('.detail-info-card').first().getByRole('button', { name: '明天', exact: true }).click()
   await page.waitForTimeout(500)
   await page.getByRole('button', { name: '关闭详情' }).click()
 

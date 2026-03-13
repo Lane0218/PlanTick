@@ -1596,6 +1596,241 @@
   font-size: 0.82rem;
 }
 
+.detail-pane.is-open {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  background:
+    linear-gradient(180deg, rgba(248, 251, 250, 0.96), #ffffff 18%),
+    #ffffff;
+}
+
+.detail-head {
+  padding-bottom: 18px;
+}
+
+.detail-scroll {
+  padding-top: 16px;
+  padding-right: 6px;
+}
+
+.detail-stack.detail-stack-immersive {
+  gap: 16px;
+}
+
+.detail-overview-card,
+.detail-info-card,
+.detail-support-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid #e6ecef;
+  border-radius: 22px;
+  background: linear-gradient(180deg, #ffffff, #f8fbfa);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+}
+
+.detail-overview-card {
+  gap: 16px;
+}
+
+.detail-title-shell-hero {
+  margin-top: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.detail-title-shell-hero:hover,
+.detail-title-shell-hero:focus-within {
+  background: transparent;
+  box-shadow: none;
+}
+
+.detail-title-shell-hero .detail-title-input {
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.18;
+  letter-spacing: -0.04em;
+}
+
+.detail-note-panel {
+  padding: 12px 0 0;
+  border-top: 1px solid #edf2f4;
+  border-radius: 0;
+  background: transparent;
+}
+
+.detail-note-panel:hover,
+.detail-note-panel:focus-within {
+  background: transparent;
+  box-shadow: none;
+}
+
+.detail-note-panel textarea {
+  min-height: 72px;
+  color: #4d6074;
+}
+
+.detail-summary-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.detail-summary-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: #eef2f5;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.detail-summary-badge.is-accent {
+  background: rgba(22, 163, 167, 0.12);
+  color: #1f6e66;
+}
+
+.detail-card-head {
+  gap: 6px;
+}
+
+.detail-card-eyebrow {
+  color: #8aa39e;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.detail-card-head strong {
+  color: #2c3e50;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.detail-card-head p {
+  margin: 0;
+  color: #7b8c98;
+  font-size: 0.84rem;
+  line-height: 1.65;
+}
+
+.detail-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.detail-card-row {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.detail-card-value {
+  color: #334155;
+  font-size: 0.94rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.detail-card-caption {
+  color: #94a3b8;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.detail-card-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: fit-content;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid #dfe6eb;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #60717e;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.detail-card-action.is-active {
+  border-color: rgba(31, 110, 102, 0.18);
+  background: #edf7f5;
+  color: #1f6e66;
+}
+
+.detail-card-action:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.detail-info-card .detail-date-actions {
+  gap: 10px;
+}
+
+.detail-date-pill {
+  border: 1px solid #e3e8ed;
+  background: #ffffff;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.02);
+}
+
+.detail-date-pill.active {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.detail-recurrence-shell {
+  align-content: start;
+}
+
+.detail-recurrence-menu {
+  top: calc(100% + 12px);
+  right: 0;
+  left: auto;
+  bottom: auto;
+  min-width: 240px;
+}
+
+.detail-support-card {
+  min-height: 132px;
+  align-content: center;
+  background:
+    radial-gradient(circle at top right, rgba(31, 110, 102, 0.08), transparent 38%),
+    linear-gradient(180deg, #fcfefd, #f6faf9);
+}
+
+.detail-footer {
+  align-items: center;
+  padding-top: 14px;
+  margin-top: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0), #ffffff 24%);
+}
+
+.detail-footer-actions {
+  gap: 10px;
+}
+
+.detail-footer-link {
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.detail-footer-link.is-danger {
+  border-color: rgba(239, 83, 80, 0.14);
+  background: #fff4f4;
+  color: #e35d5b;
+}
+
 .detail-empty {
   place-content: center;
   min-height: 100%;
@@ -2128,6 +2363,10 @@
     max-height: 78vh;
   }
 
+  .detail-meta-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .workspace-shell.calendar-layout,
   .workspace-shell.calendar-layout.has-detail {
     grid-template-columns: minmax(0, 1fr);
@@ -2229,12 +2468,29 @@
 
   .onboarding-metrics,
   .calendar-metrics,
-  .quick-create-options {
+  .quick-create-options,
+  .detail-meta-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .calendar-board {
     overflow-x: auto;
+  }
+
+  .detail-overview-card,
+  .detail-info-card,
+  .detail-support-card {
+    padding: 16px;
+    border-radius: 18px;
+  }
+
+  .detail-title-shell-hero .detail-title-input {
+    font-size: 1.28rem;
+  }
+
+  .detail-footer {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .calendar-shell,
