@@ -728,13 +728,15 @@ function App() {
       />
 
       <section className="board-pane">
-        <header className="board-header">
-          <div className="board-heading">
-            <div className="board-title-row">
-              <h1>{boardTitle}</h1>
+        {activeView === 'calendar' ? null : (
+          <header className="board-header">
+            <div className="board-heading">
+              <div className="board-title-row">
+                <h1>{boardTitle}</h1>
+              </div>
             </div>
-          </div>
-        </header>
+          </header>
+        )}
 
         {activeView === 'calendar' ? (
           <CalendarBoard
@@ -1970,14 +1972,17 @@ function CalendarBoard({
     [categories],
   )
   const [expandedDate, setExpandedDate] = useState<string | null>(null)
+  const [showMonthPicker, setShowMonthPicker] = useState(false)
+  const [pickerYear, setPickerYear] = useState(() => getCalendarYear(visibleMonth))
   const expandedPopoverRef = useRef<HTMLDivElement | null>(null)
+  const monthPickerRef = useRef<HTMLDivElement | null>(null)
   const cells = useMemo(
     () => buildCalendarCells(visibleMonth, selectedDate, todosByDate),
     [visibleMonth, selectedDate, todosByDate],
   )
 
   useEffect(() => {
-    if (!expandedDate) {
+    if (!expandedDate && !showMonthPicker) {
       return
     }
 
@@ -1986,11 +1991,12 @@ function CalendarBoard({
         return
       }
 
-      if (expandedPopoverRef.current?.contains(event.target)) {
+      if (expandedPopoverRef.current?.contains(event.target) || monthPickerRef.current?.contains(event.target)) {
         return
       }
 
       setExpandedDate(null)
+      setShowMonthPicker(false)
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1999,6 +2005,7 @@ function CalendarBoard({
       }
 
       setExpandedDate(null)
+      setShowMonthPicker(false)
     }
 
     document.addEventListener('pointerdown', handlePointerDown)
@@ -2008,11 +2015,12 @@ function CalendarBoard({
       document.removeEventListener('pointerdown', handlePointerDown)
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [expandedDate])
+  }, [expandedDate, showMonthPicker])
 
   const focusCalendarDate = (date: string, inCurrentMonth: boolean) => {
     setSelectedDate(date)
     setSelectedTodoId(null)
+    setShowMonthPicker(false)
     if (!inCurrentMonth) {
       setVisibleMonth(startOfMonthIso(date))
     }
@@ -2023,49 +2031,124 @@ function CalendarBoard({
     setExpandedDate((current) => (current === date ? null : date))
   }
 
+  const returnToToday = () => {
+    const today = todayDate()
+    setVisibleMonth(startOfMonthIso(today))
+    setSelectedDate(today)
+    setSelectedTodoId(null)
+    setExpandedDate(null)
+    setShowMonthPicker(false)
+    setPickerYear(getCalendarYear(today))
+  }
+
+  const shiftVisibleMonth = (delta: number) => {
+    const nextMonth = shiftMonth(visibleMonth, delta)
+    setVisibleMonth(nextMonth)
+    setSelectedTodoId(null)
+    setExpandedDate(null)
+    setShowMonthPicker(false)
+  }
+
+  const selectMonth = (monthIndex: number) => {
+    const nextMonth = formatCalendarMonthIso(pickerYear, monthIndex)
+    setVisibleMonth(nextMonth)
+    setSelectedDate(
+      selectedDate.slice(0, 7) === nextMonth.slice(0, 7) ? selectedDate : `${nextMonth.slice(0, 7)}-01`,
+    )
+    setSelectedTodoId(null)
+    setExpandedDate(null)
+    setShowMonthPicker(false)
+  }
+
   return (
     <section className="calendar-board">
       <div className="calendar-shell">
         <header className="calendar-toolbar">
-          <h2>{formatCalendarMonthTitle(visibleMonth)}</h2>
+          <div className="calendar-toolbar-main" ref={monthPickerRef}>
+            <div className="calendar-month-switcher" aria-label="年月切换">
+              <button
+                type="button"
+                className="calendar-nav-button"
+                aria-label="上一个月"
+                onClick={() => shiftVisibleMonth(-1)}
+              >
+                <ChevronLeft size={18} strokeWidth={2.2} />
+              </button>
+
+              <button
+                type="button"
+                className={showMonthPicker ? 'calendar-month-trigger active' : 'calendar-month-trigger'}
+                aria-label={`选择年月，当前 ${formatCalendarMonthTitle(visibleMonth)}`}
+                aria-expanded={showMonthPicker}
+                onClick={() => {
+                  setExpandedDate(null)
+                  setPickerYear(getCalendarYear(visibleMonth))
+                  setShowMonthPicker((current) => !current)
+                }}
+              >
+                <CalendarDays size={18} strokeWidth={2.1} />
+                <span>{formatCalendarMonthTitle(visibleMonth)}</span>
+              </button>
+
+              <button
+                type="button"
+                className="calendar-nav-button"
+                aria-label="下一个月"
+                onClick={() => shiftVisibleMonth(1)}
+              >
+                <ChevronRight size={18} strokeWidth={2.2} />
+              </button>
+            </div>
+
+            {showMonthPicker ? (
+              <div className="calendar-month-picker" role="dialog" aria-label="选择年月">
+                <div className="calendar-month-picker-head">
+                  <button
+                    type="button"
+                    className="calendar-year-nav"
+                    aria-label="上一年"
+                    onClick={() => setPickerYear((current) => current - 1)}
+                  >
+                    <ChevronLeft size={16} strokeWidth={2.2} />
+                    <ChevronLeft size={16} strokeWidth={2.2} />
+                  </button>
+                  <strong>{pickerYear}</strong>
+                  <button
+                    type="button"
+                    className="calendar-year-nav"
+                    aria-label="下一年"
+                    onClick={() => setPickerYear((current) => current + 1)}
+                  >
+                    <ChevronRight size={16} strokeWidth={2.2} />
+                    <ChevronRight size={16} strokeWidth={2.2} />
+                  </button>
+                </div>
+
+                <div className="calendar-month-grid" role="list">
+                  {Array.from({ length: 12 }, (_value, index) => {
+                    const monthValue = index + 1
+                    const isActive =
+                      pickerYear === getCalendarYear(visibleMonth) && monthValue === getCalendarMonthNumber(visibleMonth)
+
+                    return (
+                      <button
+                        key={monthValue}
+                        type="button"
+                        className={isActive ? 'calendar-month-option active' : 'calendar-month-option'}
+                        onClick={() => selectMonth(monthValue)}
+                      >
+                        {monthValue}月
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            ) : null}
+          </div>
 
           <div className="calendar-toolbar-actions">
-            <button
-              type="button"
-              className="calendar-nav-button"
-              aria-label="上一个月"
-              onClick={() => {
-                setVisibleMonth(shiftMonth(visibleMonth, -1))
-                setSelectedTodoId(null)
-                setExpandedDate(null)
-              }}
-            >
-              <ChevronLeft size={16} strokeWidth={2.2} />
-            </button>
-            <button
-              type="button"
-              className="calendar-nav-today"
-              onClick={() => {
-                const today = todayDate()
-                setVisibleMonth(startOfMonthIso(today))
-                setSelectedDate(today)
-                setSelectedTodoId(null)
-                setExpandedDate(null)
-              }}
-            >
-              今天
-            </button>
-            <button
-              type="button"
-              className="calendar-nav-button"
-              aria-label="下一个月"
-              onClick={() => {
-                setVisibleMonth(shiftMonth(visibleMonth, 1))
-                setSelectedTodoId(null)
-                setExpandedDate(null)
-              }}
-            >
-              <ChevronRight size={16} strokeWidth={2.2} />
+            <button type="button" className="calendar-today-icon" aria-label="回到今天" onClick={returnToToday}>
+              <Sun size={20} strokeWidth={2.1} />
             </button>
           </div>
         </header>
@@ -2468,6 +2551,18 @@ function formatMonthDay(value: string) {
 function formatCalendarMonthTitle(value: string) {
   const date = new Date(`${value}T00:00:00`)
   return `${date.getFullYear()}年 ${date.getMonth() + 1}月`
+}
+
+function getCalendarYear(value: string) {
+  return new Date(`${value}T00:00:00`).getFullYear()
+}
+
+function getCalendarMonthNumber(value: string) {
+  return new Date(`${value}T00:00:00`).getMonth() + 1
+}
+
+function formatCalendarMonthIso(year: number, month: number) {
+  return `${year}-${String(month).padStart(2, '0')}-01`
 }
 
 function formatCalendarFullDate(value: string) {

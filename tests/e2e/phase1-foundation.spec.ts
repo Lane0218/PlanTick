@@ -306,11 +306,24 @@ test('phase 4 日程概览：月历展示截止事项并支持在日历中改期
   ).toBeVisible()
 
   await page.getByRole('button', { name: '日程概览' }).click()
+  await expect(page.getByRole('heading', { name: '日程概览' })).toHaveCount(0)
   await expect(page.locator('.calendar-grid')).toBeVisible()
   await expect(page.locator('.calendar-grid').getByText('月历任务一')).toBeVisible()
   await expect(page.locator('.calendar-grid').getByText('月历任务三')).toBeVisible()
   await expect(page.locator('.calendar-grid').getByText('月历任务四')).toBeVisible()
   await expect(page.locator('.detail-pane.is-open')).toHaveCount(0)
+
+  const monthTrigger = page.getByRole('button', { name: /选择年月，当前/ })
+  await expect(monthTrigger).toContainText('3月')
+  await monthTrigger.click()
+  const monthPicker = page.getByRole('dialog', { name: '选择年月' })
+  await expect(monthPicker).toBeVisible()
+  await monthPicker.getByRole('button', { name: '上一年' }).click()
+  await expect(monthPicker.getByText('2025')).toBeVisible()
+  await monthPicker.getByRole('button', { name: '3月' }).click()
+  await expect(monthTrigger).toContainText('2025年 3月')
+  await page.getByRole('button', { name: '回到今天' }).click()
+  await expect(monthTrigger).toContainText('2026年 3月')
 
   const overflowButton = page.getByRole('button', { name: /查看 .*剩余 1 项任务/ })
   await expect(overflowButton).toBeVisible()
@@ -333,8 +346,11 @@ test('phase 4 日程概览：月历展示截止事项并支持在日历中改期
 
   await overflowButton.click()
   await expect(dayPopover).toBeVisible()
-  await page.locator('.calendar-toolbar h2').click()
+  await monthTrigger.click()
   await expect(page.locator('.calendar-day-popover')).toHaveCount(0)
+  await expect(monthPicker).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(monthPicker).toHaveCount(0)
 
   await overflowButton.click()
   await expect(dayPopover).toBeVisible()
