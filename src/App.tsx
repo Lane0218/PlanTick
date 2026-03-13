@@ -2064,7 +2064,14 @@ function CalendarBoard({
     <section className="calendar-board">
       <div className="calendar-shell">
         <header className="calendar-toolbar">
-          <div className="calendar-toolbar-main" ref={monthPickerRef}>
+          <div className="calendar-toolbar-controls">
+            <div className="calendar-toolbar-actions">
+              <button type="button" className="calendar-today-icon" aria-label="回到今天" onClick={returnToToday}>
+                <Sun size={20} strokeWidth={2.1} />
+              </button>
+            </div>
+
+            <div className="calendar-toolbar-main" ref={monthPickerRef}>
             <div className="calendar-month-switcher" aria-label="年月切换">
               <button
                 type="button"
@@ -2145,11 +2152,6 @@ function CalendarBoard({
               </div>
             ) : null}
           </div>
-
-          <div className="calendar-toolbar-actions">
-            <button type="button" className="calendar-today-icon" aria-label="回到今天" onClick={returnToToday}>
-              <Sun size={20} strokeWidth={2.1} />
-            </button>
           </div>
         </header>
 
