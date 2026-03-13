@@ -1578,6 +1578,9 @@ function TodoDetailPane({
     customDateSelected && detailDraft?.dueDate
       ? formatMonthDay(detailDraft.dueDate)
       : '选择日期'
+  const recurrenceSummaryLabel = detailDraft
+    ? formatRecurrenceSummary(detailDraft.recurrenceType, detailDraft.dueDate)
+    : '重复'
   const myDayMembership = detailDraft
     ? getMyDayMembership({
         dueDate: detailDraft.dueDate || null,
@@ -1600,32 +1603,6 @@ function TodoDetailPane({
         },
       ]
     : []
-  const dueDateSummaryLabel = detailDraft?.dueDate
-    ? formatDetailDueDateSummary(detailDraft.dueDate)
-    : '未安排日期'
-  const dueDateDescription = detailDraft?.dueDate
-    ? formatDetailDueDateDescription(detailDraft.dueDate)
-    : '未安排截止日期，任务不会出现在日程概览中。'
-  const myDayLabel =
-    myDayMembership === 'auto'
-      ? '今日自动归入“我的一天”'
-      : myDayMembership === 'manual'
-        ? '已手动加入“我的一天”'
-        : '未加入“我的一天”'
-  const myDayDescription =
-    myDayMembership === 'auto'
-      ? '因为今天截止，这条任务会自动在“我的一天”中出现。'
-      : myDayMembership === 'manual'
-        ? '今天的专注列表里已经包含它。'
-        : '需要时可手动加入今天的关注列表。'
-  const recurrenceLabel = detailDraft
-    ? detailDraft.recurrenceType === 'none'
-      ? '未开启重复'
-      : formatRecurrenceSummary(detailDraft.recurrenceType, detailDraft.dueDate)
-    : '未开启重复'
-  const detailInsight = detailDraft
-    ? getDetailInsight(detailDraft, myDayMembership)
-    : { title: '自动保存', body: '当前改动会自动同步到工作区。' }
 
   return (
     <aside className={selectedTodo ? 'detail-pane is-open' : 'detail-pane'} aria-label="任务详情">
@@ -1752,189 +1729,167 @@ function TodoDetailPane({
             </button>
           </div>
 
+          <div className="detail-title-shell">
+            <input
+              className="detail-title-input"
+              value={detailDraft.title}
+              onChange={(event) =>
+                setDetailDraft({
+                  ...detailDraft,
+                  title: event.target.value,
+                })
+              }
+              placeholder="任务标题…"
+              aria-label="任务标题"
+              name="detailTitle"
+              autoComplete="off"
+            />
+          </div>
+
           <div className="detail-scroll">
-            <div className="detail-stack detail-stack-immersive">
-              <section className="detail-overview-card" aria-label="任务概览">
-                <div className="detail-title-shell detail-title-shell-hero">
-                  <input
-                    className="detail-title-input"
-                    value={detailDraft.title}
-                    onChange={(event) =>
-                      setDetailDraft({
-                        ...detailDraft,
-                        title: event.target.value,
-                      })
-                    }
-                    placeholder="任务标题…"
-                    aria-label="任务标题"
-                    name="detailTitle"
-                    autoComplete="off"
-                  />
-                </div>
+            <div className="detail-stack">
+              <label className="detail-note-inline">
+                <span className="sr-only">备注</span>
+                <textarea
+                  value={detailDraft.note}
+                  onChange={(event) =>
+                    setDetailDraft({
+                      ...detailDraft,
+                      note: event.target.value,
+                    })
+                  }
+                  rows={3}
+                  placeholder="添加描述"
+                  aria-label="备注"
+                  name="detailNote"
+                  autoComplete="off"
+                />
+              </label>
 
-                <label className="detail-note-inline detail-note-panel">
-                  <span className="sr-only">备注</span>
-                  <textarea
-                    value={detailDraft.note}
-                    onChange={(event) =>
-                      setDetailDraft({
-                        ...detailDraft,
-                        note: event.target.value,
-                      })
-                    }
-                    rows={3}
-                    placeholder="添加描述"
-                    aria-label="备注"
-                    name="detailNote"
-                    autoComplete="off"
-                  />
-                </label>
-
-                <div className="detail-summary-badges" aria-label="任务摘要">
-                  <span className="detail-summary-badge">{dueDateSummaryLabel}</span>
-                  <span className={myDayMembership === 'none' ? 'detail-summary-badge' : 'detail-summary-badge is-accent'}>
-                    {myDayMembership === 'none' ? '未加入我的一天' : '我的一天'}
-                  </span>
-                  <span
-                    className={
-                      detailDraft.recurrenceType === 'none'
-                        ? 'detail-summary-badge'
-                        : 'detail-summary-badge is-accent'
-                    }
-                  >
-                    {detailDraft.recurrenceType === 'none' ? '不重复' : recurrenceLabel}
-                  </span>
-                </div>
-              </section>
-
-              <section className="detail-info-card" aria-label="时间安排">
-                <div className="detail-card-head">
-                  <span className="detail-card-eyebrow">时间</span>
-                  <strong>时间安排</strong>
-                  <p>{dueDateDescription}</p>
-                </div>
-                <div className="detail-date-actions" aria-label="日期操作">
+              <div className="detail-date-actions" aria-label="日期操作">
+                <button
+                  type="button"
+                  className={detailDraft.dueDate === todayDate() ? 'detail-date-pill active' : 'detail-date-pill'}
+                  onClick={() => {
+                    setShowCalendarPicker(false)
+                    setDetailDraft({
+                      ...detailDraft,
+                      dueDate: todayDate(),
+                    })
+                  }}
+                >
+                  今天
+                </button>
+                <button
+                  type="button"
+                  className={detailDraft.dueDate === nextDate(1) ? 'detail-date-pill active' : 'detail-date-pill'}
+                  onClick={() => {
+                    setShowCalendarPicker(false)
+                    setDetailDraft({
+                      ...detailDraft,
+                      dueDate: nextDate(1),
+                    })
+                  }}
+                >
+                  明天
+                </button>
+                <div className="detail-date-picker-wrap">
                   <button
                     type="button"
-                    className={detailDraft.dueDate === todayDate() ? 'detail-date-pill active' : 'detail-date-pill'}
-                    onClick={() => {
-                      setShowCalendarPicker(false)
-                      setDetailDraft({
-                        ...detailDraft,
-                        dueDate: todayDate(),
-                      })
-                    }}
+                    className={showCalendarPicker || customDateSelected ? 'detail-date-pill active' : 'detail-date-pill'}
+                    onClick={() => setShowCalendarPicker((current) => !current)}
                   >
-                    今天
+                    <span>{calendarButtonLabel}</span>
+                    <ChevronDown size={14} strokeWidth={2.2} aria-hidden="true" />
                   </button>
-                  <button
-                    type="button"
-                    className={detailDraft.dueDate === nextDate(1) ? 'detail-date-pill active' : 'detail-date-pill'}
-                    onClick={() => {
-                      setShowCalendarPicker(false)
-                      setDetailDraft({
-                        ...detailDraft,
-                        dueDate: nextDate(1),
-                      })
-                    }}
-                  >
-                    明天
-                  </button>
-                  <div className="detail-date-picker-wrap">
-                    <button
-                      type="button"
-                      className={showCalendarPicker || customDateSelected ? 'detail-date-pill active' : 'detail-date-pill'}
-                      onClick={() => setShowCalendarPicker((current) => !current)}
-                    >
-                      <span>{calendarButtonLabel}</span>
-                      <ChevronDown size={14} strokeWidth={2.2} aria-hidden="true" />
-                    </button>
 
-                    {showCalendarPicker ? (
-                      <div className="detail-calendar-popover">
-                        <DayPicker
-                          mode="single"
-                          locale={zhCN}
-                          showOutsideDays
-                          selected={detailDraft.dueDate ? new Date(`${detailDraft.dueDate}T00:00:00`) : undefined}
-                          onSelect={(date) => {
-                            if (!date) {
-                              return
-                            }
+                  {showCalendarPicker ? (
+                    <div className="detail-calendar-popover">
+                      <DayPicker
+                        mode="single"
+                        locale={zhCN}
+                        showOutsideDays
+                        selected={detailDraft.dueDate ? new Date(`${detailDraft.dueDate}T00:00:00`) : undefined}
+                        onSelect={(date) => {
+                          if (!date) {
+                            return
+                          }
 
-                            setDetailDraft({
-                              ...detailDraft,
-                              dueDate: formatDateInputValue(date),
-                            })
-                            setShowCalendarPicker(false)
-                          }}
-                        />
-                      </div>
-                    ) : null}
-                  </div>
-                  <button
-                    type="button"
-                    className={!detailDraft.dueDate ? 'detail-date-pill active' : 'detail-date-pill'}
-                    onClick={() => {
-                      setShowCalendarPicker(false)
-                      setDetailDraft({
-                        ...detailDraft,
-                        dueDate: '',
-                        recurrenceType: 'none',
-                      })
-                    }}
-                  >
-                    没有日期
-                  </button>
-                </div>
-              </section>
-
-              <div className="detail-meta-grid">
-                <section className="detail-info-card" aria-label="专注安排">
-                  <div className="detail-card-head">
-                    <span className="detail-card-eyebrow">专注</span>
-                    <strong>我的一天</strong>
-                    <p>{myDayDescription}</p>
-                  </div>
-                  <div className="detail-card-row">
-                    <span className="detail-card-value">{myDayLabel}</span>
-                    {myDayMembership === 'auto' ? (
-                      <span className="detail-card-caption">无需手动操作</span>
-                    ) : (
-                      <button
-                        className={myDayMembership === 'manual' ? 'detail-card-action is-active' : 'detail-card-action'}
-                        onClick={() =>
                           setDetailDraft({
                             ...detailDraft,
-                            myDayDate: myDayMembership === 'manual' ? '' : todayDate(),
+                            dueDate: formatDateInputValue(date),
                           })
-                        }
-                        disabled={busy || (detailDraft.status === 'completed' && myDayMembership === 'none')}
-                        type="button"
-                      >
-                        <Sun size={15} strokeWidth={2.1} />
-                        <span>{myDayMembership === 'manual' ? '移出今天关注' : '加入今天关注'}</span>
-                      </button>
-                    )}
-                  </div>
-                </section>
+                          setShowCalendarPicker(false)
+                        }}
+                      />
+                    </div>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  className={!detailDraft.dueDate ? 'detail-date-pill active' : 'detail-date-pill'}
+                  onClick={() => {
+                    setShowCalendarPicker(false)
+                    setDetailDraft({
+                      ...detailDraft,
+                      dueDate: '',
+                      recurrenceType: 'none',
+                    })
+                  }}
+                >
+                  没有日期
+                </button>
+              </div>
+            </div>
+          </div>
 
-                <section className="detail-info-card" aria-label="重复规则">
-                  <div className="detail-card-head">
-                    <span className="detail-card-eyebrow">节奏</span>
-                    <strong>重复规则</strong>
-                    <p>{detailDraft.dueDate ? '设置完成节奏后，重复任务会按规则衔接。' : '先设置日期，再开启每天、每周或每月重复。'}</p>
-                  </div>
-                  <div className="detail-recurrence-shell detail-card-row">
-                    <span className="detail-card-value">{recurrenceLabel}</span>
+          <div className="detail-footer">
+            {confirmDeleteTodo ? (
+              <>
+                <p className="detail-footer-hint">确认删除这条任务？</p>
+                <div className="detail-footer-actions">
+                  <button className="secondary-button" onClick={() => setConfirmDeleteTodo(false)} type="button">
+                    取消
+                  </button>
+                  <button className="danger-button" onClick={() => void handleDeleteTodo()} disabled={busy} type="button">
+                    删除
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="detail-footer-actions">
+                  {myDayMembership === 'auto' ? (
+                    <p className="detail-footer-meta">今天截止，自动出现在“我的一天”</p>
+                  ) : (
                     <button
-                      className={showRecurrenceMenu || detailDraft.recurrenceType !== 'none' ? 'detail-card-action is-active' : 'detail-card-action'}
+                      className={myDayMembership === 'manual' ? 'detail-footer-link is-active' : 'detail-footer-link'}
+                      onClick={() =>
+                        setDetailDraft({
+                          ...detailDraft,
+                          myDayDate: myDayMembership === 'manual' ? '' : todayDate(),
+                        })
+                      }
+                      disabled={busy || (detailDraft.status === 'completed' && myDayMembership === 'none')}
+                      type="button"
+                    >
+                      <Sun size={15} strokeWidth={2.1} />
+                      <span>{myDayMembership === 'manual' ? '从我的一天移除' : '添加到我的一天'}</span>
+                    </button>
+                  )}
+                  <div className="detail-recurrence-shell">
+                    <button
+                      className={
+                        showRecurrenceMenu || detailDraft.recurrenceType !== 'none'
+                          ? 'detail-footer-link is-active'
+                          : 'detail-footer-link'
+                      }
                       onClick={() => setShowRecurrenceMenu((current) => !current)}
                       disabled={busy}
                       type="button"
                     >
                       <Repeat size={15} strokeWidth={2.1} />
-                      <span>{detailDraft.recurrenceType === 'none' ? '设置重复' : '调整重复'}</span>
+                      <span>{recurrenceSummaryLabel}</span>
                     </button>
 
                     {showRecurrenceMenu ? (
@@ -1968,36 +1923,6 @@ function TodoDetailPane({
                       </div>
                     ) : null}
                   </div>
-                </section>
-              </div>
-
-              <section className="detail-support-card" aria-label="任务提示">
-                <div className="detail-card-head">
-                  <span className="detail-card-eyebrow">提示</span>
-                  <strong>{detailInsight.title}</strong>
-                  <p>{detailInsight.body}</p>
-                </div>
-              </section>
-            </div>
-          </div>
-
-          <div className="detail-footer">
-            {confirmDeleteTodo ? (
-              <>
-                <p className="detail-footer-hint">确认删除这条任务？</p>
-                <div className="detail-footer-actions">
-                  <button className="secondary-button" onClick={() => setConfirmDeleteTodo(false)} type="button">
-                    取消
-                  </button>
-                  <button className="danger-button" onClick={() => void handleDeleteTodo()} disabled={busy} type="button">
-                    删除
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <p className="detail-footer-hint">修改会自动保存到当前工作区。</p>
-                <div className="detail-footer-actions">
                   <button
                     className="detail-footer-link is-danger"
                     onClick={() => setConfirmDeleteTodo(true)}
@@ -2005,7 +1930,7 @@ function TodoDetailPane({
                     type="button"
                   >
                     <Trash2 size={15} strokeWidth={2.1} />
-                    <span>删除任务</span>
+                    <span>删除</span>
                   </button>
                 </div>
               </>
@@ -2599,77 +2524,6 @@ function formatDueDate(value: string | null, status: TodoStatus) {
 function formatMonthDay(value: string) {
   const date = new Date(`${value}T00:00:00`)
   return `${date.getMonth() + 1}月${date.getDate()}日`
-}
-
-function formatDetailDueDateSummary(value: string) {
-  const diff = diffDaysFromToday(value)
-
-  if (diff === -1) {
-    return '昨天截止'
-  }
-
-  if (diff === 0) {
-    return '今天截止'
-  }
-
-  if (diff === 1) {
-    return '明天截止'
-  }
-
-  if (diff === 2) {
-    return '后天截止'
-  }
-
-  return `${formatMonthDay(value)} · ${formatWeekday(value)}`
-}
-
-function formatDetailDueDateDescription(value: string) {
-  const diff = diffDaysFromToday(value)
-
-  if (diff < 0) {
-    return `${formatCalendarFullDate(value)} 已经过期，建议优先处理。`
-  }
-
-  if (diff === 0) {
-    return '今天截止，会自动出现在“我的一天”中。'
-  }
-
-  if (diff === 1) {
-    return '明天截止，适合提前安排今天的处理节奏。'
-  }
-
-  return `${formatCalendarFullDate(value)} 截止，当前节奏清晰可控。`
-}
-
-function getDetailInsight(
-  draft: Pick<TodoDraft, 'dueDate' | 'recurrenceType'>,
-  myDayMembership: 'auto' | 'manual' | 'none',
-) {
-  if (!draft.dueDate) {
-    return {
-      title: '补上日期后更有掌控感',
-      body: '没有日期的任务不会出现在日程概览里；如果它已经有明确截止时间，建议在这里补上。',
-    }
-  }
-
-  if (draft.recurrenceType !== 'none') {
-    return {
-      title: '重复节奏已经接上',
-      body: '这条任务完成后会按当前规则生成下一次，适合维持稳定的周期性推进。',
-    }
-  }
-
-  if (myDayMembership === 'none' && diffDaysFromToday(draft.dueDate) > 0) {
-    return {
-      title: '今天不做，也值得留个入口',
-      body: '如果你准备今天推进它，可以把它加入“我的一天”，这样回到首页时会更容易重新进入状态。',
-    }
-  }
-
-  return {
-    title: '信息已经足够清楚',
-    body: '当前标题、时间和节奏都已归位，剩下只需要在需要时补充备注或继续推进任务。',
-  }
 }
 
 function formatCalendarMonthTitle(value: string) {
