@@ -1756,21 +1756,25 @@
 }
 
 .calendar-nav-button:hover,
-.calendar-month-trigger:hover,
 .calendar-today-icon:hover,
 .calendar-year-nav:hover,
 .calendar-month-option:hover,
 .calendar-nav-button:focus-visible,
-.calendar-month-trigger:focus-visible,
 .calendar-today-icon:focus-visible,
 .calendar-year-nav:focus-visible,
 .calendar-month-option:focus-visible {
-  background: rgba(255, 255, 255, 0.86);
+  background: rgba(255, 255, 255, 0.42);
+  outline: none;
+}
+
+.calendar-month-trigger:hover,
+.calendar-month-trigger:focus-visible,
+.calendar-month-trigger.active {
+  background: #eceeef;
   outline: none;
 }
 
 .calendar-month-trigger.active {
-  background: transparent;
   box-shadow: none;
 }
 
