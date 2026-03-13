@@ -15,7 +15,6 @@ import {
   Pencil,
   PlayCircle,
   Plus,
-  Repeat,
   Sun,
   Trash2,
   X,
@@ -1453,7 +1452,6 @@ function TodoDetailPane({
   const [showCategoryPicker, setShowCategoryPicker] = useState(false)
   const [showCalendarPicker, setShowCalendarPicker] = useState(false)
   const [visibleCategoryCount, setVisibleCategoryCount] = useState<number | null>(null)
-  const [showRecurrenceMenu, setShowRecurrenceMenu] = useState(false)
   const categoryStripRef = useRef<HTMLDivElement | null>(null)
   const categoryMeasureRefs = useRef<Record<string, HTMLButtonElement | null>>({})
   const dropdownMeasureRef = useRef<HTMLButtonElement | null>(null)
@@ -1578,9 +1576,6 @@ function TodoDetailPane({
     customDateSelected && detailDraft?.dueDate
       ? formatMonthDay(detailDraft.dueDate)
       : '选择日期'
-  const recurrenceSummaryLabel = detailDraft
-    ? formatRecurrenceSummary(detailDraft.recurrenceType, detailDraft.dueDate)
-    : '重复'
   const myDayMembership = detailDraft
     ? getMyDayMembership({
         dueDate: detailDraft.dueDate || null,
@@ -1613,7 +1608,7 @@ function TodoDetailPane({
             {myDayMembership === 'auto' ? (
               <div className="detail-myday-pill is-auto" aria-label="我的一天状态">
                 <Sun size={15} strokeWidth={2.1} />
-                <span>今天截止，自动出现在“我的一天”</span>
+                <span>我的一天</span>
               </div>
             ) : (
               <button
@@ -1628,7 +1623,7 @@ function TodoDetailPane({
                 type="button"
               >
                 <Sun size={15} strokeWidth={2.1} />
-                <span>{myDayMembership === 'manual' ? '从我的一天移除' : '添加到我的一天'}</span>
+                <span>我的一天</span>
               </button>
             )}
             <button
@@ -1636,7 +1631,6 @@ function TodoDetailPane({
               onClick={() => {
                 setShowCategoryPicker(false)
                 setShowCalendarPicker(false)
-                setShowRecurrenceMenu(false)
                 closeDetail()
               }}
               aria-label="关闭详情"
@@ -1780,61 +1774,33 @@ function TodoDetailPane({
                     没有日期
                   </button>
                 </div>
-                {myDayMembership === 'auto' ? (
-                  <p className="detail-inline-hint">今天截止，系统会自动把它放进“我的一天”。</p>
-                ) : null}
               </section>
 
               <section className="detail-section detail-section-tight" aria-label="重复设置">
                 <div className="detail-card-head">
                   <span>重复</span>
                 </div>
-                <div className="detail-recurrence-shell">
-                  <button
-                    className={
-                      showRecurrenceMenu || detailDraft.recurrenceType !== 'none'
-                        ? 'detail-repeat-trigger is-active'
-                        : 'detail-repeat-trigger'
-                    }
-                    onClick={() => setShowRecurrenceMenu((current) => !current)}
-                    disabled={busy}
-                    type="button"
-                  >
-                    <Repeat size={15} strokeWidth={2.1} />
-                    <span>{recurrenceSummaryLabel}</span>
-                    <ChevronDown size={14} strokeWidth={2.2} aria-hidden="true" />
-                  </button>
+                <div className="detail-repeat-options" aria-label="重复选项">
+                  {recurrenceOptions.map((option) => (
+                    <button
+                      key={option.type}
+                      type="button"
+                      className={detailDraft.recurrenceType === option.type ? 'detail-date-pill active' : 'detail-date-pill'}
+                      disabled={option.disabled || busy}
+                      onClick={() => {
+                        if (option.disabled) {
+                          return
+                        }
 
-                  {showRecurrenceMenu ? (
-                    <div className="detail-recurrence-menu" role="menu" aria-label="重复规则">
-                      {recurrenceOptions.map((option) => (
-                        <button
-                          key={option.type}
-                          className={detailDraft.recurrenceType === option.type ? 'active' : ''}
-                          type="button"
-                          role="menuitemradio"
-                          aria-checked={detailDraft.recurrenceType === option.type}
-                          disabled={option.disabled}
-                          onClick={() => {
-                            if (option.disabled) {
-                              return
-                            }
-
-                            setDetailDraft({
-                              ...detailDraft,
-                              recurrenceType: option.type,
-                            })
-                            setShowRecurrenceMenu(false)
-                          }}
-                        >
-                          <span>{option.label}</span>
-                        </button>
-                      ))}
-                      {!detailDraft.dueDate ? (
-                        <p className="detail-recurrence-hint">先设置日期后才能开启每天、每周或每月重复。</p>
-                      ) : null}
-                    </div>
-                  ) : null}
+                        setDetailDraft({
+                          ...detailDraft,
+                          recurrenceType: option.type,
+                        })
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
                 </div>
               </section>
 
@@ -1967,34 +1933,28 @@ function TodoDetailPane({
             </div>
           </div>
 
-          <div className="detail-footer">
+          <div className="detail-footer detail-footer-left">
             {confirmDeleteTodo ? (
-              <>
-                <p className="detail-footer-hint">确认删除这条任务？</p>
-                <div className="detail-footer-actions">
-                  <button className="secondary-button" onClick={() => setConfirmDeleteTodo(false)} type="button">
-                    取消
-                  </button>
-                  <button className="danger-button" onClick={() => void handleDeleteTodo()} disabled={busy} type="button">
-                    删除
-                  </button>
-                </div>
-              </>
+              <div className="detail-footer-actions">
+                <button className="secondary-button" onClick={() => setConfirmDeleteTodo(false)} type="button">
+                  取消
+                </button>
+                <button className="danger-button" onClick={() => void handleDeleteTodo()} disabled={busy} type="button">
+                  删除
+                </button>
+              </div>
             ) : (
-              <>
-                <p className="detail-footer-hint">修改会自动保存到当前工作区。</p>
-                <div className="detail-footer-actions">
-                  <button
-                    className="detail-footer-link is-danger"
-                    onClick={() => setConfirmDeleteTodo(true)}
-                    disabled={busy}
-                    type="button"
-                  >
-                    <Trash2 size={15} strokeWidth={2.1} />
-                    <span>删除</span>
-                  </button>
-                </div>
-              </>
+              <div className="detail-footer-actions">
+                <button
+                  className="detail-footer-link is-danger"
+                  onClick={() => setConfirmDeleteTodo(true)}
+                  disabled={busy}
+                  type="button"
+                >
+                  <Trash2 size={15} strokeWidth={2.1} />
+                  <span>删除</span>
+                </button>
+              </div>
             )}
           </div>
         </>
@@ -2621,14 +2581,6 @@ function nextTodoStatus(status: TodoStatus): TodoStatus {
   const cycle: TodoStatus[] = ['not_started', 'in_progress', 'completed', 'blocked', 'canceled']
   const currentIndex = cycle.indexOf(status)
   return cycle[(currentIndex + 1) % cycle.length]
-}
-
-function formatRecurrenceSummary(recurrenceType: TodoRecurrenceType, dueDate: string) {
-  if (recurrenceType === 'none') {
-    return '重复'
-  }
-
-  return formatRecurrenceOptionLabel(recurrenceType, dueDate)
 }
 
 function formatRecurrenceOptionLabel(recurrenceType: Exclude<TodoRecurrenceType, 'none'>, dueDate: string) {
