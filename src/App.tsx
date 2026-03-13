@@ -1603,118 +1603,34 @@ function TodoDetailPane({
         },
       ]
     : []
+  const detailStatusOptions: TodoStatus[] = ['not_started', 'in_progress', 'completed', 'blocked', 'canceled']
 
   return (
     <aside className={selectedTodo ? 'detail-pane is-open' : 'detail-pane'} aria-label="任务详情">
       {selectedTodo && detailDraft ? (
         <>
-          <div className="detail-head">
-            <div className="detail-list-picker">
-              <div ref={categoryStripRef} className="detail-category-strip" aria-label="任务分类">
-                {visibleCategoryOptions.map((option) => (
-                  <button
-                    key={option.key}
-                    type="button"
-                    className={
-                      [
-                        detailDraft.categoryId === option.categoryId
-                          ? 'detail-category-chip active'
-                          : 'detail-category-chip',
-                        option.neutral ? 'neutral' : '',
-                      ]
-                        .filter(Boolean)
-                        .join(' ')
-                    }
-                    style={
-                      {
-                        '--chip-tone': option.color ?? '#dfe6eb',
-                      } as CSSProperties
-                    }
-                    onClick={() =>
-                      setDetailDraft({
-                        ...detailDraft,
-                        categoryId: option.categoryId,
-                      })
-                    }
-                  >
-                    {option.label}
-                  </button>
-                ))}
-
-                {overflowCategoryOptions.length ? (
-                  <button
-                    type="button"
-                    className="detail-list-select"
-                    aria-haspopup="listbox"
-                    aria-expanded={isCategoryPickerOpen}
-                    onClick={() => setShowCategoryPicker((current) => !current)}
-                  >
-                    <ChevronDown size={14} strokeWidth={2.2} className="detail-list-arrow" aria-hidden="true" />
-                  </button>
-                ) : null}
+          <div className="detail-head detail-head-compact">
+            {myDayMembership === 'auto' ? (
+              <div className="detail-myday-pill is-auto" aria-label="我的一天状态">
+                <Sun size={15} strokeWidth={2.1} />
+                <span>今天截止，自动出现在“我的一天”</span>
               </div>
-
-              <div className="detail-category-measure" aria-hidden="true">
-                {orderedCategoryOptions.map((option) => (
-                  <button
-                    key={option.key}
-                    ref={(node) => {
-                      categoryMeasureRefs.current[option.key] = node
-                    }}
-                    type="button"
-                    className={[
-                      detailDraft.categoryId === option.categoryId
-                        ? 'detail-category-chip active'
-                        : 'detail-category-chip',
-                      option.neutral ? 'neutral' : '',
-                    ]
-                      .filter(Boolean)
-                      .join(' ')}
-                    style={
-                      {
-                        '--chip-tone': option.color ?? '#dfe6eb',
-                      } as CSSProperties
-                    }
-                  >
-                    {option.label}
-                  </button>
-                ))}
-                <button
-                  ref={dropdownMeasureRef}
-                  type="button"
-                  className="detail-list-select"
-                  tabIndex={-1}
-                >
-                  <ChevronDown size={14} strokeWidth={2.2} className="detail-list-arrow" aria-hidden="true" />
-                </button>
-              </div>
-
-              {isCategoryPickerOpen ? (
-                <div className="detail-list-menu" role="listbox" aria-label="分类列表">
-                  {overflowCategoryOptions.map((option) => (
-                    <button
-                      key={option.key}
-                      type="button"
-                      className={detailDraft.categoryId === option.categoryId ? 'active' : ''}
-                      onClick={() => {
-                        setDetailDraft({
-                          ...detailDraft,
-                          categoryId: option.categoryId,
-                        })
-                        setShowCategoryPicker(false)
-                      }}
-                    >
-                      <span
-                        className={option.neutral ? 'detail-list-dot neutral' : 'detail-list-dot'}
-                        style={option.neutral ? undefined : { backgroundColor: option.color ?? '#cfd8e3' }}
-                        aria-hidden="true"
-                      />
-                      <span>{option.label}</span>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
+            ) : (
+              <button
+                className={myDayMembership === 'manual' ? 'detail-myday-pill is-active' : 'detail-myday-pill'}
+                onClick={() =>
+                  setDetailDraft({
+                    ...detailDraft,
+                    myDayDate: myDayMembership === 'manual' ? '' : todayDate(),
+                  })
+                }
+                disabled={busy || (detailDraft.status === 'completed' && myDayMembership === 'none')}
+                type="button"
+              >
+                <Sun size={15} strokeWidth={2.1} />
+                <span>{myDayMembership === 'manual' ? '从我的一天移除' : '添加到我的一天'}</span>
+              </button>
+            )}
             <button
               className="detail-close"
               onClick={() => {
@@ -1729,27 +1645,310 @@ function TodoDetailPane({
             </button>
           </div>
 
-          <div className="detail-title-shell">
-            <input
-              className="detail-title-input"
-              value={detailDraft.title}
-              onChange={(event) =>
-                setDetailDraft({
-                  ...detailDraft,
-                  title: event.target.value,
-                })
-              }
-              placeholder="任务标题…"
-              aria-label="任务标题"
-              name="detailTitle"
-              autoComplete="off"
-            />
-          </div>
-
           <div className="detail-scroll">
-            <div className="detail-stack">
-              <label className="detail-note-inline">
-                <span className="sr-only">备注</span>
+            <div className="detail-stack detail-stack-ordered">
+              <div className="detail-title-shell detail-title-shell-flat">
+                <input
+                  className="detail-title-input"
+                  value={detailDraft.title}
+                  onChange={(event) =>
+                    setDetailDraft({
+                      ...detailDraft,
+                      title: event.target.value,
+                    })
+                  }
+                  placeholder="任务标题…"
+                  aria-label="任务标题"
+                  name="detailTitle"
+                  autoComplete="off"
+                />
+              </div>
+
+              <section className="detail-section detail-section-tight" aria-label="状态选择">
+                <div className="detail-card-head">
+                  <span>状态</span>
+                </div>
+                <div className="detail-status-grid">
+                  {detailStatusOptions.map((status) => {
+                    const statusMeta = todoStatusMeta[status]
+                    const isActive = detailDraft.status === status
+                    return (
+                      <button
+                        key={status}
+                        type="button"
+                        className={isActive ? 'detail-status-choice active' : 'detail-status-choice'}
+                        style={
+                          isActive
+                            ? ({
+                                '--detail-status-tone': statusMeta.tone,
+                                '--detail-status-accent': statusMeta.accent,
+                              } as CSSProperties)
+                            : undefined
+                        }
+                        onClick={() =>
+                          setDetailDraft({
+                            ...detailDraft,
+                            status,
+                          })
+                        }
+                      >
+                        <span className="detail-status-choice-icon" aria-hidden="true">
+                          {renderStatusIcon(status)}
+                        </span>
+                        <span>{statusMeta.label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </section>
+
+              <section className="detail-section detail-section-tight" aria-label="截止日期设置">
+                <div className="detail-card-head">
+                  <span>截止日期</span>
+                </div>
+                <div className="detail-date-actions" aria-label="日期操作">
+                  <button
+                    type="button"
+                    className={detailDraft.dueDate === todayDate() ? 'detail-date-pill active' : 'detail-date-pill'}
+                    onClick={() => {
+                      setShowCalendarPicker(false)
+                      setDetailDraft({
+                        ...detailDraft,
+                        dueDate: todayDate(),
+                      })
+                    }}
+                  >
+                    今天
+                  </button>
+                  <button
+                    type="button"
+                    className={detailDraft.dueDate === nextDate(1) ? 'detail-date-pill active' : 'detail-date-pill'}
+                    onClick={() => {
+                      setShowCalendarPicker(false)
+                      setDetailDraft({
+                        ...detailDraft,
+                        dueDate: nextDate(1),
+                      })
+                    }}
+                  >
+                    明天
+                  </button>
+                  <div className="detail-date-picker-wrap">
+                    <button
+                      type="button"
+                      className={showCalendarPicker || customDateSelected ? 'detail-date-pill active' : 'detail-date-pill'}
+                      onClick={() => setShowCalendarPicker((current) => !current)}
+                    >
+                      <span>{calendarButtonLabel}</span>
+                      <ChevronDown size={14} strokeWidth={2.2} aria-hidden="true" />
+                    </button>
+
+                    {showCalendarPicker ? (
+                      <div className="detail-calendar-popover">
+                        <DayPicker
+                          mode="single"
+                          locale={zhCN}
+                          showOutsideDays
+                          selected={detailDraft.dueDate ? new Date(`${detailDraft.dueDate}T00:00:00`) : undefined}
+                          onSelect={(date) => {
+                            if (!date) {
+                              return
+                            }
+
+                            setDetailDraft({
+                              ...detailDraft,
+                              dueDate: formatDateInputValue(date),
+                            })
+                            setShowCalendarPicker(false)
+                          }}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    className={!detailDraft.dueDate ? 'detail-date-pill active' : 'detail-date-pill'}
+                    onClick={() => {
+                      setShowCalendarPicker(false)
+                      setDetailDraft({
+                        ...detailDraft,
+                        dueDate: '',
+                        recurrenceType: 'none',
+                      })
+                    }}
+                  >
+                    没有日期
+                  </button>
+                </div>
+                {myDayMembership === 'auto' ? (
+                  <p className="detail-inline-hint">今天截止，系统会自动把它放进“我的一天”。</p>
+                ) : null}
+              </section>
+
+              <section className="detail-section detail-section-tight" aria-label="重复设置">
+                <div className="detail-card-head">
+                  <span>重复</span>
+                </div>
+                <div className="detail-recurrence-shell">
+                  <button
+                    className={
+                      showRecurrenceMenu || detailDraft.recurrenceType !== 'none'
+                        ? 'detail-repeat-trigger is-active'
+                        : 'detail-repeat-trigger'
+                    }
+                    onClick={() => setShowRecurrenceMenu((current) => !current)}
+                    disabled={busy}
+                    type="button"
+                  >
+                    <Repeat size={15} strokeWidth={2.1} />
+                    <span>{recurrenceSummaryLabel}</span>
+                    <ChevronDown size={14} strokeWidth={2.2} aria-hidden="true" />
+                  </button>
+
+                  {showRecurrenceMenu ? (
+                    <div className="detail-recurrence-menu" role="menu" aria-label="重复规则">
+                      {recurrenceOptions.map((option) => (
+                        <button
+                          key={option.type}
+                          className={detailDraft.recurrenceType === option.type ? 'active' : ''}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={detailDraft.recurrenceType === option.type}
+                          disabled={option.disabled}
+                          onClick={() => {
+                            if (option.disabled) {
+                              return
+                            }
+
+                            setDetailDraft({
+                              ...detailDraft,
+                              recurrenceType: option.type,
+                            })
+                            setShowRecurrenceMenu(false)
+                          }}
+                        >
+                          <span>{option.label}</span>
+                        </button>
+                      ))}
+                      {!detailDraft.dueDate ? (
+                        <p className="detail-recurrence-hint">先设置日期后才能开启每天、每周或每月重复。</p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+
+              <section className="detail-section detail-section-tight" aria-label="任务分类">
+                <div className="detail-card-head">
+                  <span>分类</span>
+                </div>
+                <div className="detail-list-picker">
+                  <div ref={categoryStripRef} className="detail-category-strip" aria-label="任务分类">
+                    {visibleCategoryOptions.map((option) => (
+                      <button
+                        key={option.key}
+                        type="button"
+                        className={
+                          [
+                            detailDraft.categoryId === option.categoryId
+                              ? 'detail-category-chip active'
+                              : 'detail-category-chip',
+                            option.neutral ? 'neutral' : '',
+                          ]
+                            .filter(Boolean)
+                            .join(' ')
+                        }
+                        style={
+                          {
+                            '--chip-tone': option.color ?? '#dfe6eb',
+                          } as CSSProperties
+                        }
+                        onClick={() =>
+                          setDetailDraft({
+                            ...detailDraft,
+                            categoryId: option.categoryId,
+                          })
+                        }
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+
+                    {overflowCategoryOptions.length ? (
+                      <button
+                        type="button"
+                        className="detail-list-select"
+                        aria-haspopup="listbox"
+                        aria-expanded={isCategoryPickerOpen}
+                        onClick={() => setShowCategoryPicker((current) => !current)}
+                      >
+                        <ChevronDown size={14} strokeWidth={2.2} className="detail-list-arrow" aria-hidden="true" />
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className="detail-category-measure" aria-hidden="true">
+                    {orderedCategoryOptions.map((option) => (
+                      <button
+                        key={option.key}
+                        ref={(node) => {
+                          categoryMeasureRefs.current[option.key] = node
+                        }}
+                        type="button"
+                        className={[
+                          detailDraft.categoryId === option.categoryId
+                            ? 'detail-category-chip active'
+                            : 'detail-category-chip',
+                          option.neutral ? 'neutral' : '',
+                        ]
+                          .filter(Boolean)
+                          .join(' ')}
+                        style={
+                          {
+                            '--chip-tone': option.color ?? '#dfe6eb',
+                          } as CSSProperties
+                        }
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                    <button ref={dropdownMeasureRef} type="button" className="detail-list-select" tabIndex={-1}>
+                      <ChevronDown size={14} strokeWidth={2.2} className="detail-list-arrow" aria-hidden="true" />
+                    </button>
+                  </div>
+
+                  {isCategoryPickerOpen ? (
+                    <div className="detail-list-menu" role="listbox" aria-label="分类列表">
+                      {overflowCategoryOptions.map((option) => (
+                        <button
+                          key={option.key}
+                          type="button"
+                          className={detailDraft.categoryId === option.categoryId ? 'active' : ''}
+                          onClick={() => {
+                            setDetailDraft({
+                              ...detailDraft,
+                              categoryId: option.categoryId,
+                            })
+                            setShowCategoryPicker(false)
+                          }}
+                        >
+                          <span
+                            className={option.neutral ? 'detail-list-dot neutral' : 'detail-list-dot'}
+                            style={option.neutral ? undefined : { backgroundColor: option.color ?? '#cfd8e3' }}
+                            aria-hidden="true"
+                          />
+                          <span>{option.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+
+              <label className="detail-field detail-description-field">
+                <div className="detail-card-head">
+                  <span>描述</span>
+                </div>
                 <textarea
                   value={detailDraft.note}
                   onChange={(event) =>
@@ -1758,88 +1957,13 @@ function TodoDetailPane({
                       note: event.target.value,
                     })
                   }
-                  rows={3}
+                  rows={5}
                   placeholder="添加描述"
                   aria-label="备注"
                   name="detailNote"
                   autoComplete="off"
                 />
               </label>
-
-              <div className="detail-date-actions" aria-label="日期操作">
-                <button
-                  type="button"
-                  className={detailDraft.dueDate === todayDate() ? 'detail-date-pill active' : 'detail-date-pill'}
-                  onClick={() => {
-                    setShowCalendarPicker(false)
-                    setDetailDraft({
-                      ...detailDraft,
-                      dueDate: todayDate(),
-                    })
-                  }}
-                >
-                  今天
-                </button>
-                <button
-                  type="button"
-                  className={detailDraft.dueDate === nextDate(1) ? 'detail-date-pill active' : 'detail-date-pill'}
-                  onClick={() => {
-                    setShowCalendarPicker(false)
-                    setDetailDraft({
-                      ...detailDraft,
-                      dueDate: nextDate(1),
-                    })
-                  }}
-                >
-                  明天
-                </button>
-                <div className="detail-date-picker-wrap">
-                  <button
-                    type="button"
-                    className={showCalendarPicker || customDateSelected ? 'detail-date-pill active' : 'detail-date-pill'}
-                    onClick={() => setShowCalendarPicker((current) => !current)}
-                  >
-                    <span>{calendarButtonLabel}</span>
-                    <ChevronDown size={14} strokeWidth={2.2} aria-hidden="true" />
-                  </button>
-
-                  {showCalendarPicker ? (
-                    <div className="detail-calendar-popover">
-                      <DayPicker
-                        mode="single"
-                        locale={zhCN}
-                        showOutsideDays
-                        selected={detailDraft.dueDate ? new Date(`${detailDraft.dueDate}T00:00:00`) : undefined}
-                        onSelect={(date) => {
-                          if (!date) {
-                            return
-                          }
-
-                          setDetailDraft({
-                            ...detailDraft,
-                            dueDate: formatDateInputValue(date),
-                          })
-                          setShowCalendarPicker(false)
-                        }}
-                      />
-                    </div>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  className={!detailDraft.dueDate ? 'detail-date-pill active' : 'detail-date-pill'}
-                  onClick={() => {
-                    setShowCalendarPicker(false)
-                    setDetailDraft({
-                      ...detailDraft,
-                      dueDate: '',
-                      recurrenceType: 'none',
-                    })
-                  }}
-                >
-                  没有日期
-                </button>
-              </div>
             </div>
           </div>
 
@@ -1858,71 +1982,8 @@ function TodoDetailPane({
               </>
             ) : (
               <>
+                <p className="detail-footer-hint">修改会自动保存到当前工作区。</p>
                 <div className="detail-footer-actions">
-                  {myDayMembership === 'auto' ? (
-                    <p className="detail-footer-meta">今天截止，自动出现在“我的一天”</p>
-                  ) : (
-                    <button
-                      className={myDayMembership === 'manual' ? 'detail-footer-link is-active' : 'detail-footer-link'}
-                      onClick={() =>
-                        setDetailDraft({
-                          ...detailDraft,
-                          myDayDate: myDayMembership === 'manual' ? '' : todayDate(),
-                        })
-                      }
-                      disabled={busy || (detailDraft.status === 'completed' && myDayMembership === 'none')}
-                      type="button"
-                    >
-                      <Sun size={15} strokeWidth={2.1} />
-                      <span>{myDayMembership === 'manual' ? '从我的一天移除' : '添加到我的一天'}</span>
-                    </button>
-                  )}
-                  <div className="detail-recurrence-shell">
-                    <button
-                      className={
-                        showRecurrenceMenu || detailDraft.recurrenceType !== 'none'
-                          ? 'detail-footer-link is-active'
-                          : 'detail-footer-link'
-                      }
-                      onClick={() => setShowRecurrenceMenu((current) => !current)}
-                      disabled={busy}
-                      type="button"
-                    >
-                      <Repeat size={15} strokeWidth={2.1} />
-                      <span>{recurrenceSummaryLabel}</span>
-                    </button>
-
-                    {showRecurrenceMenu ? (
-                      <div className="detail-recurrence-menu" role="menu" aria-label="重复规则">
-                        {recurrenceOptions.map((option) => (
-                          <button
-                            key={option.type}
-                            className={detailDraft.recurrenceType === option.type ? 'active' : ''}
-                            type="button"
-                            role="menuitemradio"
-                            aria-checked={detailDraft.recurrenceType === option.type}
-                            disabled={option.disabled}
-                            onClick={() => {
-                              if (option.disabled) {
-                                return
-                              }
-
-                              setDetailDraft({
-                                ...detailDraft,
-                                recurrenceType: option.type,
-                              })
-                              setShowRecurrenceMenu(false)
-                            }}
-                          >
-                            <span>{option.label}</span>
-                          </button>
-                        ))}
-                        {!detailDraft.dueDate ? (
-                          <p className="detail-recurrence-hint">先设置日期后才能开启每天、每周或每月重复。</p>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </div>
                   <button
                     className="detail-footer-link is-danger"
                     onClick={() => setConfirmDeleteTodo(true)}
