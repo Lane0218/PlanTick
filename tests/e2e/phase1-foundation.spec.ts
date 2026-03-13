@@ -235,6 +235,17 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
       hasText: '每月例行',
     }).getByText(monthlyDueLabel),
   ).toBeVisible()
+  const visibleAccents = page.locator('.todo-list article .todo-list-accent')
+  expect(await visibleAccents.count()).toBeGreaterThan(1)
+  const firstVisibleAccentBox = await visibleAccents.nth(0).boundingBox()
+  const secondVisibleAccentBox = await visibleAccents.nth(1).boundingBox()
+  expect(Math.abs((firstVisibleAccentBox?.x ?? 0) - (secondVisibleAccentBox?.x ?? 0))).toBeLessThan(1)
+  expect(
+    Math.abs(
+      ((firstVisibleAccentBox?.y ?? 0) + (firstVisibleAccentBox?.height ?? 0)) -
+        (secondVisibleAccentBox?.y ?? 0),
+    ),
+  ).toBeLessThan(2)
   await page.waitForTimeout(700)
 
   await page.reload()

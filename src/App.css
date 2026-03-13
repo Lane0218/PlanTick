@@ -1044,9 +1044,13 @@
   bottom: 0;
   left: 0;
   width: 4px;
-  border-radius: 999px;
+  border-radius: 0;
   background: var(--todo-category-tone, #cfd6db);
   pointer-events: none;
+}
+
+.todo-card + .todo-card .todo-list-accent {
+  top: -1px;
 }
 
 .todo-card.status-completed strong,
