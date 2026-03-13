@@ -455,7 +455,6 @@
   gap: 10px;
   min-height: 42px;
   padding: 0 12px;
-  border: 1px solid transparent;
   border-radius: 12px;
   background: transparent;
   color: var(--text-strong);
@@ -463,16 +462,12 @@
 }
 
 .sidebar-item:hover {
-  background: #ffffff;
-  border-color: #e1e5ea;
-  box-shadow: 0 8px 20px rgba(31, 42, 55, 0.04);
+  background: #e8eaec;
 }
 
 .sidebar-item.active,
 .category-row.active {
-  background: #ffffff;
-  border-color: #e1e5ea;
-  box-shadow: 0 8px 20px rgba(31, 42, 55, 0.04);
+  background: #e8eaec;
 }
 
 .sidebar-item-main {
@@ -526,16 +521,13 @@
   position: relative;
   min-height: 42px;
   padding: 4px;
-  border: 1px solid transparent;
-  border-radius: 14px;
+  border-radius: 12px;
   background: transparent;
 }
 
 .category-row:hover,
 .category-row:focus-within {
-  background: #ffffff;
-  border-color: #e1e5ea;
-  box-shadow: 0 8px 20px rgba(31, 42, 55, 0.04);
+  background: #e8eaec;
 }
 
 .category-item {
@@ -563,7 +555,7 @@
   min-width: 30px;
   height: 30px;
   padding: 0;
-  border: 1px solid transparent;
+  border: 0;
   border-radius: 10px;
   background: transparent;
   color: #97a7b4;
@@ -583,7 +575,11 @@
 .category-row.active .category-edit-button,
 .category-row:hover .category-edit-button,
 .category-row:focus-within .category-edit-button {
-  background: #edf2f5;
+  background: transparent;
+}
+
+.category-edit-button:hover {
+  color: #2c3e50;
 }
 
 .sidebar-drawer {
