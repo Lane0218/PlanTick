@@ -463,9 +463,9 @@
 }
 
 .sidebar-item:hover {
-  background: #f3f6f8;
-  border-color: #e3e8ed;
-  box-shadow: 0 8px 20px rgba(31, 42, 55, 0.03);
+  background: #ffffff;
+  border-color: #e1e5ea;
+  box-shadow: 0 8px 20px rgba(31, 42, 55, 0.04);
 }
 
 .sidebar-item.active,
@@ -533,9 +533,9 @@
 
 .category-row:hover,
 .category-row:focus-within {
-  background: #f3f6f8;
-  border-color: #e3e8ed;
-  box-shadow: 0 8px 20px rgba(31, 42, 55, 0.03);
+  background: #ffffff;
+  border-color: #e1e5ea;
+  box-shadow: 0 8px 20px rgba(31, 42, 55, 0.04);
 }
 
 .category-item {
