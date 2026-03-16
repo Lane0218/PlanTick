@@ -99,7 +99,7 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
 
   await createWorkspaceFromDialog(page, passphrase)
   await expect(page.getByRole('heading', { name: '待办箱' })).toBeVisible()
-  await expect(page.locator('.sidebar-nav .sidebar-icon svg')).toHaveCount(4)
+  await expect(page.locator('.sidebar-nav .sidebar-icon svg')).toHaveCount(5)
   await page.getByLabel('快速新建任务').focus()
   await expect(page.getByLabel('快速新建任务')).toHaveCSS('outline-style', 'none')
 
