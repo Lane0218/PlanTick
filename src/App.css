@@ -877,8 +877,8 @@
 .mobile-sidebar-shell {
   position: relative;
   z-index: 1;
-  width: min(326px, calc(100vw - 64px));
-  max-width: calc(100vw - 64px);
+  width: min(310px, calc(100vw - 72px));
+  max-width: calc(100vw - 72px);
   height: 100dvh;
   max-height: 100dvh;
   padding: 0;
@@ -2832,7 +2832,7 @@
 
   .sidebar-brandbar {
     margin: -16px -16px 6px;
-    border-radius: 20px 20px 0 0;
+    border-radius: 0;
   }
 
   .onboarding-metrics,
@@ -2846,8 +2846,8 @@
   }
 
   .mobile-sidebar-shell {
-    width: min(312px, calc(100vw - 48px));
-    max-width: calc(100vw - 48px);
+    width: min(296px, calc(100vw - 56px));
+    max-width: calc(100vw - 56px);
     padding: 0;
     border-radius: 0;
   }
