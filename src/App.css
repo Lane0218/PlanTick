@@ -1376,34 +1376,20 @@
 .status-board-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0;
+  gap: 18px;
   align-items: stretch;
-  min-height: clamp(560px, calc(100vh - 172px), 880px);
+  min-height: 100%;
 }
 
 .status-column {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  align-content: start;
-  gap: 14px;
   min-width: 0;
-  min-height: clamp(560px, calc(100vh - 172px), 880px);
-  padding: 6px 20px 0;
-  border: 0;
-  border-top: 1px solid var(--line-soft);
-  border-left: 1px solid #eef2f5;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.status-column:first-child {
-  padding-left: 0;
-  border-left: 0;
-}
-
-.status-column:last-child {
-  padding-right: 0;
+  min-height: 100%;
+  border: 1px solid #e7edf3;
+  border-radius: 14px;
+  background: #f6f8fb;
+  overflow: hidden;
 }
 
 .status-column-header {
@@ -1411,7 +1397,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 0 4px;
+  padding: 16px 16px 14px;
+  border-bottom: 1px solid #e6ebf0;
 }
 
 .status-column-title-row {
@@ -1462,20 +1449,22 @@
 .status-card-list {
   display: grid;
   align-content: start;
-  gap: 0;
+  gap: 8px;
   min-width: 0;
   min-height: 100%;
-  border-top: 1px solid #f0f3f6;
-  background: #ffffff;
+  padding: 12px;
+  background: #f6f8fb;
 }
 
 .status-todo-card {
   display: grid;
   min-width: 0;
-  min-height: 76px;
-  padding: 14px 0;
-  border-bottom: 1px solid #f0f3f6;
-  background: transparent;
+  min-height: 0;
+  padding: 11px 12px;
+  border: 1px solid #e6ebf0;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 1px 1px rgba(15, 23, 42, 0.02);
 }
 
 .status-todo-card:last-child {
@@ -1558,11 +1547,11 @@
 
 .status-column-empty {
   align-content: center;
+  justify-items: center;
   min-height: 100%;
-  padding: 24px 12px;
-  border-top: 1px solid #f0f3f6;
-  border-radius: 0;
-  background: transparent;
+  padding: 24px 20px;
+  background: #f6f8fb;
+  text-align: center;
 }
 
 .status-column-empty h2 {
@@ -3249,22 +3238,22 @@
 
   .status-column {
     min-height: auto;
-    padding: 18px;
     border: 1px solid var(--line-soft);
     border-radius: 20px;
-    background: #ffffff;
+    background: #f6f8fb;
     box-shadow: var(--shadow-panel);
   }
 
-  .status-column:first-child,
-  .status-column:last-child {
-    padding-left: 18px;
-    padding-right: 18px;
+  .status-column-header {
+    padding: 18px 18px 16px;
+  }
+
+  .status-card-list {
+    padding: 14px;
   }
 
   .status-column-empty {
     min-height: 180px;
-    border-top-color: #eef2f5;
   }
 
   .stats-metrics-grid,
