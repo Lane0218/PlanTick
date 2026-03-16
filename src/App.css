@@ -784,7 +784,8 @@
 
 .board-pane {
   display: grid;
-  align-content: start;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-content: stretch;
   gap: 18px;
   min-width: 0;
   min-height: 100vh;
@@ -824,16 +825,16 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 18px;
   align-items: stretch;
-  min-height: clamp(560px, calc(100vh - 172px), 880px);
+  min-height: 100%;
 }
 
 .status-column {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
-  min-height: clamp(560px, calc(100vh - 172px), 880px);
+  min-height: 100%;
   border: 1px solid #e7edf3;
-  border-radius: 20px;
+  border-radius: 14px;
   background: #f6f8fb;
   overflow: hidden;
 }
@@ -843,7 +844,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 18px 18px 16px;
+  padding: 16px 16px 14px;
   border-bottom: 1px solid #e6ebf0;
 }
 
@@ -895,22 +896,22 @@
 .status-card-list {
   display: grid;
   align-content: start;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
   min-height: 100%;
-  padding: 14px;
+  padding: 12px;
   background: #f6f8fb;
 }
 
 .status-todo-card {
   display: grid;
   min-width: 0;
-  min-height: 76px;
-  padding: 14px 14px;
-  border: 1px solid color-mix(in srgb, var(--status-tone, #90a4ae) 12%, #ffffff);
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--status-accent, #f8fafc) 72%, #ffffff);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+  min-height: 0;
+  padding: 11px 12px;
+  border: 1px solid #e6ebf0;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 1px 1px rgba(15, 23, 42, 0.02);
 }
 
 .status-todo-card:last-child {
@@ -926,7 +927,7 @@
 .status-card-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
 }
 
@@ -934,7 +935,7 @@
   display: block;
   color: #2c3e50;
   font-size: 0.875rem;
-  line-height: 1.35;
+  line-height: 1.28;
   font-weight: 400;
   word-break: break-word;
 }
@@ -943,13 +944,13 @@
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
 }
 
 .status-card-due {
   color: var(--text-muted);
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   font-weight: 600;
   white-space: nowrap;
 }
@@ -964,7 +965,7 @@
   gap: 6px;
   min-width: 0;
   color: #6b7c93;
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   font-weight: 600;
 }
 
@@ -980,10 +981,10 @@
 }
 
 .status-column-empty {
-  align-content: start;
+  align-content: center;
   justify-items: center;
   min-height: 100%;
-  padding: 48px 20px 20px;
+  padding: 24px 20px;
   background: #f6f8fb;
   text-align: center;
 }
