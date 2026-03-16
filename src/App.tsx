@@ -4,6 +4,7 @@ import { DayPicker } from 'react-day-picker'
 import 'react-day-picker/dist/style.css'
 import {
   Ban,
+  BarChart3,
   CalendarDays,
   CheckCircle2,
   ChevronDown,
@@ -26,23 +27,31 @@ import './App.css'
 import {
   getCurrentWorkspaceMeta,
   listCategories,
+  listEvents,
   listTodos,
   loadWorkspaceId,
   runIndexedDbProbe,
   saveCurrentWorkspaceMeta,
   saveWorkspaceId,
   upsertCategory,
+  upsertEvent,
   upsertTodo,
 } from './lib/db'
-import { isSupabaseConfigured } from './lib/env'
-import type { CategoryRecord, TodoRecord, TodoRecurrenceType, TodoStatus } from './lib/types'
-import { enqueueRecordMutation } from './lib/sync'
+import { envSummary, isSupabaseConfigured } from './lib/env'
+import type { CategoryRecord, EventRecord, TodoRecord, TodoRecurrenceType, TodoStatus } from './lib/types'
+import { enqueueRecordMutation, pullRemoteChanges, pushPendingOperations, reconcileRemoteChanges } from './lib/sync'
 import { ensureAnonymousSession, invokeWorkspaceFunction } from './lib/supabase'
 
 type WorkspaceMode = 'create' | 'join'
-type WorkspaceView = 'todos' | 'board' | 'calendar'
+type WorkspaceView = 'todos' | 'board' | 'stats' | 'calendar'
 type TaskFilter = 'all' | 'today' | 'overdue' | 'completed'
 type WorkspaceRuntimeMode = 'workspace' | 'guest' | 'unattached'
+
+type SeedWorkspaceStatus =
+  | { kind: 'idle' }
+  | { kind: 'pending' }
+  | { kind: 'ready'; passphrase: string }
+  | { kind: 'failed'; message: string }
 
 type WorkspacePrimaryNavProps = {
   activeView: WorkspaceView
@@ -63,6 +72,35 @@ type StatusBoardColumn = {
   status: BoardStatusColumn
   meta: (typeof todoStatusMeta)[BoardStatusColumn]
   todos: TodoRecord[]
+}
+
+type StatsMetricCard = {
+  label: string
+  value: string
+  helper: string
+}
+
+type StatsDistributionItem = {
+  id: string
+  label: string
+  value: number
+  accent: string
+  helper?: string
+}
+
+type StatsDayLoad = {
+  date: string
+  label: string
+  taskCount: number
+  eventCount: number
+}
+
+type StatsHistoricalCompletionPoint = {
+  date: string
+  label: string
+  totalCount: number
+  completedCount: number
+  completionRate: number | null
 }
 
 type TodoDraft = {
@@ -184,7 +222,7 @@ const demoTodos: TodoRecord[] = [
     status: 'not_started',
     completed: false,
     note: '先处理客户反馈，再安排下午的评审。',
-    recurrenceType: 'none',
+    recurrenceType: 'daily',
     updatedAt: '2026-03-16T08:20:00.000Z',
     deleted: false,
   },
@@ -212,7 +250,7 @@ const demoTodos: TodoRecord[] = [
     status: 'in_progress',
     completed: false,
     note: '',
-    recurrenceType: 'none',
+    recurrenceType: 'weekly',
     updatedAt: '2026-03-16T10:30:00.000Z',
     deleted: false,
   },
@@ -240,11 +278,38 @@ const demoTodos: TodoRecord[] = [
     status: 'not_started',
     completed: false,
     note: '未分类任务会先留在 Inbox，之后再分派到列表。',
-    recurrenceType: 'none',
+    recurrenceType: 'monthly',
     updatedAt: '2026-03-16T09:00:00.000Z',
     deleted: false,
   },
 ]
+
+const demoEvents: EventRecord[] = [
+  {
+    id: 'guest-event-review',
+    workspaceId: demoWorkspaceId,
+    title: '产品评审会',
+    date: todayDate(),
+    startAt: `${todayDate()}T14:00:00.000Z`,
+    endAt: `${todayDate()}T15:00:00.000Z`,
+    note: '核对本周需求优先级。',
+    updatedAt: '2026-03-16T06:30:00.000Z',
+    deleted: false,
+  },
+  {
+    id: 'guest-event-focus',
+    workspaceId: demoWorkspaceId,
+    title: '深度工作时段',
+    date: nextDate(1),
+    startAt: `${nextDate(1)}T01:30:00.000Z`,
+    endAt: `${nextDate(1)}T03:00:00.000Z`,
+    note: '留给任务推进。',
+    updatedAt: '2026-03-16T06:35:00.000Z',
+    deleted: false,
+  },
+]
+
+const seedWorkspacePassphrase = 'stats-2026'
 
 declare global {
   interface WindowEventMap {
@@ -263,11 +328,13 @@ function App() {
   const [sessionLabel, setSessionLabel] = useState('尚未建立匿名会话')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('请选择工作区后开始管理任务。')
+  const [seedWorkspaceStatus, setSeedWorkspaceStatus] = useState<SeedWorkspaceStatus>({ kind: 'idle' })
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [pwaLabel, setPwaLabel] = useState('等待浏览器安装入口')
 
   const [categories, setCategories] = useState<CategoryRecord[]>([])
   const [todos, setTodos] = useState<TodoRecord[]>([])
+  const [events, setEvents] = useState<EventRecord[]>([])
 
   const [activeFilter, setActiveFilter] = useState<TaskFilter>('all')
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
@@ -293,6 +360,7 @@ function App() {
 
   const sourceCategories = runtimeMode === 'guest' ? demoCategories : categories
   const sourceTodos = runtimeMode === 'guest' ? demoTodos : todos
+  const sourceEvents = runtimeMode === 'guest' ? demoEvents : events
   const isReadOnly = runtimeMode !== 'workspace'
 
   const activeCategories = useMemo(
@@ -309,6 +377,13 @@ function App() {
         .filter((todo) => !todo.deleted)
         .sort((left, right) => compareTodos(left, right)),
     [sourceTodos],
+  )
+  const activeEvents = useMemo(
+    () =>
+      sourceEvents
+        .filter((event) => !event.deleted)
+        .sort((left, right) => left.date.localeCompare(right.date) || left.updatedAt.localeCompare(right.updatedAt)),
+    [sourceEvents],
   )
 
   const selectedCategory =
@@ -362,6 +437,58 @@ function App() {
     }),
     [activeTodos],
   )
+  const statsSummary = useMemo(() => buildStatsSummary(activeTodos, activeEvents), [activeTodos, activeEvents])
+  const statsMetricCards = useMemo<StatsMetricCard[]>(
+    () => [
+      {
+        label: '完成任务',
+        value: String(statsSummary.completedTodos),
+        helper: `总任务 ${statsSummary.totalTodos}`,
+      },
+      {
+        label: '完成率',
+        value: formatPercentage(statsSummary.completionRate),
+        helper: `未完成 ${statsSummary.openTodos}`,
+      },
+      {
+        label: '今日聚焦',
+        value: String(statsSummary.todayFocusTodos),
+        helper: `逾期 ${statsSummary.overdueTodos}`,
+      },
+      {
+        label: '未来 7 天安排',
+        value: String(statsSummary.upcomingScheduledItems),
+        helper: `事件 ${statsSummary.totalEvents}`,
+      },
+    ],
+    [statsSummary],
+  )
+  const statusDistribution = useMemo<StatsDistributionItem[]>(
+    () => [
+      { id: 'not_started', label: '未开始', value: statsSummary.statusCounts.not_started, accent: todoStatusMeta.not_started.tone },
+      { id: 'in_progress', label: '进行中', value: statsSummary.statusCounts.in_progress, accent: todoStatusMeta.in_progress.tone },
+      { id: 'completed', label: '已完成', value: statsSummary.statusCounts.completed, accent: todoStatusMeta.completed.tone },
+      { id: 'blocked', label: '阻塞', value: statsSummary.statusCounts.blocked, accent: todoStatusMeta.blocked.tone },
+      { id: 'canceled', label: '取消', value: statsSummary.statusCounts.canceled, accent: todoStatusMeta.canceled.tone },
+    ],
+    [statsSummary],
+  )
+  const dueDistribution = useMemo<StatsDistributionItem[]>(
+    () => [
+      { id: 'overdue', label: '已逾期', value: statsSummary.dueBuckets.overdue, accent: '#ef5350' },
+      { id: 'today', label: '今天', value: statsSummary.dueBuckets.today, accent: '#0f766e' },
+      { id: 'next-seven', label: '7 天内', value: statsSummary.dueBuckets.nextSevenDays, accent: '#2563eb' },
+      { id: 'later', label: '更晚', value: statsSummary.dueBuckets.later, accent: '#7c3aed' },
+      { id: 'none', label: '无日期', value: statsSummary.dueBuckets.noDate, accent: '#94a3b8' },
+    ],
+    [statsSummary],
+  )
+  const categoryDistribution = useMemo<StatsDistributionItem[]>(
+    () => buildCategoryDistribution(activeTodos, activeCategories),
+    [activeCategories, activeTodos],
+  )
+  const nextSevenDayLoad = useMemo<StatsDayLoad[]>(() => buildUpcomingDayLoad(activeTodos, activeEvents), [activeEvents, activeTodos])
+  const historicalCompletionSeries = useMemo<StatsHistoricalCompletionPoint[]>(() => buildHistoricalCompletionSeries(activeTodos), [activeTodos])
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(max-width: 980px)')
@@ -385,7 +512,7 @@ function App() {
       if (!restoredWorkspaceId) {
         setRuntimeMode('unattached')
         setWorkspaceDialogOpen(true)
-        setMessage('请选择一种进入方式。')
+        setMessage('你可以先看示例数据，或直接创建 / 加入工作区。')
         return
       }
 
@@ -527,6 +654,7 @@ function App() {
       setRuntimeMode('unattached')
       setCategories([])
       setTodos([])
+      setEvents([])
       setSelectedCategoryId(null)
       setSelectedUncategorized(false)
       setActiveFilter('all')
@@ -536,10 +664,18 @@ function App() {
       return
     }
 
-    const [workspaceMeta, nextCategories, nextTodos] = await Promise.all([
+    try {
+      const pullResult = await pullRemoteChanges()
+      await reconcileRemoteChanges(resolvedWorkspaceId, pullResult)
+    } catch (error) {
+      console.warn('刷新工作区时拉取远端数据失败', error)
+    }
+
+    const [workspaceMeta, nextCategories, nextTodos, nextEvents] = await Promise.all([
       getCurrentWorkspaceMeta(),
       listCategories(resolvedWorkspaceId),
       listTodos(resolvedWorkspaceId),
+      listEvents(resolvedWorkspaceId),
     ])
 
     setWorkspaceId(resolvedWorkspaceId)
@@ -547,6 +683,7 @@ function App() {
     setWorkspaceDialogOpen(false)
     setCategories(nextCategories)
     setTodos(nextTodos)
+    setEvents(nextEvents)
     setSessionLabel(
       workspaceMeta?.anonymousUserId
         ? `设备会话 ${workspaceMeta.anonymousUserId.slice(0, 8)}`
@@ -593,6 +730,217 @@ function App() {
       setPassphrase('')
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '工作区操作失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function createSeedWorkspace() {
+    if (!isSupabaseConfigured) {
+      throw new Error('缺少 Supabase 环境变量，当前无法创建示例工作区。')
+    }
+
+    const session = await ensureAnonymousSession()
+    const response = await invokeWorkspaceFunction('create', seedWorkspacePassphrase)
+
+    await saveWorkspaceId(response.workspaceId)
+    await saveCurrentWorkspaceMeta(response.workspaceId, session.user.id)
+
+    const now = new Date().toISOString()
+    const workspaceSeedCategories: CategoryRecord[] = [
+      {
+        id: crypto.randomUUID(),
+        workspaceId: response.workspaceId,
+        name: '工作',
+        color: '#2563EB',
+        updatedAt: now,
+        deleted: false,
+      },
+      {
+        id: crypto.randomUUID(),
+        workspaceId: response.workspaceId,
+        name: '生活',
+        color: '#16A34A',
+        updatedAt: now,
+        deleted: false,
+      },
+      {
+        id: crypto.randomUUID(),
+        workspaceId: response.workspaceId,
+        name: '学习',
+        color: '#F97316',
+        updatedAt: now,
+        deleted: false,
+      },
+    ]
+
+    const [workCategory, lifeCategory, learnCategory] = workspaceSeedCategories
+    const workspaceSeedTodos: TodoRecord[] = [
+      {
+        id: crypto.randomUUID(),
+        workspaceId: response.workspaceId,
+        title: '整理今天的优先事项',
+        categoryId: workCategory.id,
+        dueDate: todayDate(),
+        myDayDate: todayDate(),
+        status: 'not_started',
+        completed: false,
+        note: '先处理客户反馈，再安排下午的评审。',
+        recurrenceType: 'daily',
+        updatedAt: now,
+        deleted: false,
+      },
+      {
+        id: crypto.randomUUID(),
+        workspaceId: response.workspaceId,
+        title: '补完上周遗留的发布检查',
+        categoryId: workCategory.id,
+        dueDate: nextDate(-1),
+        myDayDate: null,
+        status: 'blocked',
+        completed: false,
+        note: '卡在设计确认，等最终素材。',
+        recurrenceType: 'none',
+        updatedAt: now,
+        deleted: false,
+      },
+      {
+        id: crypto.randomUUID(),
+        workspaceId: response.workspaceId,
+        title: '准备周会同步材料',
+        categoryId: learnCategory.id,
+        dueDate: nextDate(1),
+        myDayDate: todayDate(),
+        status: 'in_progress',
+        completed: false,
+        note: '把图表结论与风险项补齐。',
+        recurrenceType: 'weekly',
+        updatedAt: now,
+        deleted: false,
+      },
+      {
+        id: crypto.randomUUID(),
+        workspaceId: response.workspaceId,
+        title: '回顾昨天完成的事项',
+        categoryId: lifeCategory.id,
+        dueDate: nextDate(-1),
+        myDayDate: null,
+        status: 'completed',
+        completed: true,
+        note: '确认本周个人安排已落盘。',
+        recurrenceType: 'none',
+        updatedAt: now,
+        deleted: false,
+      },
+      {
+        id: crypto.randomUUID(),
+        workspaceId: response.workspaceId,
+        title: '把灵感先记进待办箱',
+        categoryId: null,
+        dueDate: null,
+        myDayDate: todayDate(),
+        status: 'not_started',
+        completed: false,
+        note: '未分类任务会先留在 Inbox，之后再分派到列表。',
+        recurrenceType: 'monthly',
+        updatedAt: now,
+        deleted: false,
+      },
+      {
+        id: crypto.randomUUID(),
+        workspaceId: response.workspaceId,
+        title: '整理数据统计版式反馈',
+        categoryId: workCategory.id,
+        dueDate: nextDate(3),
+        myDayDate: null,
+        status: 'not_started',
+        completed: false,
+        note: '为统计页准备第二轮视觉细节。',
+        recurrenceType: 'none',
+        updatedAt: now,
+        deleted: false,
+      },
+    ]
+
+    const workspaceSeedEvents: EventRecord[] = [
+      {
+        id: crypto.randomUUID(),
+        workspaceId: response.workspaceId,
+        title: '产品评审会',
+        date: todayDate(),
+        startAt: `${todayDate()}T14:00:00.000Z`,
+        endAt: `${todayDate()}T15:00:00.000Z`,
+        note: '核对本周需求优先级。',
+        updatedAt: now,
+        deleted: false,
+      },
+      {
+        id: crypto.randomUUID(),
+        workspaceId: response.workspaceId,
+        title: '深度工作时段',
+        date: nextDate(1),
+        startAt: `${nextDate(1)}T01:30:00.000Z`,
+        endAt: `${nextDate(1)}T03:00:00.000Z`,
+        note: '留给任务推进。',
+        updatedAt: now,
+        deleted: false,
+      },
+      {
+        id: crypto.randomUUID(),
+        workspaceId: response.workspaceId,
+        title: '复盘与下周排期',
+        date: nextDate(4),
+        startAt: `${nextDate(4)}T09:00:00.000Z`,
+        endAt: `${nextDate(4)}T10:00:00.000Z`,
+        note: '看统计页再决定下周节奏。',
+        updatedAt: now,
+        deleted: false,
+      },
+    ]
+
+    await Promise.all(workspaceSeedCategories.map((record) => upsertCategory(record)))
+    await Promise.all(workspaceSeedTodos.map((record) => upsertTodo(record)))
+    await Promise.all(workspaceSeedEvents.map((record) => upsertEvent(record)))
+
+    await Promise.all([
+      ...workspaceSeedCategories.map((record) => enqueueRecordMutation('categories', 'upsert', toSyncCategory(record))),
+      ...workspaceSeedTodos.map((record) => enqueueRecordMutation('todos', 'upsert', toSyncTodo(record))),
+      ...workspaceSeedEvents.map((record) =>
+        enqueueRecordMutation('events', 'upsert', {
+          id: record.id,
+          workspace_id: record.workspaceId,
+          title: record.title,
+          date: record.date,
+          start_at: record.startAt,
+          end_at: record.endAt,
+          note: record.note,
+          updated_at: record.updatedAt,
+          deleted: record.deleted,
+        }),
+      ),
+    ])
+
+    await pushPendingOperations()
+    await refreshWorkspaceData(response.workspaceId)
+
+    return response.workspaceId
+  }
+
+  async function handleOpenSeedWorkspace() {
+    setBusy(true)
+    setSeedWorkspaceStatus({ kind: 'pending' })
+
+    try {
+      await createSeedWorkspace()
+      setRuntimeMode('workspace')
+      setWorkspaceDialogOpen(false)
+      setPassphrase('')
+      setSeedWorkspaceStatus({ kind: 'ready', passphrase: seedWorkspacePassphrase })
+      setMessage(`示例工作区已准备完成，可通过口令 ${seedWorkspacePassphrase} 直接加入。`)
+    } catch (error) {
+      const text = error instanceof Error ? error.message : '示例工作区创建失败'
+      setSeedWorkspaceStatus({ kind: 'failed', message: text })
+      setMessage(text)
     } finally {
       setBusy(false)
     }
@@ -846,7 +1194,7 @@ function App() {
       mobileDetailTriggerRef.current = trigger
     }
     setSelectedTodoId(todoId)
-    if (isMobileViewport && activeView !== 'board') {
+    if (isMobileViewport && activeView !== 'board' && activeView !== 'stats') {
       setIsMobileDetailOpen(true)
     }
   }
@@ -858,7 +1206,7 @@ function App() {
       return
     }
 
-    if (activeView === 'board') {
+    if (activeView === 'board' || activeView === 'stats') {
       setIsMobileDetailOpen(false)
       return
     }
@@ -921,16 +1269,16 @@ function App() {
     setSelectedCategoryId(null)
     setSelectedUncategorized(false)
     setActiveFilter('all')
-    setSelectedTodoId(demoTodos[0]?.id ?? null)
+    setSelectedTodoId(null)
     setActiveView('todos')
     setQuickTodoTitle('')
-    setMessage('游客模式')
+    setMessage('当前为只读示例模式，不会写入本地或同步到云端。')
   }
 
   const shellClassName = [
     'workspace-shell',
     activeView === 'calendar' ? 'calendar-layout' : '',
-    !isMobileViewport && activeView !== 'board' && selectedTodoId ? 'has-detail' : '',
+    !isMobileViewport && activeView !== 'board' && activeView !== 'stats' && selectedTodoId ? 'has-detail' : '',
     isMobileViewport ? 'mobile-workspace-shell' : '',
   ]
     .filter(Boolean)
@@ -941,11 +1289,13 @@ function App() {
       ? '日程概览'
       : activeView === 'board'
         ? '看板'
-        : selectedUncategorized
-          ? '未分类'
-          : selectedCategory
-            ? selectedCategory.name
-            : filterLabels[activeFilter]
+        : activeView === 'stats'
+          ? '数据统计'
+          : selectedUncategorized
+            ? '未分类'
+            : selectedCategory
+              ? selectedCategory.name
+              : filterLabels[activeFilter]
 
   const sidebarProps = {
     sessionLabel,
@@ -981,7 +1331,7 @@ function App() {
         {isMobileViewport ? null : (
           <Sidebar
             {...sidebarProps}
-            sessionLabel={runtimeMode === 'guest' ? '游客模式' : sessionLabel}
+            sessionLabel={runtimeMode === 'guest' ? '示例工作台（只读）' : sessionLabel}
             readOnly={isReadOnly}
           />
         )}
@@ -997,7 +1347,7 @@ function App() {
             <div className="mobile-sidebar-shell" role="dialog" aria-modal="true" aria-label="侧边导航">
               <Sidebar
                 {...sidebarProps}
-                sessionLabel={runtimeMode === 'guest' ? '游客模式' : sessionLabel}
+                sessionLabel={runtimeMode === 'guest' ? '示例工作台（只读）' : sessionLabel}
                 id="mobile-sidebar-drawer"
                 className="sidebar-pane sidebar-pane-drawer"
                 onNavigate={() => closeMobileSidebar()}
@@ -1029,8 +1379,14 @@ function App() {
 
           {runtimeMode === 'guest' ? (
             <div className="workspace-banner" role="status">
-              <strong>游客模式</strong>
+              <div>
+                <p className="eyebrow">游客模式</p>
+                <strong>当前展示的是示例数据，不会写入本地，也不会同步。</strong>
+              </div>
               <div className="workspace-banner-actions">
+                <button className="secondary-button" type="button" onClick={() => void handleOpenSeedWorkspace()}>
+                  创建示例工作区
+                </button>
                 <button className="secondary-button" type="button" onClick={() => openWorkspaceDialog('create')}>
                   创建工作区
                 </button>
@@ -1069,6 +1425,8 @@ function App() {
               onCreateWorkspace={() => openWorkspaceDialog('create')}
               onJoinWorkspace={() => openWorkspaceDialog('join')}
               onEnterGuestMode={enterGuestMode}
+              onEnterSeedWorkspace={() => void handleOpenSeedWorkspace()}
+              seedWorkspaceStatus={seedWorkspaceStatus}
             />
           ) : activeView === 'calendar' ? (
             <CalendarBoard
@@ -1083,6 +1441,15 @@ function App() {
             />
           ) : activeView === 'board' ? (
             <StatusBoard columns={boardColumns} categories={activeCategories} />
+          ) : activeView === 'stats' ? (
+            <StatsBoard
+              metricCards={statsMetricCards}
+              statusDistribution={statusDistribution}
+              categoryDistribution={categoryDistribution}
+              dueDistribution={dueDistribution}
+              dayLoad={nextSevenDayLoad}
+              historicalCompletionSeries={historicalCompletionSeries}
+            />
           ) : (
             <TodoBoard
               quickTodoTitle={quickTodoTitle}
@@ -1113,7 +1480,7 @@ function App() {
             readOnly
           />
         ) : isMobileViewport ? (
-          activeView !== 'board' && selectedTodo && isMobileDetailOpen ? (
+          activeView !== 'board' && activeView !== 'stats' && selectedTodo && isMobileDetailOpen ? (
             <div className="mobile-detail-layer">
               <button
                 type="button"
@@ -1165,7 +1532,7 @@ function App() {
               readOnly={isReadOnly}
             />
           ) : null
-        ) : activeView === 'board' ? null : (
+        ) : activeView === 'board' || activeView === 'stats' ? null : (
           <TodoDetailPane
             selectedTodo={selectedTodo}
             categories={activeCategories}
@@ -1189,7 +1556,6 @@ function App() {
         setPassphrase={setPassphrase}
         handleWorkspaceSubmit={handleWorkspaceSubmit}
         handleInstall={handleInstall}
-        enterGuestMode={enterGuestMode}
         busy={busy}
         message={message}
         installPrompt={installPrompt}
@@ -1208,7 +1574,6 @@ function WorkspaceAccessDialog({
   setPassphrase,
   handleWorkspaceSubmit,
   handleInstall,
-  enterGuestMode,
   busy,
   message,
   installPrompt,
@@ -1222,7 +1587,6 @@ function WorkspaceAccessDialog({
   setPassphrase: (value: string) => void
   handleWorkspaceSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>
   handleInstall: () => Promise<void>
-  enterGuestMode: () => void
   busy: boolean
   message: string
   installPrompt: BeforeInstallPromptEvent | null
@@ -1232,8 +1596,6 @@ function WorkspaceAccessDialog({
   if (!open) {
     return null
   }
-
-  const showPwaMeta = pwaLabel !== '等待浏览器安装入口'
 
   return (
     <div className="category-dialog-backdrop workspace-dialog-backdrop" role="presentation" onClick={closeDialog}>
@@ -1245,75 +1607,99 @@ function WorkspaceAccessDialog({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="category-dialog-head workspace-dialog-head">
-          <h3 id="workspace-dialog-title">创建或加入你的任务工作台</h3>
+          <div>
+            <p className="eyebrow">接入工作区</p>
+            <h3 id="workspace-dialog-title">创建或加入你的任务工作台</h3>
+          </div>
           <button type="button" className="detail-close" aria-label="关闭工作区对话框" onClick={closeDialog}>
             ×
           </button>
         </div>
 
-        <form className="category-dialog-form workspace-form workspace-dialog-form" onSubmit={handleWorkspaceSubmit}>
-          <div className="segmented" aria-label="工作区接入方式">
-            <button
-              type="button"
-              className={workspaceMode === 'create' ? 'active' : ''}
-              onClick={() => setWorkspaceMode('create')}
-            >
-              创建工作区
-            </button>
-            <button
-              type="button"
-              className={workspaceMode === 'join' ? 'active' : ''}
-              onClick={() => setWorkspaceMode('join')}
-            >
-              加入工作区
-            </button>
-          </div>
-
-          <label>
-            <span>工作区口令</span>
-            <input
-              value={passphrase}
-              onChange={(event) => setPassphrase(event.target.value)}
-              placeholder="至少 6 个字符…"
-              minLength={6}
-              name="workspacePassphrase"
-              autoComplete="off"
-            />
-          </label>
-
-          <p className="workspace-dialog-message" role="status" aria-live="polite">
-            {message}
-          </p>
-
-          {(installPrompt || showPwaMeta) && (
-            <div className="workspace-dialog-secondary">
-              {installPrompt ? (
-                <button
-                  className="ghost-button workspace-dialog-install"
-                  onClick={() => void handleInstall()}
-                  disabled={busy}
-                  type="button"
-                >
-                  安装到桌面
-                </button>
-              ) : null}
-              {showPwaMeta ? <p className="workspace-dialog-meta">{pwaLabel}</p> : null}
+        <div className="workspace-dialog-grid">
+          <section className="workspace-dialog-copy">
+            <p>
+              首次进入也可以直接先浏览主界面。真正提交创建 / 加入时，匿名会话会自动建立，不再拆成单独步骤。
+            </p>
+            <div className="onboarding-metrics workspace-dialog-metrics">
+              <div>
+                <span>模式</span>
+                <strong>{envSummary}</strong>
+              </div>
+              <div>
+                <span>PWA</span>
+                <strong>{pwaLabel}</strong>
+              </div>
+              <div>
+                <span>同步</span>
+                <strong>本地优先 + Supabase</strong>
+              </div>
             </div>
-          )}
+          </section>
 
-          <div className="category-dialog-actions category-form-actions workspace-dialog-actions">
-            <button className="secondary-button" type="button" onClick={enterGuestMode}>
-              游客模式
+          <form className="workspace-form workspace-dialog-form" onSubmit={handleWorkspaceSubmit}>
+            <div className="segmented">
+              <button
+                type="button"
+                className={workspaceMode === 'create' ? 'active' : ''}
+                onClick={() => setWorkspaceMode('create')}
+              >
+                创建工作区
+              </button>
+              <button
+                type="button"
+                className={workspaceMode === 'join' ? 'active' : ''}
+                onClick={() => setWorkspaceMode('join')}
+              >
+                加入工作区
+              </button>
+            </div>
+
+            <label>
+              <span>工作区口令</span>
+              <input
+                value={passphrase}
+                onChange={(event) => setPassphrase(event.target.value)}
+                placeholder="至少 6 个字符…"
+                minLength={6}
+                name="workspacePassphrase"
+                autoComplete="off"
+              />
+            </label>
+
+            <p className="workspace-dialog-hint">提交时会自动处理匿名会话，并继续沿用现有同步链路。</p>
+
+            <div className="category-dialog-actions category-form-actions workspace-dialog-actions">
+              <button className="secondary-button" type="button" onClick={closeDialog}>
+                先看看界面
+              </button>
+              <button className="primary-button" type="submit" disabled={busy || !isSupabaseConfigured}>
+                {busy
+                  ? '提交中...'
+                  : workspaceMode === 'create'
+                    ? '创建并进入工作台'
+                    : '加入并进入工作台'}
+              </button>
+            </div>
+          </form>
+
+          <aside className="setup-status workspace-dialog-status" aria-live="polite">
+            <p className="eyebrow">当前状态</p>
+            <h2>{message}</h2>
+            <p>已有历史工作区会继续自动恢复；这里只有首次接入和手动切换入口。</p>
+          </aside>
+
+          <section className="setup-card compact workspace-install-panel">
+            <div className="setup-head">
+              <p>可选能力</p>
+              <h2>PWA 安装</h2>
+            </div>
+            <p className="setup-body">如果浏览器支持，你仍然可以把 Plantick 安装到桌面。</p>
+            <button className="ghost-button" onClick={() => void handleInstall()} disabled={!installPrompt} type="button">
+              {installPrompt ? '安装到桌面' : pwaLabel}
             </button>
-            <button className="primary-button" type="submit" disabled={busy || !isSupabaseConfigured}>
-              {busy
-                ? '提交中...'
-                : workspaceMode === 'create'
-                  ? '创建并进入工作台'
-                  : '加入并进入工作台'}
-            </button>
-          </div>
-        </form>
+          </section>
+        </div>
       </div>
     </div>
   )
@@ -1324,16 +1710,21 @@ function WorkspaceEmptyState({
   onCreateWorkspace,
   onJoinWorkspace,
   onEnterGuestMode,
+  onEnterSeedWorkspace,
+  seedWorkspaceStatus,
 }: {
   message: string
   onCreateWorkspace: () => void
   onJoinWorkspace: () => void
   onEnterGuestMode: () => void
+  onEnterSeedWorkspace: () => void
+  seedWorkspaceStatus: SeedWorkspaceStatus
 }) {
   return (
     <section className="workspace-empty-state empty-state">
       <div className="workspace-empty-card">
-        <h2>选择一种进入方式。</h2>
+        <p className="eyebrow">欢迎进入 PlanTick</p>
+        <h2>先看看真实工作台结构，再决定如何接入工作区。</h2>
         <p>{message}</p>
         <div className="workspace-empty-actions">
           <button className="primary-button" type="button" onClick={onCreateWorkspace}>
@@ -1343,8 +1734,33 @@ function WorkspaceEmptyState({
             加入工作区
           </button>
           <button className="ghost-button" type="button" onClick={onEnterGuestMode}>
-            游客模式
+            先看示例
           </button>
+        </div>
+
+        <div className="seed-workspace-card">
+          <div className="seed-workspace-copy">
+            <p className="eyebrow">快速体验</p>
+            <h3>直接进入带统计样本的工作区</h3>
+            <p>会自动创建示例分类、任务和事件，并把工作区口令展示在这里，方便你在别的设备直接加入。</p>
+          </div>
+          <div className="seed-workspace-actions">
+            <button className="secondary-button" type="button" onClick={onEnterSeedWorkspace}>
+              打开示例工作区
+            </button>
+            {seedWorkspaceStatus.kind === 'pending' ? <span className="seed-workspace-status">正在准备示例工作区…</span> : null}
+            {seedWorkspaceStatus.kind === 'ready' ? (
+              <div className="seed-workspace-passphrase" role="status">
+                <span>工作区口令</span>
+                <strong>{seedWorkspaceStatus.passphrase}</strong>
+              </div>
+            ) : null}
+            {seedWorkspaceStatus.kind === 'failed' ? (
+              <p className="seed-workspace-error" role="alert">
+                {seedWorkspaceStatus.message}
+              </p>
+            ) : null}
+          </div>
         </div>
       </div>
     </section>
@@ -1842,6 +2258,9 @@ function TodoBoard({
 }) {
   return (
     <section className={readOnly ? 'todo-board is-readonly' : 'todo-board'}>
+      {readOnly ? (
+        <div className="readonly-tip">当前为只读示例模式，不能新建任务或切换状态。</div>
+      ) : null}
       <form className="quick-create" onSubmit={(event) => void handleQuickCreateTodo(event)}>
         <div className={readOnly ? 'quick-create-shell is-disabled' : 'quick-create-shell'}>
           <span className="quick-create-icon" aria-hidden="true">
@@ -1850,7 +2269,7 @@ function TodoBoard({
           <input
             value={quickTodoTitle}
             onChange={(event) => setQuickTodoTitle(event.target.value)}
-            placeholder={readOnly ? '任务仅供查看' : '添加任务'}
+            placeholder={readOnly ? '游客模式下不可新建任务' : '添加任务'}
             aria-label="快速新建任务"
             name="quickTodoTitle"
             autoComplete="off"
@@ -2039,6 +2458,234 @@ function StatusBoard({
   )
 }
 
+function StatsBoard({
+  metricCards,
+  statusDistribution,
+  categoryDistribution,
+  dueDistribution,
+  dayLoad,
+  historicalCompletionSeries,
+}: {
+  metricCards: StatsMetricCard[]
+  statusDistribution: StatsDistributionItem[]
+  categoryDistribution: StatsDistributionItem[]
+  dueDistribution: StatsDistributionItem[]
+  dayLoad: StatsDayLoad[]
+  historicalCompletionSeries: StatsHistoricalCompletionPoint[]
+}) {
+  return (
+    <section className="stats-board" aria-label="数据统计">
+      <div className="stats-grid stats-metrics-grid">
+        {metricCards.map((metric) => (
+          <article key={metric.label} className="stats-panel stats-metric-card">
+            <span>{metric.label}</span>
+            <strong>{metric.value}</strong>
+            <p>{metric.helper}</p>
+          </article>
+        ))}
+      </div>
+
+      <div className="stats-grid stats-main-grid">
+        <StatsDistributionCard title="状态分布" items={statusDistribution} />
+        <StatsDistributionCard title="分类分布" items={categoryDistribution} emptyLabel="暂无分类任务" />
+        <StatsDistributionCard title="日期分布" items={dueDistribution} />
+      </div>
+
+      <div className="stats-grid stats-secondary-grid">
+        <StatsLineChartCard
+          title="过去 14 天到期任务完成情况"
+          description="按任务截止日回看，不代表真实完成发生时间"
+          points={historicalCompletionSeries}
+        />
+        <StatsTrendCard title="未来 7 天安排密度" dayLoad={dayLoad} />
+      </div>
+    </section>
+  )
+}
+
+function StatsDistributionCard({
+  title,
+  items,
+  emptyLabel = '暂无数据',
+}: {
+  title: string
+  items: StatsDistributionItem[]
+  emptyLabel?: string
+}) {
+  const maxValue = Math.max(...items.map((item) => item.value), 0)
+  const visibleItems = items.filter((item) => item.value > 0)
+
+  return (
+    <article className="stats-panel stats-card">
+      <div className="stats-card-head">
+        <h2>{title}</h2>
+      </div>
+      {visibleItems.length ? (
+        <div className="stats-bar-list" role="list">
+          {visibleItems.map((item) => {
+            const ratio = maxValue ? item.value / maxValue : 0
+            return (
+              <div key={item.id} className="stats-bar-row" role="listitem">
+                <div className="stats-bar-copy">
+                  <strong>{item.label}</strong>
+                  <span>{item.helper ?? `${item.value} 项`}</span>
+                </div>
+                <div className="stats-bar-track" aria-hidden="true">
+                  <span
+                    className="stats-bar-fill"
+                    style={{ '--stats-bar-width': `${Math.max(ratio * 100, item.value ? 10 : 0)}%`, '--stats-bar-accent': item.accent } as CSSProperties}
+                  />
+                </div>
+                <b>{item.value}</b>
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <div className="stats-empty">{emptyLabel}</div>
+      )}
+    </article>
+  )
+}
+
+function StatsLineChartCard({
+  title,
+  description,
+  points,
+}: {
+  title: string
+  description: string
+  points: StatsHistoricalCompletionPoint[]
+}) {
+  const hasData = points.some((point) => point.totalCount > 0)
+  const totalDueCount = points.reduce((sum, point) => sum + point.totalCount, 0)
+  const totalCompletedCount = points.reduce((sum, point) => sum + point.completedCount, 0)
+  const stepX = points.length > 1 ? 100 / (points.length - 1) : 0
+  const plottedPoints = points.map((point, index) => ({
+    ...point,
+    x: stepX * index,
+    y: point.completionRate === null ? null : 100 - point.completionRate * 100,
+  }))
+
+  let linePath = ''
+  for (const point of plottedPoints) {
+    if (point.y === null) {
+      continue
+    }
+
+    linePath += `${linePath ? ' L ' : 'M '}${point.x.toFixed(2)} ${point.y.toFixed(2)}`
+  }
+
+  return (
+    <article className="stats-panel stats-card">
+      <div className="stats-card-head stats-card-head-stack">
+        <div>
+          <h2>{title}</h2>
+          <p className="stats-card-description">{description}</p>
+        </div>
+      </div>
+      {hasData ? (
+        <>
+          <div className="stats-line-chart-shell">
+            <div className="stats-line-chart-frame">
+              <div className="stats-line-chart-yaxis" aria-hidden="true">
+                <span>100%</span>
+                <span>50%</span>
+                <span>0%</span>
+              </div>
+              <div className="stats-line-chart-body">
+                <svg
+                  className="stats-line-chart"
+                  viewBox="0 0 100 100"
+                  preserveAspectRatio="none"
+                  role="img"
+                  aria-label="过去 14 天到期任务完成率趋势图"
+                >
+                  <line x1="0" y1="0" x2="100" y2="0" className="stats-line-chart-guide" />
+                  <line x1="0" y1="50" x2="100" y2="50" className="stats-line-chart-guide" />
+                  <line x1="0" y1="100" x2="100" y2="100" className="stats-line-chart-guide" />
+                  {linePath ? <path d={linePath} className="stats-line-chart-path" /> : null}
+                  {plottedPoints.map((point) =>
+                    point.y === null ? null : (
+                      <g key={point.date}>
+                        <circle cx={point.x} cy={point.y} r="2.5" className="stats-line-chart-node" />
+                        <title>{`${point.date}：${formatPercentage(point.completionRate ?? 0)} · ${point.completedCount}/${point.totalCount}`}</title>
+                      </g>
+                    ),
+                  )}
+                </svg>
+                <div className="stats-line-chart-labels" aria-hidden="true">
+                  {points.map((point) => (
+                    <span key={point.date} className="stats-line-chart-label">
+                      {point.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="stats-line-chart-foot">
+            <span>14 天内到期 {totalDueCount} 项</span>
+            <span>当前已完成 {totalCompletedCount} 项</span>
+          </div>
+        </>
+      ) : (
+        <div className="stats-empty">过去 14 天暂无到期任务</div>
+      )}
+    </article>
+  )
+}
+
+function StatsTrendCard({
+  title,
+  dayLoad,
+}: {
+  title: string
+  dayLoad: StatsDayLoad[]
+}) {
+  const maxCount = Math.max(...dayLoad.flatMap((day) => [day.taskCount, day.eventCount]), 0)
+
+  return (
+    <article className="stats-panel stats-card">
+      <div className="stats-card-head stats-card-head-stack">
+        <div>
+          <h2>{title}</h2>
+          <p className="stats-card-description">任务：当天到期的待办 · 事件：当天日程里的安排</p>
+        </div>
+      </div>
+      <div className="stats-trend-legend" aria-label="安排密度图例">
+        <span className="stats-trend-legend-item">
+          <span className="stats-trend-legend-swatch stats-trend-legend-swatch-task" aria-hidden="true" />
+          任务
+        </span>
+        <span className="stats-trend-legend-item">
+          <span className="stats-trend-legend-swatch stats-trend-legend-swatch-event" aria-hidden="true" />
+          事件
+        </span>
+      </div>
+      <div className="stats-trend-grid" role="list">
+        {dayLoad.map((day) => {
+          const total = day.taskCount + day.eventCount
+          const taskHeight = maxCount ? Math.max((day.taskCount / maxCount) * 100, day.taskCount ? 12 : 0) : 0
+          const eventHeight = maxCount ? Math.max((day.eventCount / maxCount) * 100, day.eventCount ? 12 : 0) : 0
+
+          return (
+            <div key={day.date} className="stats-trend-day" role="listitem">
+              <span className="stats-trend-total">{total}</span>
+              <div className="stats-trend-bars" aria-hidden="true">
+                <span className="stats-trend-bar stats-trend-bar-tasks" style={{ height: `${taskHeight}%` }} />
+                <span className="stats-trend-bar stats-trend-bar-events" style={{ height: `${eventHeight}%` }} />
+              </div>
+              <strong>{day.label}</strong>
+              <span>{day.taskCount} 任务 · {day.eventCount} 事件</span>
+            </div>
+          )
+        })}
+      </div>
+    </article>
+  )
+}
+
 function TodoDetailPane({
   selectedTodo,
   categories,
@@ -2217,7 +2864,6 @@ function TodoDetailPane({
       ]
     : []
   const detailStatusOptions: TodoStatus[] = ['not_started', 'in_progress', 'completed', 'blocked', 'canceled']
-
   const detailPaneClassName = [
     className ?? 'detail-pane',
     selectedTodo ? 'is-open' : '',
@@ -2228,6 +2874,9 @@ function TodoDetailPane({
 
   if (readOnly) {
     const readonlyStatusMeta = selectedTodo ? todoStatusMeta[selectedTodo.status] : null
+    const readonlyCategory = selectedTodo
+      ? categories.find((category) => category.id === selectedTodo.categoryId) ?? null
+      : null
     const readonlyDueDate = selectedTodo?.dueDate ? formatCalendarFullDate(selectedTodo.dueDate) : '未设置截止日期'
     const readonlyMyDay = selectedTodo
       ? getMyDayMembership({ dueDate: selectedTodo.dueDate, myDayDate: selectedTodo.myDayDate })
@@ -2237,8 +2886,9 @@ function TodoDetailPane({
       <aside className={detailPaneClassName} aria-label="任务详情">
         {selectedTodo && detailDraft && readonlyStatusMeta ? (
           <>
-            {showCloseButton ? (
-              <div className="detail-head detail-head-compact">
+            <div className="detail-head detail-head-compact">
+              <div className="detail-readonly-badge">只读详情</div>
+              {showCloseButton ? (
                 <button
                   className="detail-close"
                   onClick={() => {
@@ -2251,8 +2901,8 @@ function TodoDetailPane({
                 >
                   ×
                 </button>
-              </div>
-            ) : null}
+              ) : null}
+            </div>
 
             <div className="detail-scroll">
               <div className="detail-stack detail-stack-ordered">
@@ -2264,30 +2914,21 @@ function TodoDetailPane({
                   <div className="detail-card-head">
                     <span>状态</span>
                   </div>
-                  <div className="detail-status-grid">
-                    {detailStatusOptions.map((status) => {
-                      const statusMeta = todoStatusMeta[status]
-                      const isActive = selectedTodo.status === status
-                      return (
-                        <div
-                          key={status}
-                          className={isActive ? 'detail-status-choice active' : 'detail-status-choice'}
-                          style={
-                            isActive
-                              ? ({
-                                  '--detail-status-tone': statusMeta.tone,
-                                  '--detail-status-accent': statusMeta.accent,
-                                } as CSSProperties)
-                              : undefined
-                          }
-                        >
-                          <span className="detail-status-choice-icon" aria-hidden="true">
-                            {renderStatusIcon(status)}
-                          </span>
-                          <span>{statusMeta.label}</span>
-                        </div>
-                      )
-                    })}
+                  <div className="detail-status-grid detail-status-grid-readonly">
+                    <div
+                      className="detail-status-choice active"
+                      style={
+                        {
+                          '--detail-status-tone': readonlyStatusMeta.tone,
+                          '--detail-status-accent': readonlyStatusMeta.accent,
+                        } as CSSProperties
+                      }
+                    >
+                      <span className="detail-status-choice-icon" aria-hidden="true">
+                        {renderStatusIcon(selectedTodo.status)}
+                      </span>
+                      <span>{readonlyStatusMeta.label}</span>
+                    </div>
                   </div>
                 </section>
 
@@ -2296,27 +2937,16 @@ function TodoDetailPane({
                     <span>分类</span>
                   </div>
                   <div className="detail-category-strip detail-category-strip-readonly">
-                    {orderedCategoryOptions.map((option) => {
-                      const isActive = selectedTodo.categoryId === option.categoryId
-                      return (
-                        <div
-                          key={option.key}
-                          className={[
-                            isActive ? 'detail-category-chip active' : 'detail-category-chip',
-                            option.neutral ? 'neutral' : '',
-                          ]
-                            .filter(Boolean)
-                            .join(' ')}
-                          style={
-                            {
-                              '--chip-tone': option.color ?? '#dfe6eb',
-                            } as CSSProperties
-                          }
-                        >
-                          {option.label}
-                        </div>
-                      )
-                    })}
+                    <div
+                      className={readonlyCategory ? 'detail-category-chip active' : 'detail-category-chip neutral active'}
+                      style={
+                        {
+                          '--chip-tone': readonlyCategory?.color ?? '#dfe6eb',
+                        } as CSSProperties
+                      }
+                    >
+                      {readonlyCategory?.name ?? '未分类'}
+                    </div>
                   </div>
                 </section>
 
@@ -2355,9 +2985,16 @@ function TodoDetailPane({
                 </section>
               </div>
             </div>
+
+            <div className="detail-footer detail-footer-left">
+              <p className="detail-footer-hint">示例数据仅用于预览，不支持编辑、删除或同步。</p>
+            </div>
           </>
         ) : (
-          <div className="detail-empty" />
+          <div className="detail-empty">
+            <h2>点开一条任务，右侧会展示示例详情。</h2>
+            <p>游客模式下详情仅供阅读，不支持编辑与删除。</p>
+          </div>
         )}
       </aside>
     )
@@ -3392,6 +4029,187 @@ function formatReadonlyRecurrenceLabel(recurrenceType: TodoRecurrenceType, dueDa
   return formatRecurrenceOptionLabel(recurrenceType, dueDate)
 }
 
+function buildStatsSummary(todos: TodoRecord[], events: EventRecord[]) {
+  const today = todayDate()
+  const nextSevenDaysEnd = nextDate(6)
+  const statusCounts: Record<TodoStatus, number> = {
+    not_started: 0,
+    in_progress: 0,
+    completed: 0,
+    blocked: 0,
+    canceled: 0,
+  }
+
+  let overdueTodos = 0
+  let todayFocusTodos = 0
+  let upcomingTodos = 0
+
+  for (const todo of todos) {
+    statusCounts[todo.status] += 1
+
+    if (todo.status !== 'completed' && todo.dueDate && todo.dueDate < today) {
+      overdueTodos += 1
+    }
+
+    if (isTodoInMyDay(todo)) {
+      todayFocusTodos += 1
+    }
+
+    if (todo.dueDate && todo.dueDate >= today && todo.dueDate <= nextSevenDaysEnd) {
+      upcomingTodos += 1
+    }
+  }
+
+  const openTodos = todos.length - statusCounts.completed
+  const dueBuckets = {
+    overdue: 0,
+    today: 0,
+    nextSevenDays: 0,
+    later: 0,
+    noDate: 0,
+  }
+
+  for (const todo of todos) {
+    if (!todo.dueDate) {
+      dueBuckets.noDate += 1
+      continue
+    }
+
+    if (todo.status !== 'completed' && todo.dueDate < today) {
+      dueBuckets.overdue += 1
+      continue
+    }
+
+    if (todo.dueDate === today) {
+      dueBuckets.today += 1
+      continue
+    }
+
+    if (todo.dueDate <= nextSevenDaysEnd) {
+      dueBuckets.nextSevenDays += 1
+      continue
+    }
+
+    dueBuckets.later += 1
+  }
+
+  const upcomingEvents = events.filter((event) => event.date >= today && event.date <= nextSevenDaysEnd).length
+
+  return {
+    totalTodos: todos.length,
+    completedTodos: statusCounts.completed,
+    openTodos,
+    overdueTodos,
+    todayFocusTodos,
+    totalEvents: events.length,
+    upcomingScheduledItems: upcomingTodos + upcomingEvents,
+    completionRate: todos.length ? statusCounts.completed / todos.length : 0,
+    statusCounts,
+    dueBuckets,
+  }
+}
+
+function buildCategoryDistribution(todos: TodoRecord[], categories: CategoryRecord[]): StatsDistributionItem[] {
+  const categoryMap = new Map(categories.map((category) => [category.id, category]))
+  const counts = new Map<string, StatsDistributionItem>()
+
+  for (const todo of todos) {
+    const category = todo.categoryId ? categoryMap.get(todo.categoryId) ?? null : null
+    const key = category?.id ?? 'uncategorized'
+    const current = counts.get(key)
+
+    if (current) {
+      current.value += 1
+      continue
+    }
+
+    counts.set(key, {
+      id: key,
+      label: category?.name ?? '未分类',
+      value: 1,
+      accent: category?.color ?? '#94a3b8',
+    })
+  }
+
+  return Array.from(counts.values()).sort((left, right) => right.value - left.value || left.label.localeCompare(right.label, 'zh-CN'))
+}
+
+function buildUpcomingDayLoad(todos: TodoRecord[], events: EventRecord[]): StatsDayLoad[] {
+  const eventCountByDate = new Map<string, number>()
+  for (const event of events) {
+    eventCountByDate.set(event.date, (eventCountByDate.get(event.date) ?? 0) + 1)
+  }
+
+  const todoCountByDate = new Map<string, number>()
+  for (const todo of todos) {
+    if (!todo.dueDate) {
+      continue
+    }
+
+    todoCountByDate.set(todo.dueDate, (todoCountByDate.get(todo.dueDate) ?? 0) + 1)
+  }
+
+  const today = new Date(`${todayDate()}T00:00:00`)
+  const result: StatsDayLoad[] = []
+
+  for (let offset = 0; offset < 7; offset += 1) {
+    const current = new Date(today)
+    current.setDate(today.getDate() + offset)
+    const date = formatDateInputValue(current)
+    result.push({
+      date,
+      label: offset === 0 ? '今天' : formatDayOfMonth(date),
+      taskCount: todoCountByDate.get(date) ?? 0,
+      eventCount: eventCountByDate.get(date) ?? 0,
+    })
+  }
+
+  return result
+}
+
+function buildHistoricalCompletionSeries(todos: TodoRecord[]): StatsHistoricalCompletionPoint[] {
+  const totalsByDate = new Map<string, { totalCount: number; completedCount: number }>()
+
+  for (const todo of todos) {
+    if (!todo.dueDate) {
+      continue
+    }
+
+    const current = totalsByDate.get(todo.dueDate) ?? { totalCount: 0, completedCount: 0 }
+    current.totalCount += 1
+    if (todo.status === 'completed') {
+      current.completedCount += 1
+    }
+    totalsByDate.set(todo.dueDate, current)
+  }
+
+  const today = new Date(`${todayDate()}T00:00:00`)
+  const result: StatsHistoricalCompletionPoint[] = []
+
+  for (let offset = 13; offset >= 0; offset -= 1) {
+    const current = new Date(today)
+    current.setDate(today.getDate() - offset)
+    const date = formatDateInputValue(current)
+    const counts = totalsByDate.get(date)
+    const totalCount = counts?.totalCount ?? 0
+    const completedCount = counts?.completedCount ?? 0
+
+    result.push({
+      date,
+      label: formatDayOfMonth(date),
+      totalCount,
+      completedCount,
+      completionRate: totalCount ? completedCount / totalCount : null,
+    })
+  }
+
+  return result
+}
+
+function formatPercentage(value: number) {
+  return `${Math.round(value * 100)}%`
+}
+
 function createNextRecurringTodo(baseTodo: TodoRecord, updatedAt: string): TodoRecord | null {
   const nextDueDate = getNextRecurringDueDate(baseTodo.dueDate, baseTodo.recurrenceType)
   if (!nextDueDate) {
@@ -3483,12 +4301,14 @@ function renderStatusIcon(status: TodoStatus) {
   }
 }
 
-function renderSidebarIcon(icon: 'today' | 'all' | 'board' | 'calendar') {
+function renderSidebarIcon(icon: 'today' | 'all' | 'board' | 'stats' | 'calendar') {
   switch (icon) {
     case 'today':
       return <Sun size={18} strokeWidth={2.15} />
     case 'board':
       return <SquareKanban size={18} strokeWidth={2.15} />
+    case 'stats':
+      return <BarChart3 size={18} strokeWidth={2.15} />
     case 'calendar':
       return <CalendarDays size={18} strokeWidth={2.15} />
     default:
