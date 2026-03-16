@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 function formatMonthDay(date: Date) {
   return `${date.getMonth() + 1}月${date.getDate()}日`
@@ -13,6 +13,70 @@ function addDays(date: Date, days: number) {
 function weekdayLabel(date: Date) {
   return ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][date.getDay()]
 }
+
+async function expectWorkspaceAccessDialog(page: Page) {
+  const dialog = page.getByRole('dialog', { name: '创建或加入你的任务工作台' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByRole('button', { name: '创建工作区' })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: '加入工作区' })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: '游客模式' })).toBeVisible()
+  await expect(dialog.getByLabel('工作区口令')).toBeVisible()
+  await expect(dialog.getByText('接入工作区')).toHaveCount(0)
+  await expect(dialog.getByRole('heading', { name: 'PWA 安装' })).toHaveCount(0)
+}
+
+async function createWorkspaceFromDialog(page: Page, passphrase: string) {
+  await expectWorkspaceAccessDialog(page)
+  await page.getByPlaceholder('至少 6 个字符…').fill(passphrase)
+  await page.getByRole('button', { name: '创建并进入工作台' }).click()
+  await expect(page.getByRole('dialog', { name: '创建或加入你的任务工作台' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '新建分类' })).toBeVisible()
+}
+
+test('phase 2 首次进入直接展示工作台并支持游客模式', async ({ page, baseURL }) => {
+  await page.goto(baseURL!)
+  await page.setViewportSize({ width: 1440, height: 960 })
+
+  await expect(page.getByRole('heading', { name: '待办箱' })).toBeVisible()
+  await expectWorkspaceAccessDialog(page)
+  await page.getByRole('dialog', { name: '创建或加入你的任务工作台' }).getByRole('button', { name: '游客模式' }).click()
+  await expect(page.getByRole('dialog', { name: '创建或加入你的任务工作台' })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: '待办箱' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '创建工作区' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '加入工作区' })).toBeVisible()
+
+  await expect(page.getByRole('status')).toContainText('游客模式')
+  await expect(page.getByRole('button', { name: '查看任务 整理今天的优先事项' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '查看任务 补完上周遗留的发布检查' })).toBeVisible()
+  await expect(page.getByLabel('快速新建任务')).toBeDisabled()
+  await expect(page.getByRole('button', { name: '查看任务 整理今天的优先事项' })).toBeVisible()
+
+  const readonlyStatusButton = page.getByRole('button', { name: '查看任务状态，当前未开始' }).first()
+  await expect(readonlyStatusButton).toBeDisabled()
+  await expect(page.getByRole('button', { name: '查看任务状态，当前未开始' }).first()).toBeVisible()
+
+  await page.getByRole('button', { name: '查看任务 整理今天的优先事项' }).click()
+  await expect(page.getByLabel('任务标题')).toHaveCount(0)
+  await expect(page.getByText('未开始')).toBeVisible()
+  await expect(page.getByText('进行中')).toBeVisible()
+  await expect(page.getByText('已完成')).toBeVisible()
+  await expect(page.getByText('阻塞')).toBeVisible()
+  await expect(page.getByText('取消')).toBeVisible()
+  await expect(page.getByLabel('任务分类').getByText('工作')).toBeVisible()
+  await expect(page.getByLabel('任务分类').getByText('生活')).toBeVisible()
+  await expect(page.getByLabel('任务分类').getByText('学习')).toBeVisible()
+
+  await page.getByRole('button', { name: '看板' }).click()
+  await expect(page.getByLabel('状态看板')).toBeVisible()
+  await expect(page.getByText('补完上周遗留的发布检查')).toBeVisible()
+
+  await page.getByRole('button', { name: '日程概览' }).click()
+  await expect(page.locator('.calendar-grid')).toBeVisible()
+  await expect(page.locator('.calendar-grid').getByText('整理今天的优先事项')).toBeVisible()
+
+  await page.getByRole('button', { name: '创建工作区' }).click()
+  await expectWorkspaceAccessDialog(page)
+})
 
 test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情并刷新恢复', async ({
   page,
@@ -33,13 +97,9 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
     await expect(page.getByRole('button', { name: name, exact: true })).toBeVisible()
   }
 
-  await page.getByRole('button', { name: '匿名登录并检查 Supabase' }).click()
-  await expect(page.getByText('匿名会话已建立，可以创建或加入工作区。')).toBeVisible()
-
-  await page.getByPlaceholder('至少 6 个字符…').fill(passphrase)
-  await page.getByRole('button', { name: '调用 workspace-create' }).click()
+  await createWorkspaceFromDialog(page, passphrase)
   await expect(page.getByRole('heading', { name: '待办箱' })).toBeVisible()
-  await expect(page.locator('.sidebar-nav .sidebar-icon svg')).toHaveCount(3)
+  await expect(page.locator('.sidebar-nav .sidebar-icon svg')).toHaveCount(4)
   await page.getByLabel('快速新建任务').focus()
   await expect(page.getByLabel('快速新建任务')).toHaveCSS('outline-style', 'none')
 
@@ -278,11 +338,7 @@ test('phase 4 日程概览：月历展示截止事项并支持在日历中改期
     await page.waitForTimeout(500)
   }
 
-  await page.getByRole('button', { name: '匿名登录并检查 Supabase' }).click()
-  await expect(page.getByText('匿名会话已建立，可以创建或加入工作区。')).toBeVisible()
-
-  await page.getByPlaceholder('至少 6 个字符…').fill(passphrase)
-  await page.getByRole('button', { name: '调用 workspace-create' }).click()
+  await createWorkspaceFromDialog(page, passphrase)
   await expect(page.getByRole('heading', { name: '待办箱' })).toBeVisible()
 
   await createTodayTask('月历任务一')

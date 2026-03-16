@@ -33,7 +33,7 @@ import {
   upsertCategory,
   upsertTodo,
 } from './lib/db'
-import { envSummary, isSupabaseConfigured } from './lib/env'
+import { isSupabaseConfigured } from './lib/env'
 import type { CategoryRecord, TodoRecord, TodoRecurrenceType, TodoStatus } from './lib/types'
 import { enqueueRecordMutation } from './lib/sync'
 import { ensureAnonymousSession, invokeWorkspaceFunction } from './lib/supabase'
@@ -41,6 +41,7 @@ import { ensureAnonymousSession, invokeWorkspaceFunction } from './lib/supabase'
 type WorkspaceMode = 'create' | 'join'
 type WorkspaceView = 'todos' | 'board' | 'calendar'
 type TaskFilter = 'all' | 'today' | 'overdue' | 'completed'
+type WorkspaceRuntimeMode = 'workspace' | 'guest' | 'unattached'
 
 type BoardStatusColumn = 'not_started' | 'in_progress' | 'blocked'
 type StatusBoardColumn = {
@@ -130,6 +131,105 @@ const todoStatusMeta: Record<TodoStatus, { label: string; tone: string; accent: 
 }
 
 const boardStatuses: BoardStatusColumn[] = ['not_started', 'in_progress', 'blocked']
+const demoWorkspaceId = 'guest-demo-workspace'
+const demoCategories: CategoryRecord[] = [
+  {
+    id: 'guest-category-work',
+    workspaceId: demoWorkspaceId,
+    name: '工作',
+    color: '#2563EB',
+    updatedAt: '2026-03-16T08:00:00.000Z',
+    deleted: false,
+  },
+  {
+    id: 'guest-category-personal',
+    workspaceId: demoWorkspaceId,
+    name: '生活',
+    color: '#16A34A',
+    updatedAt: '2026-03-16T08:05:00.000Z',
+    deleted: false,
+  },
+  {
+    id: 'guest-category-learning',
+    workspaceId: demoWorkspaceId,
+    name: '学习',
+    color: '#F97316',
+    updatedAt: '2026-03-16T08:10:00.000Z',
+    deleted: false,
+  },
+]
+const demoTodos: TodoRecord[] = [
+  {
+    id: 'guest-todo-today',
+    workspaceId: demoWorkspaceId,
+    title: '整理今天的优先事项',
+    categoryId: 'guest-category-work',
+    dueDate: todayDate(),
+    myDayDate: null,
+    status: 'not_started',
+    completed: false,
+    note: '先处理客户反馈，再安排下午的评审。',
+    recurrenceType: 'none',
+    updatedAt: '2026-03-16T08:20:00.000Z',
+    deleted: false,
+  },
+  {
+    id: 'guest-todo-overdue',
+    workspaceId: demoWorkspaceId,
+    title: '补完上周遗留的发布检查',
+    categoryId: 'guest-category-work',
+    dueDate: nextDate(-1),
+    myDayDate: null,
+    status: 'blocked',
+    completed: false,
+    note: '卡在设计确认，等最终素材。',
+    recurrenceType: 'none',
+    updatedAt: '2026-03-15T18:00:00.000Z',
+    deleted: false,
+  },
+  {
+    id: 'guest-todo-progress',
+    workspaceId: demoWorkspaceId,
+    title: '准备周会同步材料',
+    categoryId: 'guest-category-learning',
+    dueDate: nextDate(1),
+    myDayDate: todayDate(),
+    status: 'in_progress',
+    completed: false,
+    note: '',
+    recurrenceType: 'none',
+    updatedAt: '2026-03-16T10:30:00.000Z',
+    deleted: false,
+  },
+  {
+    id: 'guest-todo-completed',
+    workspaceId: demoWorkspaceId,
+    title: '回顾昨天完成的事项',
+    categoryId: 'guest-category-personal',
+    dueDate: nextDate(-1),
+    myDayDate: null,
+    status: 'completed',
+    completed: true,
+    note: '',
+    recurrenceType: 'none',
+    updatedAt: '2026-03-16T07:40:00.000Z',
+    deleted: false,
+  },
+  {
+    id: 'guest-todo-uncategorized',
+    workspaceId: demoWorkspaceId,
+    title: '把灵感先记进待办箱',
+    categoryId: null,
+    dueDate: null,
+    myDayDate: todayDate(),
+    status: 'not_started',
+    completed: false,
+    note: '未分类任务会先留在 Inbox，之后再分派到列表。',
+    recurrenceType: 'none',
+    updatedAt: '2026-03-16T09:00:00.000Z',
+    deleted: false,
+  },
+]
 
 declare global {
   interface WindowEventMap {
@@ -143,6 +243,8 @@ function App() {
   const [activeView, setActiveView] = useState<WorkspaceView>('todos')
   const [passphrase, setPassphrase] = useState('')
   const [workspaceId, setWorkspaceId] = useState('')
+  const [runtimeMode, setRuntimeMode] = useState<WorkspaceRuntimeMode>('unattached')
+  const [workspaceDialogOpen, setWorkspaceDialogOpen] = useState(false)
   const [sessionLabel, setSessionLabel] = useState('尚未建立匿名会话')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('请选择工作区后开始管理任务。')
@@ -167,20 +269,24 @@ function App() {
   const [confirmDeleteTodo, setConfirmDeleteTodo] = useState(false)
   const lastSavedDraftRef = useRef('')
 
+  const sourceCategories = runtimeMode === 'guest' ? demoCategories : categories
+  const sourceTodos = runtimeMode === 'guest' ? demoTodos : todos
+  const isReadOnly = runtimeMode !== 'workspace'
+
   const activeCategories = useMemo(
     () =>
-      categories
+      sourceCategories
         .filter((category) => !category.deleted)
         .sort((left, right) => left.name.localeCompare(right.name, 'zh-CN')),
-    [categories],
+    [sourceCategories],
   )
 
   const activeTodos = useMemo(
     () =>
-      todos
+      sourceTodos
         .filter((todo) => !todo.deleted)
         .sort((left, right) => compareTodos(left, right)),
-    [todos],
+    [sourceTodos],
   )
 
   const selectedCategory =
@@ -241,6 +347,9 @@ function App() {
     const restore = async () => {
       const restoredWorkspaceId = await loadWorkspaceId()
       if (!restoredWorkspaceId) {
+        setRuntimeMode('unattached')
+        setWorkspaceDialogOpen(true)
+        setMessage('请选择一种进入方式。')
         return
       }
 
@@ -379,9 +488,15 @@ function App() {
     const resolvedWorkspaceId = nextWorkspaceId ?? (await loadWorkspaceId())
     if (!resolvedWorkspaceId) {
       setWorkspaceId('')
+      setRuntimeMode('unattached')
       setCategories([])
       setTodos([])
+      setSelectedCategoryId(null)
+      setSelectedUncategorized(false)
+      setActiveFilter('all')
       setSelectedTodoId(null)
+      setActiveView('todos')
+      setSessionLabel('尚未建立匿名会话')
       return
     }
 
@@ -392,6 +507,8 @@ function App() {
     ])
 
     setWorkspaceId(resolvedWorkspaceId)
+    setRuntimeMode('workspace')
+    setWorkspaceDialogOpen(false)
     setCategories(nextCategories)
     setTodos(nextTodos)
     setSessionLabel(
@@ -410,31 +527,13 @@ function App() {
     )
   }
 
-  async function handleAnonymousSignIn() {
-    if (!isSupabaseConfigured) {
-      setMessage('缺少 Supabase 环境变量，当前无法建立匿名会话。')
-      return
-    }
-
-    setBusy(true)
-    try {
-      const session = await ensureAnonymousSession()
-      setSessionLabel(`设备会话 ${session.user.id.slice(0, 8)}`)
-      setMessage('匿名会话已建立，可以创建或加入工作区。')
-
-      if (workspaceId) {
-        await saveCurrentWorkspaceMeta(workspaceId, session.user.id)
-        await refreshWorkspaceData(workspaceId)
-      }
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : '匿名登录失败')
-    } finally {
-      setBusy(false)
-    }
-  }
-
   async function handleWorkspaceSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+
+    if (!isSupabaseConfigured) {
+      setMessage('缺少 Supabase 环境变量，当前无法创建或加入工作区。')
+      return
+    }
 
     if (passphrase.trim().length < 6) {
       setMessage('工作区口令至少需要 6 个字符。')
@@ -450,6 +549,8 @@ function App() {
       await saveCurrentWorkspaceMeta(response.workspaceId, session.user.id)
       await refreshWorkspaceData(response.workspaceId)
 
+      setRuntimeMode('workspace')
+      setWorkspaceDialogOpen(false)
       setMessage(
         `${workspaceMode === 'create' ? '创建' : '加入'}工作区成功，已进入任务工作台。`,
       )
@@ -681,6 +782,28 @@ function App() {
     }
   }
 
+    function openWorkspaceDialog(mode: WorkspaceMode = workspaceMode) {
+    setWorkspaceMode(mode)
+    setWorkspaceDialogOpen(true)
+  }
+
+  function closeWorkspaceDialog() {
+    setWorkspaceDialogOpen(false)
+  }
+
+  function enterGuestMode() {
+    setRuntimeMode('guest')
+    setWorkspaceId('')
+    setWorkspaceDialogOpen(false)
+    setSelectedCategoryId(null)
+    setSelectedUncategorized(false)
+    setActiveFilter('all')
+    setSelectedTodoId(demoTodos[0]?.id ?? null)
+    setActiveView('todos')
+    setQuickTodoTitle('')
+    setMessage('游客模式')
+  }
+
   const shellClassName = [
     'workspace-shell',
     activeView === 'calendar' ? 'calendar-layout' : '',
@@ -688,24 +811,6 @@ function App() {
   ]
     .filter(Boolean)
     .join(' ')
-
-  if (!workspaceId) {
-    return (
-      <OnboardingLayout
-        workspaceMode={workspaceMode}
-        setWorkspaceMode={setWorkspaceMode}
-        passphrase={passphrase}
-        setPassphrase={setPassphrase}
-        handleAnonymousSignIn={handleAnonymousSignIn}
-        handleWorkspaceSubmit={handleWorkspaceSubmit}
-        handleInstall={handleInstall}
-        busy={busy}
-        message={message}
-        installPrompt={installPrompt}
-        pwaLabel={pwaLabel}
-      />
-    )
-  }
 
   const boardTitle =
     activeView === 'calendar'
@@ -719,73 +824,124 @@ function App() {
             : filterLabels[activeFilter]
 
   return (
-    <main className={shellClassName}>
-      <Sidebar
-        sessionLabel={sessionLabel}
-        activeView={activeView}
-        setActiveView={setActiveView}
-        activeFilter={activeFilter}
-        setActiveFilter={setActiveFilter}
-        selectedCategoryId={selectedCategoryId}
-        setSelectedCategoryId={setSelectedCategoryId}
-        selectedUncategorized={selectedUncategorized}
-        setSelectedUncategorized={setSelectedUncategorized}
-        setSelectedTodoId={setSelectedTodoId}
-        sidebarCounts={sidebarCounts}
-        categories={activeCategories}
-        newCategoryName={newCategoryName}
-        setNewCategoryName={setNewCategoryName}
-        newCategoryColor={newCategoryColor}
-        setNewCategoryColor={setNewCategoryColor}
-        handleCreateCategory={handleCreateCategory}
-        selectedCategory={selectedCategory}
-        categoryEditorName={categoryEditorName}
-        setCategoryEditorName={setCategoryEditorName}
-        categoryEditorColor={categoryEditorColor}
-        setCategoryEditorColor={setCategoryEditorColor}
-        handleSaveCategory={handleSaveCategory}
-        handleDeleteCategory={handleDeleteCategory}
-        busy={busy}
-      />
+    <>
+      <main className={shellClassName}>
+        <Sidebar
+          sessionLabel={runtimeMode === 'guest' ? '游客模式' : sessionLabel}
+          activeView={activeView}
+          setActiveView={setActiveView}
+          activeFilter={activeFilter}
+          setActiveFilter={setActiveFilter}
+          selectedCategoryId={selectedCategoryId}
+          setSelectedCategoryId={setSelectedCategoryId}
+          selectedUncategorized={selectedUncategorized}
+          setSelectedUncategorized={setSelectedUncategorized}
+          setSelectedTodoId={setSelectedTodoId}
+          sidebarCounts={sidebarCounts}
+          categories={activeCategories}
+          newCategoryName={newCategoryName}
+          setNewCategoryName={setNewCategoryName}
+          newCategoryColor={newCategoryColor}
+          setNewCategoryColor={setNewCategoryColor}
+          handleCreateCategory={handleCreateCategory}
+          selectedCategory={selectedCategory}
+          categoryEditorName={categoryEditorName}
+          setCategoryEditorName={setCategoryEditorName}
+          categoryEditorColor={categoryEditorColor}
+          setCategoryEditorColor={setCategoryEditorColor}
+          handleSaveCategory={handleSaveCategory}
+          handleDeleteCategory={handleDeleteCategory}
+          busy={busy}
+          readOnly={isReadOnly}
+        />
 
-      <section className="board-pane">
-        {activeView === 'calendar' ? null : (
-          <header className="board-header">
-            <div className="board-heading">
-              <h1>{boardTitle}</h1>
+        <section className="board-pane">
+          {runtimeMode === 'guest' ? (
+            <div className="workspace-banner" role="status">
+              <strong>游客模式</strong>
+              <div className="workspace-banner-actions">
+                <button className="secondary-button" type="button" onClick={() => openWorkspaceDialog('create')}>
+                  创建工作区
+                </button>
+                <button className="primary-button" type="button" onClick={() => openWorkspaceDialog('join')}>
+                  加入工作区
+                </button>
+              </div>
             </div>
-          </header>
-        )}
+          ) : null}
 
-        {activeView === 'calendar' ? (
-          <CalendarBoard
-            todosByDate={calendarTodosByDate}
-            selectedDate={selectedCalendarDate}
-            selectedTodoId={selectedTodoId}
-            visibleMonth={calendarMonth}
-            setVisibleMonth={setCalendarMonth}
-            setSelectedDate={setSelectedCalendarDate}
-            setSelectedTodoId={setSelectedTodoId}
-          />
-        ) : activeView === 'board' ? (
-          <StatusBoard columns={boardColumns} categories={activeCategories} />
-        ) : (
-          <TodoBoard
-            quickTodoTitle={quickTodoTitle}
-            setQuickTodoTitle={setQuickTodoTitle}
-            handleQuickCreateTodo={handleQuickCreateTodo}
-            visibleTodos={visibleTodos}
-            selectedTodoId={selectedTodoId}
-            setSelectedTodoId={setSelectedTodoId}
+          {activeView === 'calendar' ? null : (
+            <header className="board-header">
+              <div className="board-heading">
+                <h1>{boardTitle}</h1>
+              </div>
+            </header>
+          )}
+
+          {runtimeMode === 'unattached' ? (
+            <WorkspaceEmptyState
+              message={message}
+              onCreateWorkspace={() => openWorkspaceDialog('create')}
+              onJoinWorkspace={() => openWorkspaceDialog('join')}
+              onEnterGuestMode={enterGuestMode}
+            />
+          ) : activeView === 'calendar' ? (
+            <CalendarBoard
+              todosByDate={calendarTodosByDate}
+              selectedDate={selectedCalendarDate}
+              selectedTodoId={selectedTodoId}
+              visibleMonth={calendarMonth}
+              setVisibleMonth={setCalendarMonth}
+              setSelectedDate={setSelectedCalendarDate}
+              setSelectedTodoId={setSelectedTodoId}
+            />
+          ) : activeView === 'board' ? (
+            <StatusBoard columns={boardColumns} categories={activeCategories} />
+          ) : (
+            <TodoBoard
+              quickTodoTitle={quickTodoTitle}
+              setQuickTodoTitle={setQuickTodoTitle}
+              handleQuickCreateTodo={handleQuickCreateTodo}
+              visibleTodos={visibleTodos}
+              selectedTodoId={selectedTodoId}
+              setSelectedTodoId={setSelectedTodoId}
+              categories={activeCategories}
+              handleToggleTodo={handleToggleTodo}
+              showCategoryMeta={shouldShowTodoCategoryMeta}
+              readOnly={isReadOnly}
+            />
+          )}
+        </section>
+
+        {runtimeMode === 'unattached' ? (
+          <TodoDetailPane
+            selectedTodo={null}
             categories={activeCategories}
-            handleToggleTodo={handleToggleTodo}
-            showCategoryMeta={shouldShowTodoCategoryMeta}
+            detailDraft={null}
+            setDetailDraft={setDetailDraft}
+            handleDeleteTodo={handleDeleteTodo}
+            confirmDeleteTodo={false}
+            setConfirmDeleteTodo={setConfirmDeleteTodo}
+            closeDetail={() => setSelectedTodoId(null)}
+            busy={busy}
+            readOnly
           />
-        )}
-      </section>
-
-      {activeView === 'calendar' ? (
-        selectedTodo ? (
+        ) : activeView === 'calendar' ? (
+          selectedTodo ? (
+            <TodoDetailPane
+              selectedTodo={selectedTodo}
+              categories={activeCategories}
+              detailDraft={detailDraft}
+              setDetailDraft={setDetailDraft}
+              handleDeleteTodo={handleDeleteTodo}
+              confirmDeleteTodo={confirmDeleteTodo}
+              setConfirmDeleteTodo={setConfirmDeleteTodo}
+              closeDetail={() => setSelectedTodoId(null)}
+              busy={busy}
+              readOnly={isReadOnly}
+            />
+          ) : null
+        ) : activeView === 'board' ? null : (
           <TodoDetailPane
             selectedTodo={selectedTodo}
             categories={activeCategories}
@@ -796,155 +952,178 @@ function App() {
             setConfirmDeleteTodo={setConfirmDeleteTodo}
             closeDetail={() => setSelectedTodoId(null)}
             busy={busy}
+            readOnly={isReadOnly}
           />
-        ) : null
-      ) : activeView === 'board' ? null : (
-        <TodoDetailPane
-          selectedTodo={selectedTodo}
-          categories={activeCategories}
-          detailDraft={detailDraft}
-          setDetailDraft={setDetailDraft}
-          handleDeleteTodo={handleDeleteTodo}
-          confirmDeleteTodo={confirmDeleteTodo}
-          setConfirmDeleteTodo={setConfirmDeleteTodo}
-          closeDetail={() => setSelectedTodoId(null)}
-          busy={busy}
-        />
-      )}
-    </main>
+        )}
+      </main>
+
+      <WorkspaceAccessDialog
+        open={workspaceDialogOpen}
+        workspaceMode={workspaceMode}
+        setWorkspaceMode={setWorkspaceMode}
+        passphrase={passphrase}
+        setPassphrase={setPassphrase}
+        handleWorkspaceSubmit={handleWorkspaceSubmit}
+        handleInstall={handleInstall}
+        enterGuestMode={enterGuestMode}
+        busy={busy}
+        message={message}
+        installPrompt={installPrompt}
+        pwaLabel={pwaLabel}
+        closeDialog={closeWorkspaceDialog}
+      />
+    </>
   )
 }
 
-function OnboardingLayout({
+function WorkspaceAccessDialog({
+  open,
   workspaceMode,
   setWorkspaceMode,
   passphrase,
   setPassphrase,
-  handleAnonymousSignIn,
   handleWorkspaceSubmit,
   handleInstall,
+  enterGuestMode,
   busy,
   message,
   installPrompt,
   pwaLabel,
+  closeDialog,
 }: {
+  open: boolean
   workspaceMode: WorkspaceMode
   setWorkspaceMode: (mode: WorkspaceMode) => void
   passphrase: string
   setPassphrase: (value: string) => void
-  handleAnonymousSignIn: () => Promise<void>
   handleWorkspaceSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>
   handleInstall: () => Promise<void>
+  enterGuestMode: () => void
   busy: boolean
   message: string
   installPrompt: BeforeInstallPromptEvent | null
   pwaLabel: string
+  closeDialog: () => void
+}) {
+  if (!open) {
+    return null
+  }
+
+  const showPwaMeta = pwaLabel !== '等待浏览器安装入口'
+
+  return (
+    <div className="category-dialog-backdrop workspace-dialog-backdrop" role="presentation" onClick={closeDialog}>
+      <div
+        className="category-dialog workspace-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="workspace-dialog-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="category-dialog-head workspace-dialog-head">
+          <h3 id="workspace-dialog-title">创建或加入你的任务工作台</h3>
+          <button type="button" className="detail-close" aria-label="关闭工作区对话框" onClick={closeDialog}>
+            ×
+          </button>
+        </div>
+
+        <form className="category-dialog-form workspace-form workspace-dialog-form" onSubmit={handleWorkspaceSubmit}>
+          <div className="segmented" aria-label="工作区接入方式">
+            <button
+              type="button"
+              className={workspaceMode === 'create' ? 'active' : ''}
+              onClick={() => setWorkspaceMode('create')}
+            >
+              创建工作区
+            </button>
+            <button
+              type="button"
+              className={workspaceMode === 'join' ? 'active' : ''}
+              onClick={() => setWorkspaceMode('join')}
+            >
+              加入工作区
+            </button>
+          </div>
+
+          <label>
+            <span>工作区口令</span>
+            <input
+              value={passphrase}
+              onChange={(event) => setPassphrase(event.target.value)}
+              placeholder="至少 6 个字符…"
+              minLength={6}
+              name="workspacePassphrase"
+              autoComplete="off"
+            />
+          </label>
+
+          <p className="workspace-dialog-message" role="status" aria-live="polite">
+            {message}
+          </p>
+
+          {(installPrompt || showPwaMeta) && (
+            <div className="workspace-dialog-secondary">
+              {installPrompt ? (
+                <button
+                  className="ghost-button workspace-dialog-install"
+                  onClick={() => void handleInstall()}
+                  disabled={busy}
+                  type="button"
+                >
+                  安装到桌面
+                </button>
+              ) : null}
+              {showPwaMeta ? <p className="workspace-dialog-meta">{pwaLabel}</p> : null}
+            </div>
+          )}
+
+          <div className="category-dialog-actions category-form-actions workspace-dialog-actions">
+            <button className="secondary-button" type="button" onClick={enterGuestMode}>
+              游客模式
+            </button>
+            <button className="primary-button" type="submit" disabled={busy || !isSupabaseConfigured}>
+              {busy
+                ? '提交中...'
+                : workspaceMode === 'create'
+                  ? '创建并进入工作台'
+                  : '加入并进入工作台'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function WorkspaceEmptyState({
+  message,
+  onCreateWorkspace,
+  onJoinWorkspace,
+  onEnterGuestMode,
+}: {
+  message: string
+  onCreateWorkspace: () => void
+  onJoinWorkspace: () => void
+  onEnterGuestMode: () => void
 }) {
   return (
-    <main className="onboarding-shell">
-      <section className="onboarding-copy">
-        <p className="eyebrow">PlanTick</p>
-        <h1>先连上工作区，再进入高密度任务工作台。</h1>
-        <p>
-          Phase 3 不再是验证壳。当前入口只保留工作区接入、匿名会话和 PWA 安装能力，
-          真正的任务管理会在接入成功后展开。
-        </p>
-
-        <div className="onboarding-metrics">
-          <div>
-            <span>模式</span>
-            <strong>{envSummary}</strong>
-          </div>
-          <div>
-            <span>PWA</span>
-            <strong>{pwaLabel}</strong>
-          </div>
-          <div>
-            <span>架构</span>
-            <strong>本地优先 + 按需展开详情</strong>
-          </div>
+    <section className="workspace-empty-state empty-state">
+      <div className="workspace-empty-card">
+        <h2>选择一种进入方式。</h2>
+        <p>{message}</p>
+        <div className="workspace-empty-actions">
+          <button className="primary-button" type="button" onClick={onCreateWorkspace}>
+            创建工作区
+          </button>
+          <button className="secondary-button" type="button" onClick={onJoinWorkspace}>
+            加入工作区
+          </button>
+          <button className="ghost-button" type="button" onClick={onEnterGuestMode}>
+            游客模式
+          </button>
         </div>
-      </section>
-
-      <section className="onboarding-panel">
-        <div className="panel-stack">
-          <article className="setup-card">
-            <div className="setup-head">
-              <p>Step A</p>
-              <h2>匿名会话</h2>
-            </div>
-            <p className="setup-body">
-              匿名会话只用于工作区接入和后续受限 API 调用，不暴露为注册登录流程。
-            </p>
-            <button className="primary-button" onClick={() => void handleAnonymousSignIn()} disabled={busy}>
-              {busy ? '处理中...' : '匿名登录并检查 Supabase'}
-            </button>
-          </article>
-
-          <article className="setup-card">
-            <div className="setup-head">
-              <p>Step B</p>
-              <h2>创建或加入工作区</h2>
-            </div>
-
-            <form className="workspace-form" onSubmit={handleWorkspaceSubmit}>
-              <div className="segmented">
-                <button
-                  type="button"
-                  className={workspaceMode === 'create' ? 'active' : ''}
-                  onClick={() => setWorkspaceMode('create')}
-                >
-                  创建工作区
-                </button>
-                <button
-                  type="button"
-                  className={workspaceMode === 'join' ? 'active' : ''}
-                  onClick={() => setWorkspaceMode('join')}
-                >
-                  加入口令工作区
-                </button>
-              </div>
-
-              <label>
-                <span>工作区口令</span>
-                <input
-                  value={passphrase}
-                  onChange={(event) => setPassphrase(event.target.value)}
-                  placeholder="至少 6 个字符…"
-                  minLength={6}
-                  name="workspacePassphrase"
-                  autoComplete="off"
-                />
-              </label>
-
-              <button className="secondary-button" type="submit" disabled={busy || !isSupabaseConfigured}>
-                {busy
-                  ? '提交中...'
-                  : workspaceMode === 'create'
-                    ? '调用 workspace-create'
-                    : '调用 workspace-join'}
-              </button>
-            </form>
-          </article>
-
-          <article className="setup-card compact">
-            <div className="setup-head">
-              <p>Step C</p>
-              <h2>PWA 安装</h2>
-            </div>
-            <button className="ghost-button" onClick={() => void handleInstall()} disabled={!installPrompt}>
-              {installPrompt ? '安装到桌面' : pwaLabel}
-            </button>
-          </article>
-        </div>
-
-        <aside className="setup-status" aria-live="polite">
-          <p className="eyebrow">当前状态</p>
-          <h2>{message}</h2>
-          <p>成功接入后默认进入任务页，桌面端先聚焦主列表，选中任务时再展开详情。</p>
-        </aside>
-      </section>
-    </main>
+      </div>
+    </section>
   )
 }
 
@@ -974,6 +1153,7 @@ function Sidebar({
   handleSaveCategory,
   handleDeleteCategory,
   busy,
+  readOnly,
 }: {
   sessionLabel: string
   activeView: WorkspaceView
@@ -1000,6 +1180,7 @@ function Sidebar({
   handleSaveCategory: () => Promise<void>
   handleDeleteCategory: (category?: CategoryRecord) => Promise<void>
   busy: boolean
+  readOnly: boolean
 }) {
   const [categoryDialogMode, setCategoryDialogMode] = useState<'create' | 'edit' | null>(null)
   const [pendingDeleteCategory, setPendingDeleteCategory] = useState<CategoryRecord | null>(null)
@@ -1007,10 +1188,18 @@ function Sidebar({
   const dialogTitle = categoryDialogMode === 'edit' ? '编辑分类' : '新建分类'
 
   const openCreateDialog = () => {
+    if (readOnly) {
+      return
+    }
+
     setCategoryDialogMode('create')
   }
 
   const openEditDialog = (category: CategoryRecord) => {
+    if (readOnly) {
+      return
+    }
+
     setActiveView('todos')
     setSelectedCategoryId(category.id)
     setSelectedUncategorized(false)
@@ -1040,7 +1229,7 @@ function Sidebar({
   }
 
   return (
-    <aside className="sidebar-pane">
+    <aside className={readOnly ? 'sidebar-pane is-readonly' : 'sidebar-pane'}>
       <div className="sidebar-brandbar">
         <div className="sidebar-brandmark" aria-hidden="true">
           <Inbox size={18} strokeWidth={2.2} />
@@ -1128,14 +1317,17 @@ function Sidebar({
           <div>
             <span>我的列表</span>
           </div>
-          <button
-            type="button"
-            className={categoryDialogMode === 'create' ? 'sidebar-plain-button active' : 'sidebar-plain-button'}
-            aria-label="新建分类"
-            onClick={openCreateDialog}
-          >
-            <Plus size={16} strokeWidth={2.2} aria-hidden="true" />
-          </button>
+          {readOnly ? <span className="sidebar-readonly-tag">只读</span> : null}
+          {!readOnly ? (
+            <button
+              type="button"
+              className={categoryDialogMode === 'create' ? 'sidebar-plain-button active' : 'sidebar-plain-button'}
+              aria-label="新建分类"
+              onClick={openCreateDialog}
+            >
+              <Plus size={16} strokeWidth={2.2} aria-hidden="true" />
+            </button>
+          ) : null}
         </div>
 
         <div className="category-list">
@@ -1178,20 +1370,22 @@ function Sidebar({
                 <span className="category-name">{category.name}</span>
               </button>
 
-              <button
-                type="button"
-                className="category-edit-button"
-                aria-label={`编辑分类 ${category.name}`}
-                onClick={() => openEditDialog(category)}
-              >
-                <Pencil size={15} strokeWidth={2.2} aria-hidden="true" />
-              </button>
+              {!readOnly ? (
+                <button
+                  type="button"
+                  className="category-edit-button"
+                  aria-label={`编辑分类 ${category.name}`}
+                  onClick={() => openEditDialog(category)}
+                >
+                  <Pencil size={15} strokeWidth={2.2} aria-hidden="true" />
+                </button>
+              ) : null}
             </div>
           ))}
         </div>
       </section>
 
-      {categoryDialogMode ? (
+      {!readOnly && categoryDialogMode ? (
         <div className="category-dialog-backdrop" role="presentation" onClick={closeCategoryDialog}>
           <div
             className="category-dialog"
@@ -1306,7 +1500,7 @@ function Sidebar({
         </div>
       ) : null}
 
-      {pendingDeleteCategory ? (
+      {!readOnly && pendingDeleteCategory ? (
         <div className="category-dialog-backdrop" role="presentation" onClick={() => setPendingDeleteCategory(null)}>
           <div
             className="category-confirm-dialog"
@@ -1367,6 +1561,7 @@ function TodoBoard({
   categories,
   handleToggleTodo,
   showCategoryMeta,
+  readOnly,
 }: {
   quickTodoTitle: string
   setQuickTodoTitle: (value: string) => void
@@ -1377,24 +1572,26 @@ function TodoBoard({
   categories: CategoryRecord[]
   handleToggleTodo: (todo: TodoRecord) => Promise<void>
   showCategoryMeta: boolean
+  readOnly: boolean
 }) {
   return (
-    <section className="todo-board">
+    <section className={readOnly ? 'todo-board is-readonly' : 'todo-board'}>
       <form className="quick-create" onSubmit={(event) => void handleQuickCreateTodo(event)}>
-        <div className="quick-create-shell">
+        <div className={readOnly ? 'quick-create-shell is-disabled' : 'quick-create-shell'}>
           <span className="quick-create-icon" aria-hidden="true">
             +
           </span>
           <input
             value={quickTodoTitle}
             onChange={(event) => setQuickTodoTitle(event.target.value)}
-            placeholder="添加任务"
+            placeholder={readOnly ? '任务仅供查看' : '添加任务'}
             aria-label="快速新建任务"
             name="quickTodoTitle"
             autoComplete="off"
+            disabled={readOnly}
           />
         </div>
-        <button type="submit" className="sr-only">
+        <button type="submit" className="sr-only" disabled={readOnly}>
           创建任务
         </button>
       </form>
@@ -1405,6 +1602,14 @@ function TodoBoard({
             const category = categories.find((item) => item.id === todo.categoryId) ?? null
             const statusMeta = todoStatusMeta[todo.status]
             const dueLabel = formatDueDate(todo.dueDate, todo.status)
+            const dueText = dueLabel.label || '—'
+            const dueClassName = [
+              'todo-due',
+              dueLabel.emphasis ? 'is-alert' : '',
+              dueLabel.label ? '' : 'is-placeholder',
+            ]
+              .filter(Boolean)
+              .join(' ')
             const noteExcerpt = todo.note.trim().split('\n')[0]
             const hasNoteExcerpt = Boolean(noteExcerpt)
 
@@ -1433,8 +1638,15 @@ function TodoBoard({
                 <button
                   type="button"
                   className={`todo-status-trigger todo-status-${todo.status}`}
-                  aria-label={`切换任务状态，当前${statusMeta.label}`}
-                  onClick={() => void handleToggleTodo(todo)}
+                  aria-label={readOnly ? `查看任务状态，当前${statusMeta.label}` : `切换任务状态，当前${statusMeta.label}`}
+                  onClick={() => {
+                    if (readOnly) {
+                      return
+                    }
+
+                    void handleToggleTodo(todo)
+                  }}
+                  disabled={readOnly}
                 >
                   <span className="todo-status-icon" aria-hidden="true">
                     {renderStatusIcon(todo.status)}
@@ -1443,31 +1655,29 @@ function TodoBoard({
 
                 <button
                   type="button"
-                  className={hasNoteExcerpt ? 'todo-main has-note' : 'todo-main no-note'}
+                  className={hasNoteExcerpt ? 'todo-main' : 'todo-main no-note'}
                   aria-label={`查看任务 ${todo.title}`}
                   onClick={() => setSelectedTodoId(todo.id)}
                 >
-                  <div className={hasNoteExcerpt ? 'todo-row has-note' : 'todo-row no-note'}>
+                  <div className="todo-copy">
                     <strong>{todo.title}</strong>
-                    <div className={showCategoryMeta ? 'todo-meta-line' : 'todo-meta-line no-category'}>
-                      {showCategoryMeta ? (
-                        <span className={category ? 'todo-category' : 'todo-category is-neutral'}>
-                          <span
-                            className={category ? 'color-dot' : 'color-dot neutral'}
-                            style={category ? { backgroundColor: category.color } : undefined}
-                          />
-                          <span>{category?.name ?? '未分类'}</span>
-                        </span>
-                      ) : null}
-                      {dueLabel.label ? (
-                        <span className={dueLabel.emphasis ? 'todo-due is-alert' : 'todo-due'}>
-                          {dueLabel.label}
-                        </span>
-                      ) : null}
-                    </div>
+                    {noteExcerpt ? <p className="todo-excerpt">{noteExcerpt}</p> : null}
                   </div>
 
-                  {noteExcerpt ? <p className="todo-excerpt">{noteExcerpt}</p> : null}
+                  <div className={showCategoryMeta ? 'todo-meta-line' : 'todo-meta-line no-category'}>
+                    {showCategoryMeta ? (
+                      <span className={category ? 'todo-category' : 'todo-category is-neutral'}>
+                        <span
+                          className={category ? 'color-dot' : 'color-dot neutral'}
+                          style={category ? { backgroundColor: category.color } : undefined}
+                        />
+                        <span>{category?.name ?? '未分类'}</span>
+                      </span>
+                    ) : (
+                      <span className="todo-category-slot" aria-hidden="true" />
+                    )}
+                    <span className={dueClassName}>{dueText}</span>
+                  </div>
                 </button>
               </article>
             )
@@ -1520,6 +1730,14 @@ function StatusBoard({
                 {column.todos.map((todo) => {
                   const category = todo.categoryId ? categoryMap.get(todo.categoryId) ?? null : null
                   const dueLabel = formatDueDate(todo.dueDate, todo.status)
+                  const dueText = dueLabel.label || '—'
+                  const dueClassName = [
+                    'status-card-due',
+                    dueLabel.emphasis ? 'is-alert' : '',
+                    dueLabel.label ? '' : 'is-placeholder',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')
 
                   return (
                     <article key={todo.id} className="status-todo-card" role="listitem">
@@ -1534,11 +1752,7 @@ function StatusBoard({
                               />
                               <span>{category?.name ?? '未分类'}</span>
                             </span>
-                            {dueLabel.label ? (
-                              <span className={dueLabel.emphasis ? 'status-card-due is-alert' : 'status-card-due'}>
-                                {dueLabel.label}
-                              </span>
-                            ) : null}
+                            <span className={dueClassName}>{dueText}</span>
                           </div>
                         </div>
                       </div>
@@ -1569,6 +1783,7 @@ function TodoDetailPane({
   setConfirmDeleteTodo,
   closeDetail,
   busy,
+  readOnly,
 }: {
   selectedTodo: TodoRecord | null
   categories: CategoryRecord[]
@@ -1579,6 +1794,7 @@ function TodoDetailPane({
   setConfirmDeleteTodo: (value: boolean) => void
   closeDetail: () => void
   busy: boolean
+  readOnly: boolean
 }) {
   const selectedCategory = categories.find((category) => category.id === detailDraft?.categoryId) ?? null
   const [showCategoryPicker, setShowCategoryPicker] = useState(false)
@@ -1731,6 +1947,144 @@ function TodoDetailPane({
       ]
     : []
   const detailStatusOptions: TodoStatus[] = ['not_started', 'in_progress', 'completed', 'blocked', 'canceled']
+
+  if (readOnly) {
+    const readonlyStatusMeta = selectedTodo ? todoStatusMeta[selectedTodo.status] : null
+    const readonlyDueDate = selectedTodo?.dueDate ? formatCalendarFullDate(selectedTodo.dueDate) : '未设置截止日期'
+    const readonlyMyDay = selectedTodo
+      ? getMyDayMembership({ dueDate: selectedTodo.dueDate, myDayDate: selectedTodo.myDayDate })
+      : 'none'
+
+    return (
+      <aside
+        className={selectedTodo ? 'detail-pane is-open is-readonly' : 'detail-pane is-readonly'}
+        aria-label="任务详情"
+      >
+        {selectedTodo && detailDraft && readonlyStatusMeta ? (
+          <>
+            <div className="detail-head detail-head-compact">
+              <button
+                className="detail-close"
+                onClick={() => {
+                  setShowCategoryPicker(false)
+                  setShowCalendarPicker(false)
+                  closeDetail()
+                }}
+                aria-label="关闭详情"
+                type="button"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="detail-scroll">
+              <div className="detail-stack detail-stack-ordered">
+                <div className="detail-title-shell detail-title-shell-flat detail-static-shell">
+                  <h2 className="detail-static-title">{selectedTodo.title}</h2>
+                </div>
+
+                <section className="detail-section detail-section-tight" aria-label="任务状态">
+                  <div className="detail-card-head">
+                    <span>状态</span>
+                  </div>
+                  <div className="detail-status-grid">
+                    {detailStatusOptions.map((status) => {
+                      const statusMeta = todoStatusMeta[status]
+                      const isActive = selectedTodo.status === status
+                      return (
+                        <div
+                          key={status}
+                          className={isActive ? 'detail-status-choice active' : 'detail-status-choice'}
+                          style={
+                            isActive
+                              ? ({
+                                  '--detail-status-tone': statusMeta.tone,
+                                  '--detail-status-accent': statusMeta.accent,
+                                } as CSSProperties)
+                              : undefined
+                          }
+                        >
+                          <span className="detail-status-choice-icon" aria-hidden="true">
+                            {renderStatusIcon(status)}
+                          </span>
+                          <span>{statusMeta.label}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </section>
+
+                <section className="detail-section detail-section-tight" aria-label="任务分类">
+                  <div className="detail-card-head">
+                    <span>分类</span>
+                  </div>
+                  <div className="detail-category-strip detail-category-strip-readonly">
+                    {orderedCategoryOptions.map((option) => {
+                      const isActive = selectedTodo.categoryId === option.categoryId
+                      return (
+                        <div
+                          key={option.key}
+                          className={[
+                            isActive ? 'detail-category-chip active' : 'detail-category-chip',
+                            option.neutral ? 'neutral' : '',
+                          ]
+                            .filter(Boolean)
+                            .join(' ')}
+                          style={
+                            {
+                              '--chip-tone': option.color ?? '#dfe6eb',
+                            } as CSSProperties
+                          }
+                        >
+                          {option.label}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </section>
+
+                <section className="detail-section detail-section-tight" aria-label="日期信息">
+                  <div className="detail-card-head">
+                    <span>日期</span>
+                  </div>
+                  <div className="detail-readonly-group">
+                    <p className="detail-readonly-value">{readonlyDueDate}</p>
+                    <p className="detail-readonly-subtle">
+                      {readonlyMyDay === 'auto'
+                        ? '会自动出现在“我的一天”中'
+                        : readonlyMyDay === 'manual'
+                          ? '已手动加入“我的一天”'
+                          : '未加入“我的一天”'}
+                    </p>
+                  </div>
+                </section>
+
+                <section className="detail-section detail-section-tight" aria-label="重复设置">
+                  <div className="detail-card-head">
+                    <span>重复</span>
+                  </div>
+                  <p className="detail-readonly-value">
+                    {formatReadonlyRecurrenceLabel(selectedTodo.recurrenceType, selectedTodo.dueDate)}
+                  </p>
+                </section>
+
+                <section className="detail-section detail-section-tight" aria-label="备注">
+                  <div className="detail-card-head">
+                    <span>描述</span>
+                  </div>
+                  <p className={selectedTodo.note.trim() ? 'detail-readonly-note' : 'detail-readonly-note is-empty'}>
+                    {selectedTodo.note.trim() || '暂无备注'}
+                  </p>
+                </section>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="detail-empty" />
+        )}
+      </aside>
+    )
+  }
 
   return (
     <aside className={selectedTodo ? 'detail-pane is-open' : 'detail-pane'} aria-label="任务详情">
@@ -2741,6 +3095,18 @@ function formatMonthDayOfMonth(value: string) {
   }
 
   return `${new Date(`${value}T00:00:00`).getDate()}日`
+}
+
+function formatReadonlyRecurrenceLabel(recurrenceType: TodoRecurrenceType, dueDate: string | null) {
+  if (recurrenceType === 'none') {
+    return '不重复'
+  }
+
+  if (!dueDate) {
+    return '不重复'
+  }
+
+  return formatRecurrenceOptionLabel(recurrenceType, dueDate)
 }
 
 function createNextRecurringTodo(baseTodo: TodoRecord, updatedAt: string): TodoRecord | null {
