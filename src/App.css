@@ -790,7 +790,8 @@
 
 .board-pane {
   display: grid;
-  align-content: start;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-content: stretch;
   gap: 18px;
   min-width: 0;
   min-height: 100vh;
@@ -969,6 +970,7 @@
 
 .todo-board {
   gap: 16px;
+  align-content: start;
 }
 
 .status-board {
@@ -1336,6 +1338,39 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.todo-meta-line {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+}
+
+.todo-meta-line.no-category {
+  justify-content: flex-end;
+}
+
+.todo-category {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: #6b7c93;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.todo-category.is-neutral {
+  color: #90a4ae;
+}
+
+.todo-category span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .todo-due {
@@ -2972,6 +3007,7 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .todo-meta-line,
   .status-card-meta-line {
     justify-content: flex-start;
     flex-wrap: wrap;
