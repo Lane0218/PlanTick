@@ -505,6 +505,10 @@
   color: #1f6e66;
 }
 
+.sidebar-icon-board {
+  color: #4f7cff;
+}
+
 .sidebar-icon-calendar {
   color: #f28c28;
 }
@@ -790,19 +794,13 @@
 .board-header {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
   gap: 16px;
 }
 
 .board-heading {
   display: grid;
   gap: 4px;
-}
-
-.board-title-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  min-width: 0;
 }
 
 .board-heading h1 {
@@ -812,27 +810,214 @@
   letter-spacing: -0.05em;
 }
 
-.board-count {
+.todo-board {
+  gap: 16px;
+}
+
+.status-board {
+  min-width: 0;
+  min-height: 100%;
+}
+
+.status-board-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  align-items: stretch;
+  min-height: clamp(560px, calc(100vh - 172px), 880px);
+}
+
+.status-column {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-content: start;
+  gap: 14px;
+  min-width: 0;
+  min-height: clamp(560px, calc(100vh - 172px), 880px);
+  padding: 6px 20px 0 24px;
+  border: 0;
+  border-top: 1px solid var(--line-soft);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.status-column:first-child {
+  padding-left: 0;
+}
+
+.status-column:last-child {
+  padding-right: 0;
+}
+
+.status-column + .status-column::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  background: linear-gradient(180deg, #cfd8e1 0%, #dde4eb 100%);
+}
+
+.status-column-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 4px;
+}
+
+.status-column-title-row {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  min-width: 34px;
-  height: 26px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: #edf3f1;
-  color: #1f6e66;
-  font-size: 0.78rem;
+  gap: 10px;
+  min-width: 0;
+}
+
+.status-column-title-row h2 {
+  margin: 0;
+  color: #2c3e50;
+  font-size: 1rem;
   font-weight: 700;
 }
 
-.board-actions {
-  display: flex;
-  justify-content: flex-end;
+.status-column-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--status-accent, #f5f7fa);
+  color: var(--status-tone, #90a4ae);
+  flex-shrink: 0;
 }
 
-.todo-board {
-  gap: 16px;
+.status-column-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.status-column-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--status-accent, #f5f7fa);
+  color: var(--status-tone, #90a4ae);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.status-card-list {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  min-height: 100%;
+  border-top: 1px solid #eef2f5;
+  background: #ffffff;
+  padding-top: 8px;
+}
+
+.status-todo-card {
+  display: grid;
+  min-width: 0;
+  min-height: 76px;
+  padding: 14px 14px;
+  border: 1px solid color-mix(in srgb, var(--status-tone, #90a4ae) 12%, #ffffff);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--status-accent, #f8fafc) 78%, #ffffff);
+}
+
+.status-todo-card:last-child {
+  border-bottom: 0;
+}
+
+.status-card-content {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+}
+
+.status-card-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.status-card-row strong {
+  display: block;
+  color: #2c3e50;
+  font-size: 0.875rem;
+  line-height: 1.35;
+  font-weight: 400;
+  word-break: break-word;
+}
+
+.status-card-meta-line {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-width: 0;
+}
+
+.status-card-due {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.status-card-due.is-alert {
+  color: var(--danger);
+}
+
+.status-card-category {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: #6b7c93;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.status-card-category.is-neutral {
+  color: #90a4ae;
+}
+
+.status-card-category span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-column-empty {
+  align-content: center;
+  min-height: 100%;
+  padding: 24px 12px;
+  border-top: 1px solid #f0f3f6;
+  border-radius: 0;
+  background: transparent;
+}
+
+.status-column-empty h2 {
+  font-size: 1.02rem;
+}
+
+.status-column-empty p {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.6;
 }
 
 .quick-create {
@@ -2305,6 +2490,10 @@
 }
 
 @media (max-width: 980px) {
+  .status-board-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .onboarding-shell,
   .workspace-shell,
   .workspace-shell.has-detail {
@@ -2445,6 +2634,17 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .status-board {
+    overflow-x: auto;
+    margin-right: -16px;
+    padding-right: 16px;
+  }
+
+  .status-board-grid {
+    grid-template-columns: repeat(3, minmax(220px, 1fr));
+    min-width: 720px;
+  }
+
   .calendar-board {
     overflow-x: auto;
   }
@@ -2527,15 +2727,19 @@
     align-items: stretch;
   }
 
-  .board-actions {
-    justify-content: flex-start;
-  }
-
-  .todo-row {
+  .todo-row,
+  .status-card-row {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .todo-due {
+  .status-card-meta-line {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .todo-due,
+  .status-card-due {
     text-align: left;
   }
 }

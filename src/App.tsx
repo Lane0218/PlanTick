@@ -15,6 +15,7 @@ import {
   Pencil,
   PlayCircle,
   Plus,
+  SquareKanban,
   Sun,
   Trash2,
   X,
@@ -38,8 +39,15 @@ import { enqueueRecordMutation } from './lib/sync'
 import { ensureAnonymousSession, invokeWorkspaceFunction } from './lib/supabase'
 
 type WorkspaceMode = 'create' | 'join'
-type WorkspaceView = 'todos' | 'calendar'
+type WorkspaceView = 'todos' | 'board' | 'calendar'
 type TaskFilter = 'all' | 'today' | 'overdue' | 'completed'
+
+type BoardStatusColumn = 'not_started' | 'in_progress' | 'blocked'
+type StatusBoardColumn = {
+  status: BoardStatusColumn
+  meta: (typeof todoStatusMeta)[BoardStatusColumn]
+  todos: TodoRecord[]
+}
 
 type TodoDraft = {
   title: string
@@ -120,6 +128,8 @@ const todoStatusMeta: Record<TodoStatus, { label: string; tone: string; accent: 
     accent: '#F5F7FA',
   },
 }
+
+const boardStatuses: BoardStatusColumn[] = ['not_started', 'in_progress', 'blocked']
 
 declare global {
   interface WindowEventMap {
@@ -202,6 +212,15 @@ function App() {
   )
 
   const selectedTodo = activeTodos.find((todo) => todo.id === selectedTodoId) ?? null
+  const boardColumns = useMemo(
+    () =>
+      boardStatuses.map((status) => ({
+        status,
+        meta: todoStatusMeta[status],
+        todos: activeTodos.filter((todo) => todo.status === status),
+      })),
+    [activeTodos],
+  )
   const calendarTodosByDate = useMemo(() => groupTodosByDueDate(activeTodos), [activeTodos])
   const sidebarCounts = useMemo(
     () => ({
@@ -664,7 +683,7 @@ function App() {
   const shellClassName = [
     'workspace-shell',
     activeView === 'calendar' ? 'calendar-layout' : '',
-    selectedTodoId ? 'has-detail' : '',
+    activeView !== 'board' && selectedTodoId ? 'has-detail' : '',
   ]
     .filter(Boolean)
     .join(' ')
@@ -690,11 +709,13 @@ function App() {
   const boardTitle =
     activeView === 'calendar'
       ? '日程概览'
-      : selectedUncategorized
-        ? '未分类'
-        : selectedCategory
-          ? selectedCategory.name
-          : filterLabels[activeFilter]
+      : activeView === 'board'
+        ? '看板'
+        : selectedUncategorized
+          ? '未分类'
+          : selectedCategory
+            ? selectedCategory.name
+            : filterLabels[activeFilter]
 
   return (
     <main className={shellClassName}>
@@ -730,9 +751,7 @@ function App() {
         {activeView === 'calendar' ? null : (
           <header className="board-header">
             <div className="board-heading">
-              <div className="board-title-row">
-                <h1>{boardTitle}</h1>
-              </div>
+              <h1>{boardTitle}</h1>
             </div>
           </header>
         )}
@@ -747,6 +766,8 @@ function App() {
             setSelectedDate={setSelectedCalendarDate}
             setSelectedTodoId={setSelectedTodoId}
           />
+        ) : activeView === 'board' ? (
+          <StatusBoard columns={boardColumns} categories={activeCategories} />
         ) : (
           <TodoBoard
             quickTodoTitle={quickTodoTitle}
@@ -775,7 +796,7 @@ function App() {
             busy={busy}
           />
         ) : null
-      ) : (
+      ) : activeView === 'board' ? null : (
         <TodoDetailPane
           selectedTodo={selectedTodo}
           categories={activeCategories}
@@ -1060,6 +1081,25 @@ function Sidebar({
             <b>{item.count}</b>
           </button>
         ))}
+
+        <button
+          type="button"
+          className={activeView === 'board' ? 'sidebar-item active' : 'sidebar-item'}
+          onClick={(event) => {
+            event.currentTarget.blur()
+            setActiveView('board')
+            setSelectedCategoryId(null)
+            setSelectedUncategorized(false)
+            setSelectedTodoId(null)
+          }}
+        >
+          <span className="sidebar-item-main">
+            <span className="sidebar-icon sidebar-icon-board" aria-hidden="true">
+              {renderSidebarIcon('board')}
+            </span>
+            <span>看板</span>
+          </span>
+        </button>
 
         <button
           type="button"
@@ -1423,6 +1463,83 @@ function TodoBoard({
           <h2>暂无任务</h2>
         </div>
       )}
+    </section>
+  )
+}
+
+function StatusBoard({
+  columns,
+  categories,
+}: {
+  columns: StatusBoardColumn[]
+  categories: CategoryRecord[]
+}) {
+  const categoryMap = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories])
+
+  return (
+    <section className="status-board" aria-label="状态看板">
+      <div className="status-board-grid">
+        {columns.map((column) => (
+          <section
+            key={column.status}
+            className={`status-column status-column-${column.status}`}
+            style={
+              {
+                '--status-tone': column.meta.tone,
+                '--status-accent': column.meta.accent,
+              } as CSSProperties
+            }
+          >
+            <header className="status-column-header">
+              <div className="status-column-title-row">
+                <span className="status-column-icon" aria-hidden="true">
+                  {renderStatusIcon(column.status)}
+                </span>
+                <h2>{column.meta.label}</h2>
+              </div>
+              <span className="status-column-count">{column.todos.length}</span>
+            </header>
+
+            {column.todos.length ? (
+              <div className="status-card-list" role="list">
+                {column.todos.map((todo) => {
+                  const category = todo.categoryId ? categoryMap.get(todo.categoryId) ?? null : null
+                  const dueLabel = formatDueDate(todo.dueDate, todo.status)
+
+                  return (
+                    <article key={todo.id} className="status-todo-card" role="listitem">
+                      <div className="status-card-content">
+                        <div className="status-card-row">
+                          <strong>{todo.title}</strong>
+                          <div className="status-card-meta-line">
+                            <span className={category ? 'status-card-category' : 'status-card-category is-neutral'}>
+                              <span
+                                className={category ? 'color-dot' : 'color-dot neutral'}
+                                style={category ? { backgroundColor: category.color } : undefined}
+                              />
+                              <span>{category?.name ?? '未分类'}</span>
+                            </span>
+                            {dueLabel.label ? (
+                              <span className={dueLabel.emphasis ? 'status-card-due is-alert' : 'status-card-due'}>
+                                {dueLabel.label}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="status-column-empty empty-state">
+                <h2>暂无任务</h2>
+                <p>当前没有“{column.meta.label}”状态的待办事项。</p>
+              </div>
+            )}
+          </section>
+        ))}
+      </div>
     </section>
   )
 }
@@ -2702,10 +2819,12 @@ function renderStatusIcon(status: TodoStatus) {
   }
 }
 
-function renderSidebarIcon(icon: 'today' | 'all' | 'calendar') {
+function renderSidebarIcon(icon: 'today' | 'all' | 'board' | 'calendar') {
   switch (icon) {
     case 'today':
       return <Sun size={18} strokeWidth={2.15} />
+    case 'board':
+      return <SquareKanban size={18} strokeWidth={2.15} />
     case 'calendar':
       return <CalendarDays size={18} strokeWidth={2.15} />
     default:
