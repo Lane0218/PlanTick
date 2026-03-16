@@ -222,6 +222,7 @@ function App() {
     [activeTodos],
   )
   const calendarTodosByDate = useMemo(() => groupTodosByDueDate(activeTodos), [activeTodos])
+  const shouldShowTodoCategoryMeta = activeFilter === 'all' && !selectedCategoryId && !selectedUncategorized
   const sidebarCounts = useMemo(
     () => ({
       all: activeTodos.length,
@@ -778,6 +779,7 @@ function App() {
             setSelectedTodoId={setSelectedTodoId}
             categories={activeCategories}
             handleToggleTodo={handleToggleTodo}
+            showCategoryMeta={shouldShowTodoCategoryMeta}
           />
         )}
       </section>
@@ -1364,6 +1366,7 @@ function TodoBoard({
   setSelectedTodoId,
   categories,
   handleToggleTodo,
+  showCategoryMeta,
 }: {
   quickTodoTitle: string
   setQuickTodoTitle: (value: string) => void
@@ -1373,6 +1376,7 @@ function TodoBoard({
   setSelectedTodoId: (id: string | null) => void
   categories: CategoryRecord[]
   handleToggleTodo: (todo: TodoRecord) => Promise<void>
+  showCategoryMeta: boolean
 }) {
   return (
     <section className="todo-board">
@@ -1445,11 +1449,22 @@ function TodoBoard({
                 >
                   <div className={hasNoteExcerpt ? 'todo-row has-note' : 'todo-row no-note'}>
                     <strong>{todo.title}</strong>
-                    {dueLabel.label ? (
-                      <span className={dueLabel.emphasis ? 'todo-due is-alert' : 'todo-due'}>
-                        {dueLabel.label}
-                      </span>
-                    ) : null}
+                    <div className={showCategoryMeta ? 'todo-meta-line' : 'todo-meta-line no-category'}>
+                      {showCategoryMeta ? (
+                        <span className={category ? 'todo-category' : 'todo-category is-neutral'}>
+                          <span
+                            className={category ? 'color-dot' : 'color-dot neutral'}
+                            style={category ? { backgroundColor: category.color } : undefined}
+                          />
+                          <span>{category?.name ?? '未分类'}</span>
+                        </span>
+                      ) : null}
+                      {dueLabel.label ? (
+                        <span className={dueLabel.emphasis ? 'todo-due is-alert' : 'todo-due'}>
+                          {dueLabel.label}
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
 
                   {noteExcerpt ? <p className="todo-excerpt">{noteExcerpt}</p> : null}

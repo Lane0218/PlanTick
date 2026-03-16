@@ -1172,6 +1172,39 @@
   text-overflow: ellipsis;
 }
 
+.todo-meta-line {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+}
+
+.todo-meta-line.no-category {
+  justify-content: flex-end;
+}
+
+.todo-category {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: #6b7c93;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.todo-category.is-neutral {
+  color: #90a4ae;
+}
+
+.todo-category span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .todo-due {
   min-width: 58px;
   color: var(--text-muted);
@@ -2720,6 +2753,7 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .todo-meta-line,
   .status-card-meta-line {
     justify-content: flex-start;
     flex-wrap: wrap;
