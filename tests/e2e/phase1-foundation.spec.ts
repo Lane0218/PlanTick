@@ -39,7 +39,7 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   await page.getByPlaceholder('至少 6 个字符…').fill(passphrase)
   await page.getByRole('button', { name: '调用 workspace-create' }).click()
   await expect(page.getByRole('heading', { name: '待办箱' })).toBeVisible()
-  await expect(page.locator('.sidebar-nav .sidebar-icon svg')).toHaveCount(3)
+  await expect(page.locator('.sidebar-nav .sidebar-icon svg')).toHaveCount(4)
   await page.getByLabel('快速新建任务').focus()
   await expect(page.getByLabel('快速新建任务')).toHaveCSS('outline-style', 'none')
 
@@ -367,4 +367,83 @@ test('phase 4 日程概览：月历展示截止事项并支持在日历中改期
 
   await expect(page.locator('.detail-pane.is-open')).toHaveCount(0)
   await expect(page.locator('.calendar-grid').getByText('月历任务一')).toBeVisible()
+})
+
+test('phase 4 移动端壳层：抽屉、底部详情与纵向看板', async ({ page, baseURL }) => {
+  const passphrase = `phase4-mobile-${Date.now()}-pw`
+  const categoryName = '移动分类'
+  const taskTitle = '移动任务演示'
+  const mobileViewport = { width: 390, height: 844 }
+
+  await page.goto(baseURL!)
+  await page.setViewportSize(mobileViewport)
+
+  const drawerToggle = page.locator('.mobile-toolbar-button')
+  const mobileDetailSheet = page.locator('.mobile-detail-sheet')
+
+  await page.getByRole('button', { name: '匿名登录并检查 Supabase' }).click()
+  await expect(page.getByText('匿名会话已建立，可以创建或加入工作区。')).toBeVisible()
+
+  await page.getByPlaceholder('至少 6 个字符…').fill(passphrase)
+  await page.getByRole('button', { name: '调用 workspace-create' }).click()
+
+  await expect(page.locator('.mobile-board-toolbar')).toBeVisible()
+  await expect(drawerToggle).toHaveAttribute('aria-expanded', 'false')
+
+  await drawerToggle.click()
+  await expect(page.locator('.mobile-sidebar-shell')).toBeVisible()
+  await expect(drawerToggle).toHaveAttribute('aria-expanded', 'true')
+  await page.mouse.click(mobileViewport.width - 12, mobileViewport.height / 2)
+  await expect(page.locator('.mobile-sidebar-shell')).toHaveCount(0)
+  await expect(drawerToggle).toHaveAttribute('aria-expanded', 'false')
+
+  await drawerToggle.click()
+  await expect(page.locator('.mobile-sidebar-shell')).toBeVisible()
+  await page.getByRole('button', { name: '新建分类' }).click()
+  await page.getByPlaceholder('分类名称').fill(categoryName)
+  await page.getByRole('button', { name: '添加分类' }).click()
+  await expect(page.getByRole('button', { name: categoryName, exact: true })).toBeVisible()
+  await page.getByRole('button', { name: categoryName, exact: true }).click()
+  await expect(page.locator('.mobile-sidebar-shell')).toHaveCount(0)
+  await expect(page.locator('.mobile-board-toolbar-copy h1')).toHaveText(categoryName)
+
+  await page.getByLabel('快速新建任务').fill(taskTitle)
+  await page.getByLabel('快速新建任务').press('Enter')
+  await expect(mobileDetailSheet).toBeVisible()
+  await expect(mobileDetailSheet.getByLabel('任务标题')).toHaveValue(taskTitle)
+  await mobileDetailSheet.locator('.detail-info-card, .detail-section').filter({ hasText: '截止日期' }).first().getByRole('button', { name: '今天', exact: true }).click()
+  await page.waitForTimeout(500)
+  await page.locator('.mobile-detail-close').click()
+  await expect(mobileDetailSheet).toHaveCount(0)
+
+  await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1)
+
+  await page.getByRole('button', { name: `查看任务 ${taskTitle}` }).click()
+  await expect(mobileDetailSheet).toBeVisible()
+  await expect(mobileDetailSheet.getByLabel('任务标题')).toHaveValue(taskTitle)
+  await page.keyboard.press('Escape')
+  await expect(mobileDetailSheet).toHaveCount(0)
+
+  await drawerToggle.click()
+  await page.getByRole('button', { name: '日程概览' }).click()
+  await expect(page.locator('.mobile-sidebar-shell')).toHaveCount(0)
+  await expect(page.locator('.calendar-grid')).toBeVisible()
+  await page.locator('.calendar-grid').getByText(taskTitle).click()
+  await expect(mobileDetailSheet).toBeVisible()
+  await expect(mobileDetailSheet.getByLabel('任务标题')).toHaveValue(taskTitle)
+  await page.mouse.click(mobileViewport.width / 2, 40)
+  await expect(mobileDetailSheet).toHaveCount(0)
+
+  await drawerToggle.click()
+  await page.getByRole('button', { name: '看板' }).click()
+  await expect(page.locator('.mobile-sidebar-shell')).toHaveCount(0)
+  await expect(page.locator('.mobile-detail-sheet')).toHaveCount(0)
+  await expect(page.locator('.status-column')).toHaveCount(3)
+
+  const firstColumnBox = await page.locator('.status-column').nth(0).boundingBox()
+  const secondColumnBox = await page.locator('.status-column').nth(1).boundingBox()
+  expect(secondColumnBox).not.toBeNull()
+  expect((secondColumnBox?.y ?? 0) - (firstColumnBox?.y ?? 0)).toBeGreaterThan(40)
+
+  await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1)
 })

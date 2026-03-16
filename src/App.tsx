@@ -11,10 +11,12 @@ import {
   ChevronRight,
   Circle,
   Inbox,
+  Menu,
   PauseCircle,
   Pencil,
   PlayCircle,
   Plus,
+  SquareKanban,
   Sun,
   Trash2,
   X,
@@ -38,8 +40,30 @@ import { enqueueRecordMutation } from './lib/sync'
 import { ensureAnonymousSession, invokeWorkspaceFunction } from './lib/supabase'
 
 type WorkspaceMode = 'create' | 'join'
-type WorkspaceView = 'todos' | 'calendar'
+type WorkspaceView = 'todos' | 'board' | 'calendar'
 type TaskFilter = 'all' | 'today' | 'overdue' | 'completed'
+
+type WorkspacePrimaryNavProps = {
+  activeView: WorkspaceView
+  setActiveView: (view: WorkspaceView) => void
+  activeFilter: TaskFilter
+  setActiveFilter: (filter: TaskFilter) => void
+  selectedCategoryId: string | null
+  setSelectedCategoryId: (id: string | null) => void
+  selectedUncategorized: boolean
+  setSelectedUncategorized: (value: boolean) => void
+  setSelectedTodoId: (value: string | null) => void
+  sidebarCounts: Record<TaskFilter, number>
+  className?: string
+  onNavigate?: () => void
+}
+
+type BoardStatusColumn = 'not_started' | 'in_progress' | 'blocked'
+type StatusBoardColumn = {
+  status: BoardStatusColumn
+  meta: (typeof todoStatusMeta)[BoardStatusColumn]
+  todos: TodoRecord[]
+}
 
 type TodoDraft = {
   title: string
@@ -121,6 +145,8 @@ const todoStatusMeta: Record<TodoStatus, { label: string; tone: string; accent: 
   },
 }
 
+const boardStatuses: BoardStatusColumn[] = ['not_started', 'in_progress', 'blocked']
+
 declare global {
   interface WindowEventMap {
     'plantick:pwa-ready': CustomEvent<{ registered: boolean }>
@@ -155,6 +181,13 @@ function App() {
   const [categoryEditorColor, setCategoryEditorColor] = useState(categoryPalette[0])
   const [detailDraft, setDetailDraft] = useState<TodoDraft | null>(null)
   const [confirmDeleteTodo, setConfirmDeleteTodo] = useState(false)
+  const [isMobileViewport, setIsMobileViewport] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(max-width: 980px)').matches : false,
+  )
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false)
+  const [isMobileDetailOpen, setIsMobileDetailOpen] = useState(false)
+  const mobileDetailTriggerRef = useRef<HTMLElement | null>(null)
+  const mobileSidebarButtonRef = useRef<HTMLButtonElement | null>(null)
   const lastSavedDraftRef = useRef('')
 
   const activeCategories = useMemo(
@@ -202,6 +235,15 @@ function App() {
   )
 
   const selectedTodo = activeTodos.find((todo) => todo.id === selectedTodoId) ?? null
+  const boardColumns = useMemo(
+    () =>
+      boardStatuses.map((status) => ({
+        status,
+        meta: todoStatusMeta[status],
+        todos: activeTodos.filter((todo) => todo.status === status),
+      })),
+    [activeTodos],
+  )
   const calendarTodosByDate = useMemo(() => groupTodosByDueDate(activeTodos), [activeTodos])
   const sidebarCounts = useMemo(
     () => ({
@@ -214,6 +256,20 @@ function App() {
     }),
     [activeTodos],
   )
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 980px)')
+    const updateViewportState = () => {
+      setIsMobileViewport(mediaQuery.matches)
+    }
+
+    updateViewportState()
+    mediaQuery.addEventListener('change', updateViewportState)
+
+    return () => {
+      mediaQuery.removeEventListener('change', updateViewportState)
+    }
+  }, [])
 
   useEffect(() => {
     void runIndexedDbProbe().catch(() => undefined)
@@ -661,10 +717,98 @@ function App() {
     }
   }
 
+  const restoreMobileDetailFocus = () => {
+    window.setTimeout(() => {
+      mobileDetailTriggerRef.current?.focus()
+    }, 0)
+  }
+
+  const closeMobileSidebar = (restoreFocus = false) => {
+    setIsMobileSidebarOpen(false)
+    if (restoreFocus) {
+      window.setTimeout(() => {
+        mobileSidebarButtonRef.current?.focus()
+      }, 0)
+    }
+  }
+
+  const closeDetail = (restoreFocus = isMobileViewport) => {
+    setSelectedTodoId(null)
+    setIsMobileDetailOpen(false)
+    if (restoreFocus && isMobileViewport) {
+      restoreMobileDetailFocus()
+    }
+  }
+
+  const handleSelectTodo = (todoId: string, trigger?: HTMLElement | null) => {
+    if (trigger) {
+      mobileDetailTriggerRef.current = trigger
+    }
+    setSelectedTodoId(todoId)
+    if (isMobileViewport && activeView !== 'board') {
+      setIsMobileDetailOpen(true)
+    }
+  }
+
+  useEffect(() => {
+    if (!isMobileViewport) {
+      setIsMobileSidebarOpen(false)
+      setIsMobileDetailOpen(false)
+      return
+    }
+
+    if (activeView === 'board') {
+      setIsMobileDetailOpen(false)
+      return
+    }
+
+    setIsMobileDetailOpen(Boolean(selectedTodoId))
+  }, [activeView, isMobileViewport, selectedTodoId])
+
+  useEffect(() => {
+    if (!isMobileViewport || (!isMobileSidebarOpen && !isMobileDetailOpen)) {
+      return
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') {
+        return
+      }
+
+      if (isMobileSidebarOpen) {
+        closeMobileSidebar(true)
+        return
+      }
+
+      if (isMobileDetailOpen) {
+        closeDetail(true)
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [isMobileDetailOpen, isMobileSidebarOpen, isMobileViewport])
+
+  useEffect(() => {
+    if (!isMobileViewport || (!isMobileSidebarOpen && !isMobileDetailOpen)) {
+      return
+    }
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [isMobileDetailOpen, isMobileSidebarOpen, isMobileViewport])
+
   const shellClassName = [
     'workspace-shell',
     activeView === 'calendar' ? 'calendar-layout' : '',
-    selectedTodoId ? 'has-detail' : '',
+    !isMobileViewport && activeView !== 'board' && selectedTodoId ? 'has-detail' : '',
+    isMobileViewport ? 'mobile-workspace-shell' : '',
   ]
     .filter(Boolean)
     .join(' ')
@@ -690,44 +834,100 @@ function App() {
   const boardTitle =
     activeView === 'calendar'
       ? '日程概览'
-      : selectedUncategorized
-        ? '未分类'
-        : selectedCategory
-          ? selectedCategory.name
-          : filterLabels[activeFilter]
+      : activeView === 'board'
+        ? '看板'
+        : selectedUncategorized
+          ? '未分类'
+          : selectedCategory
+            ? selectedCategory.name
+            : filterLabels[activeFilter]
+
+  const sidebarProps = {
+    sessionLabel,
+    activeView,
+    setActiveView,
+    activeFilter,
+    setActiveFilter,
+    selectedCategoryId,
+    setSelectedCategoryId,
+    selectedUncategorized,
+    setSelectedUncategorized,
+    setSelectedTodoId,
+    sidebarCounts,
+    categories: activeCategories,
+    newCategoryName,
+    setNewCategoryName,
+    newCategoryColor,
+    setNewCategoryColor,
+    handleCreateCategory,
+    selectedCategory,
+    categoryEditorName,
+    setCategoryEditorName,
+    categoryEditorColor,
+    setCategoryEditorColor,
+    handleSaveCategory,
+    handleDeleteCategory,
+    busy,
+  }
 
   return (
     <main className={shellClassName}>
-      <Sidebar
-        sessionLabel={sessionLabel}
-        activeView={activeView}
-        setActiveView={setActiveView}
-        activeFilter={activeFilter}
-        setActiveFilter={setActiveFilter}
-        selectedCategoryId={selectedCategoryId}
-        setSelectedCategoryId={setSelectedCategoryId}
-        selectedUncategorized={selectedUncategorized}
-        setSelectedUncategorized={setSelectedUncategorized}
-        setSelectedTodoId={setSelectedTodoId}
-        sidebarCounts={sidebarCounts}
-        categories={activeCategories}
-        newCategoryName={newCategoryName}
-        setNewCategoryName={setNewCategoryName}
-        newCategoryColor={newCategoryColor}
-        setNewCategoryColor={setNewCategoryColor}
-        handleCreateCategory={handleCreateCategory}
-        selectedCategory={selectedCategory}
-        categoryEditorName={categoryEditorName}
-        setCategoryEditorName={setCategoryEditorName}
-        categoryEditorColor={categoryEditorColor}
-        setCategoryEditorColor={setCategoryEditorColor}
-        handleSaveCategory={handleSaveCategory}
-        handleDeleteCategory={handleDeleteCategory}
-        busy={busy}
-      />
+      {isMobileViewport ? null : <Sidebar {...sidebarProps} />}
+
+      {isMobileViewport && isMobileSidebarOpen ? (
+        <div className="mobile-sidebar-layer">
+          <button
+            type="button"
+            className="mobile-sidebar-backdrop"
+            aria-label="关闭侧边抽屉"
+            onClick={() => closeMobileSidebar(true)}
+          />
+          <div className="mobile-sidebar-shell" role="dialog" aria-modal="true" aria-label="侧边导航">
+            <Sidebar
+              {...sidebarProps}
+              id="mobile-sidebar-drawer"
+              className="sidebar-pane sidebar-pane-drawer"
+              onNavigate={() => closeMobileSidebar()}
+            />
+          </div>
+        </div>
+      ) : null}
 
       <section className="board-pane">
-        {activeView === 'calendar' ? null : (
+        {isMobileViewport ? (
+          <header className="mobile-board-toolbar">
+            <button
+              ref={mobileSidebarButtonRef}
+              type="button"
+              className="mobile-toolbar-button"
+              aria-label={isMobileSidebarOpen ? '关闭侧边抽屉' : '打开侧边抽屉'}
+              aria-expanded={isMobileSidebarOpen}
+              aria-controls="mobile-sidebar-drawer"
+              onClick={() => setIsMobileSidebarOpen((current) => !current)}
+            >
+              <Menu size={20} strokeWidth={2.2} />
+            </button>
+            <div className="mobile-board-toolbar-copy">
+              <h1>{boardTitle}</h1>
+            </div>
+          </header>
+        ) : null}
+
+        <WorkspacePrimaryNav
+          className="board-primary-nav"
+          activeView={activeView}
+          setActiveView={setActiveView}
+          activeFilter={activeFilter}
+          setActiveFilter={setActiveFilter}
+          selectedCategoryId={selectedCategoryId}
+          setSelectedCategoryId={setSelectedCategoryId}
+          selectedUncategorized={selectedUncategorized}
+          setSelectedUncategorized={setSelectedUncategorized}
+          setSelectedTodoId={setSelectedTodoId}
+          sidebarCounts={sidebarCounts}
+        />
+
+        {activeView === 'calendar' || isMobileViewport ? null : (
           <header className="board-header">
             <div className="board-heading">
               <div className="board-title-row">
@@ -746,7 +946,10 @@ function App() {
             setVisibleMonth={setCalendarMonth}
             setSelectedDate={setSelectedCalendarDate}
             setSelectedTodoId={setSelectedTodoId}
+            onSelectTodo={handleSelectTodo}
           />
+        ) : activeView === 'board' ? (
+          <StatusBoard columns={boardColumns} categories={activeCategories} />
         ) : (
           <TodoBoard
             quickTodoTitle={quickTodoTitle}
@@ -754,14 +957,51 @@ function App() {
             handleQuickCreateTodo={handleQuickCreateTodo}
             visibleTodos={visibleTodos}
             selectedTodoId={selectedTodoId}
-            setSelectedTodoId={setSelectedTodoId}
+            onSelectTodo={handleSelectTodo}
             categories={activeCategories}
             handleToggleTodo={handleToggleTodo}
           />
         )}
       </section>
 
-      {activeView === 'calendar' ? (
+      {isMobileViewport ? (
+        activeView !== 'board' && selectedTodo && isMobileDetailOpen ? (
+          <div className="mobile-detail-layer">
+            <button
+              type="button"
+              className="mobile-detail-backdrop"
+              aria-label="关闭详情"
+              onClick={() => closeDetail(true)}
+            />
+            <div className="mobile-detail-sheet" role="dialog" aria-modal="true" aria-label="移动端任务详情">
+              <div className="mobile-detail-sheet-chrome">
+                <div className="mobile-detail-sheet-handle" aria-hidden="true" />
+                <button
+                  type="button"
+                  className="detail-close mobile-detail-close"
+                  aria-label="关闭详情"
+                  onClick={() => closeDetail(true)}
+                >
+                  ×
+                </button>
+              </div>
+              <TodoDetailPane
+                selectedTodo={selectedTodo}
+                categories={activeCategories}
+                detailDraft={detailDraft}
+                setDetailDraft={setDetailDraft}
+                handleDeleteTodo={handleDeleteTodo}
+                confirmDeleteTodo={confirmDeleteTodo}
+                setConfirmDeleteTodo={setConfirmDeleteTodo}
+                closeDetail={() => closeDetail(true)}
+                busy={busy}
+                className="detail-pane detail-pane-sheet"
+                showCloseButton={false}
+              />
+            </div>
+          </div>
+        ) : null
+      ) : activeView === 'calendar' ? (
         selectedTodo ? (
           <TodoDetailPane
             selectedTodo={selectedTodo}
@@ -771,11 +1011,11 @@ function App() {
             handleDeleteTodo={handleDeleteTodo}
             confirmDeleteTodo={confirmDeleteTodo}
             setConfirmDeleteTodo={setConfirmDeleteTodo}
-            closeDetail={() => setSelectedTodoId(null)}
+            closeDetail={() => closeDetail(false)}
             busy={busy}
           />
         ) : null
-      ) : (
+      ) : activeView === 'board' ? null : (
         <TodoDetailPane
           selectedTodo={selectedTodo}
           categories={activeCategories}
@@ -784,7 +1024,7 @@ function App() {
           handleDeleteTodo={handleDeleteTodo}
           confirmDeleteTodo={confirmDeleteTodo}
           setConfirmDeleteTodo={setConfirmDeleteTodo}
-          closeDetail={() => setSelectedTodoId(null)}
+          closeDetail={() => closeDetail(false)}
           busy={busy}
         />
       )}
@@ -925,7 +1165,129 @@ function OnboardingLayout({
   )
 }
 
-function Sidebar({
+function WorkspacePrimaryNav({
+  activeView,
+  setActiveView,
+  activeFilter,
+  setActiveFilter,
+  selectedCategoryId,
+  setSelectedCategoryId,
+  selectedUncategorized,
+  setSelectedUncategorized,
+  setSelectedTodoId,
+  sidebarCounts,
+  className,
+  onNavigate,
+}: WorkspacePrimaryNavProps) {
+  return (
+    <nav className={className ?? 'sidebar-section sidebar-nav'} aria-label="任务筛选">
+      {(
+        [
+          { id: 'today', label: '我的一天', count: sidebarCounts.today, icon: 'today' },
+          { id: 'all', label: '待办箱', count: sidebarCounts.all, icon: 'all' },
+        ] as const
+      ).map((item) => (
+        <button
+          key={item.id}
+          type="button"
+          className={
+            activeView === 'todos' && activeFilter === item.id && !selectedCategoryId && !selectedUncategorized
+              ? 'sidebar-item active'
+              : 'sidebar-item'
+          }
+          onClick={(event) => {
+            event.currentTarget.blur()
+            setActiveView('todos')
+            setSelectedCategoryId(null)
+            setSelectedUncategorized(false)
+            setActiveFilter(item.id)
+            setSelectedTodoId(null)
+            onNavigate?.()
+          }}
+        >
+          <span className="sidebar-item-main">
+            <span className={`sidebar-icon sidebar-icon-${item.icon}`} aria-hidden="true">
+              {renderSidebarIcon(item.icon)}
+            </span>
+            <span>{item.label}</span>
+          </span>
+          <b>{item.count}</b>
+        </button>
+      ))}
+
+      <button
+        type="button"
+        className={activeView === 'board' ? 'sidebar-item active' : 'sidebar-item'}
+        onClick={(event) => {
+          event.currentTarget.blur()
+          setActiveView('board')
+          setSelectedCategoryId(null)
+          setSelectedUncategorized(false)
+          setSelectedTodoId(null)
+          onNavigate?.()
+        }}
+      >
+        <span className="sidebar-item-main">
+          <span className="sidebar-icon sidebar-icon-board" aria-hidden="true">
+            {renderSidebarIcon('board')}
+          </span>
+          <span>看板</span>
+        </span>
+      </button>
+
+      <button
+        type="button"
+        className={activeView === 'calendar' ? 'sidebar-item active' : 'sidebar-item'}
+        onClick={(event) => {
+          event.currentTarget.blur()
+          setActiveView('calendar')
+          setSelectedCategoryId(null)
+          setSelectedUncategorized(false)
+          setSelectedTodoId(null)
+          onNavigate?.()
+        }}
+      >
+        <span className="sidebar-item-main">
+          <span className="sidebar-icon sidebar-icon-calendar" aria-hidden="true">
+            {renderSidebarIcon('calendar')}
+          </span>
+          <span>日程概览</span>
+        </span>
+      </button>
+    </nav>
+  )
+}
+
+type SidebarProps = {
+  sessionLabel: string
+  className?: string
+  id?: string
+} & WorkspacePrimaryNavProps & {
+  categories: CategoryRecord[]
+  newCategoryName: string
+  setNewCategoryName: (value: string) => void
+  newCategoryColor: string
+  setNewCategoryColor: (value: string) => void
+  handleCreateCategory: (event: FormEvent<HTMLFormElement>) => Promise<void>
+  selectedCategory: CategoryRecord | null
+  categoryEditorName: string
+  setCategoryEditorName: (value: string) => void
+  categoryEditorColor: string
+  setCategoryEditorColor: (value: string) => void
+  handleSaveCategory: () => Promise<void>
+  handleDeleteCategory: (category?: CategoryRecord) => Promise<void>
+  busy: boolean
+}
+
+function Sidebar({ className, id, ...props }: SidebarProps) {
+  return (
+    <aside id={id} className={className ?? 'sidebar-pane'}>
+      <SidebarContent {...props} />
+    </aside>
+  )
+}
+
+function SidebarContent({
   sessionLabel,
   activeView,
   setActiveView,
@@ -951,33 +1313,8 @@ function Sidebar({
   handleSaveCategory,
   handleDeleteCategory,
   busy,
-}: {
-  sessionLabel: string
-  activeView: WorkspaceView
-  setActiveView: (view: WorkspaceView) => void
-  activeFilter: TaskFilter
-  setActiveFilter: (filter: TaskFilter) => void
-  selectedCategoryId: string | null
-  setSelectedCategoryId: (id: string | null) => void
-  selectedUncategorized: boolean
-  setSelectedUncategorized: (value: boolean) => void
-  setSelectedTodoId: (value: string | null) => void
-  sidebarCounts: Record<TaskFilter, number>
-  categories: CategoryRecord[]
-  newCategoryName: string
-  setNewCategoryName: (value: string) => void
-  newCategoryColor: string
-  setNewCategoryColor: (value: string) => void
-  handleCreateCategory: (event: FormEvent<HTMLFormElement>) => Promise<void>
-  selectedCategory: CategoryRecord | null
-  categoryEditorName: string
-  setCategoryEditorName: (value: string) => void
-  categoryEditorColor: string
-  setCategoryEditorColor: (value: string) => void
-  handleSaveCategory: () => Promise<void>
-  handleDeleteCategory: (category?: CategoryRecord) => Promise<void>
-  busy: boolean
-}) {
+  onNavigate,
+}: Omit<SidebarProps, 'className' | 'id'>) {
   const [categoryDialogMode, setCategoryDialogMode] = useState<'create' | 'edit' | null>(null)
   const [pendingDeleteCategory, setPendingDeleteCategory] = useState<CategoryRecord | null>(null)
 
@@ -1017,7 +1354,7 @@ function Sidebar({
   }
 
   return (
-    <aside className="sidebar-pane">
+    <>
       <div className="sidebar-brandbar">
         <div className="sidebar-brandmark" aria-hidden="true">
           <Inbox size={18} strokeWidth={2.2} />
@@ -1027,59 +1364,19 @@ function Sidebar({
         </div>
       </div>
 
-      <nav className="sidebar-section sidebar-nav" aria-label="任务筛选">
-        {(
-          [
-            { id: 'today', label: '我的一天', count: sidebarCounts.today, icon: 'today' },
-            { id: 'all', label: '待办箱', count: sidebarCounts.all, icon: 'all' },
-          ] as const
-        ).map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            className={
-              activeView === 'todos' && activeFilter === item.id && !selectedCategoryId && !selectedUncategorized
-                ? 'sidebar-item active'
-                : 'sidebar-item'
-            }
-            onClick={(event) => {
-              event.currentTarget.blur()
-              setActiveView('todos')
-              setSelectedCategoryId(null)
-              setSelectedUncategorized(false)
-              setActiveFilter(item.id)
-              setSelectedTodoId(null)
-            }}
-          >
-            <span className="sidebar-item-main">
-              <span className={`sidebar-icon sidebar-icon-${item.icon}`} aria-hidden="true">
-                {renderSidebarIcon(item.icon)}
-              </span>
-              <span>{item.label}</span>
-            </span>
-            <b>{item.count}</b>
-          </button>
-        ))}
-
-        <button
-          type="button"
-          className={activeView === 'calendar' ? 'sidebar-item active' : 'sidebar-item'}
-          onClick={(event) => {
-            event.currentTarget.blur()
-            setActiveView('calendar')
-            setSelectedCategoryId(null)
-            setSelectedUncategorized(false)
-            setSelectedTodoId(null)
-          }}
-        >
-          <span className="sidebar-item-main">
-            <span className="sidebar-icon sidebar-icon-calendar" aria-hidden="true">
-              {renderSidebarIcon('calendar')}
-            </span>
-            <span>日程概览</span>
-          </span>
-        </button>
-      </nav>
+      <WorkspacePrimaryNav
+        activeView={activeView}
+        setActiveView={setActiveView}
+        activeFilter={activeFilter}
+        setActiveFilter={setActiveFilter}
+        selectedCategoryId={selectedCategoryId}
+        setSelectedCategoryId={setSelectedCategoryId}
+        selectedUncategorized={selectedUncategorized}
+        setSelectedUncategorized={setSelectedUncategorized}
+        setSelectedTodoId={setSelectedTodoId}
+        sidebarCounts={sidebarCounts}
+        onNavigate={onNavigate}
+      />
 
       <section className="sidebar-section sidebar-card sidebar-category-section">
         <div className="section-head">
@@ -1108,6 +1405,7 @@ function Sidebar({
                 setSelectedUncategorized(true)
                 setActiveFilter('all')
                 setSelectedTodoId(null)
+                onNavigate?.()
               }}
             >
               <span className="color-dot neutral" />
@@ -1130,6 +1428,7 @@ function Sidebar({
                   setSelectedUncategorized(false)
                   setActiveFilter('all')
                   setSelectedTodoId(null)
+                  onNavigate?.()
                 }}
               >
                 <span className="color-dot" style={{ backgroundColor: category.color }} />
@@ -1201,24 +1500,24 @@ function Sidebar({
               <label className="category-color-field">
                 <span>颜色</span>
                 <div className="palette-row" aria-label="分类颜色">
-                {categoryPalette.map((color) => {
-                  const activeColor = categoryDialogMode === 'edit' ? categoryEditorColor : newCategoryColor
+                  {categoryPalette.map((color) => {
+                    const activeColor = categoryDialogMode === 'edit' ? categoryEditorColor : newCategoryColor
 
-                  return (
-                    <button
-                      key={color}
-                      type="button"
-                      className={activeColor === color ? 'palette-chip active' : 'palette-chip'}
-                      style={{ backgroundColor: color }}
-                      aria-label={`颜色 ${color}`}
-                      onClick={() =>
-                        categoryDialogMode === 'edit'
-                          ? setCategoryEditorColor(color)
-                          : setNewCategoryColor(color)
-                      }
-                    />
-                  )
-                })}
+                    return (
+                      <button
+                        key={color}
+                        type="button"
+                        className={activeColor === color ? 'palette-chip active' : 'palette-chip'}
+                        style={{ backgroundColor: color }}
+                        aria-label={`颜色 ${color}`}
+                        onClick={() =>
+                          categoryDialogMode === 'edit'
+                            ? setCategoryEditorColor(color)
+                            : setNewCategoryColor(color)
+                        }
+                      />
+                    )
+                  })}
                 </div>
               </label>
 
@@ -1311,7 +1610,7 @@ function Sidebar({
           </div>
         </div>
       ) : null}
-    </aside>
+    </>
   )
 }
 
@@ -1321,7 +1620,7 @@ function TodoBoard({
   handleQuickCreateTodo,
   visibleTodos,
   selectedTodoId,
-  setSelectedTodoId,
+  onSelectTodo,
   categories,
   handleToggleTodo,
 }: {
@@ -1330,7 +1629,7 @@ function TodoBoard({
   handleQuickCreateTodo: (event: FormEvent<HTMLFormElement>) => Promise<void>
   visibleTodos: TodoRecord[]
   selectedTodoId: string | null
-  setSelectedTodoId: (id: string | null) => void
+  onSelectTodo: (todoId: string, trigger?: HTMLElement | null) => void
   categories: CategoryRecord[]
   handleToggleTodo: (todo: TodoRecord) => Promise<void>
 }) {
@@ -1401,7 +1700,7 @@ function TodoBoard({
                   type="button"
                   className={hasNoteExcerpt ? 'todo-main has-note' : 'todo-main no-note'}
                   aria-label={`查看任务 ${todo.title}`}
-                  onClick={() => setSelectedTodoId(todo.id)}
+                  onClick={(event) => onSelectTodo(todo.id, event.currentTarget)}
                 >
                   <div className={hasNoteExcerpt ? 'todo-row has-note' : 'todo-row no-note'}>
                     <strong>{todo.title}</strong>
@@ -1427,6 +1726,83 @@ function TodoBoard({
   )
 }
 
+function StatusBoard({
+  columns,
+  categories,
+}: {
+  columns: StatusBoardColumn[]
+  categories: CategoryRecord[]
+}) {
+  const categoryMap = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories])
+
+  return (
+    <section className="status-board" aria-label="状态看板">
+      <div className="status-board-grid">
+        {columns.map((column) => (
+          <section
+            key={column.status}
+            className={`status-column status-column-${column.status}`}
+            style={
+              {
+                '--status-tone': column.meta.tone,
+                '--status-accent': column.meta.accent,
+              } as CSSProperties
+            }
+          >
+            <header className="status-column-header">
+              <div className="status-column-title-row">
+                <span className="status-column-icon" aria-hidden="true">
+                  {renderStatusIcon(column.status)}
+                </span>
+                <h2>{column.meta.label}</h2>
+              </div>
+              <span className="status-column-count">{column.todos.length}</span>
+            </header>
+
+            {column.todos.length ? (
+              <div className="status-card-list" role="list">
+                {column.todos.map((todo) => {
+                  const category = todo.categoryId ? categoryMap.get(todo.categoryId) ?? null : null
+                  const dueLabel = formatDueDate(todo.dueDate, todo.status)
+
+                  return (
+                    <article key={todo.id} className="status-todo-card" role="listitem">
+                      <div className="status-card-content">
+                        <div className="status-card-row">
+                          <strong>{todo.title}</strong>
+                          <div className="status-card-meta-line">
+                            <span className={category ? 'status-card-category' : 'status-card-category is-neutral'}>
+                              <span
+                                className={category ? 'color-dot' : 'color-dot neutral'}
+                                style={category ? { backgroundColor: category.color } : undefined}
+                              />
+                              <span>{category?.name ?? '未分类'}</span>
+                            </span>
+                            {dueLabel.label ? (
+                              <span className={dueLabel.emphasis ? 'status-card-due is-alert' : 'status-card-due'}>
+                                {dueLabel.label}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="status-column-empty empty-state">
+                <h2>暂无任务</h2>
+                <p>当前没有“{column.meta.label}”状态的待办事项。</p>
+              </div>
+            )}
+          </section>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function TodoDetailPane({
   selectedTodo,
   categories,
@@ -1437,6 +1813,8 @@ function TodoDetailPane({
   setConfirmDeleteTodo,
   closeDetail,
   busy,
+  className,
+  showCloseButton = true,
 }: {
   selectedTodo: TodoRecord | null
   categories: CategoryRecord[]
@@ -1447,6 +1825,8 @@ function TodoDetailPane({
   setConfirmDeleteTodo: (value: boolean) => void
   closeDetail: () => void
   busy: boolean
+  className?: string
+  showCloseButton?: boolean
 }) {
   const selectedCategory = categories.find((category) => category.id === detailDraft?.categoryId) ?? null
   const [showCategoryPicker, setShowCategoryPicker] = useState(false)
@@ -1600,8 +1980,15 @@ function TodoDetailPane({
     : []
   const detailStatusOptions: TodoStatus[] = ['not_started', 'in_progress', 'completed', 'blocked', 'canceled']
 
+  const detailPaneClassName = [
+    className ?? 'detail-pane',
+    selectedTodo ? 'is-open' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+
   return (
-    <aside className={selectedTodo ? 'detail-pane is-open' : 'detail-pane'} aria-label="任务详情">
+    <aside className={detailPaneClassName} aria-label="任务详情">
       {selectedTodo && detailDraft ? (
         <>
           <div className="detail-head detail-head-compact">
@@ -1626,17 +2013,19 @@ function TodoDetailPane({
                 <span>我的一天</span>
               </button>
             )}
-            <button
-              className="detail-close"
-              onClick={() => {
-                setShowCategoryPicker(false)
-                setShowCalendarPicker(false)
-                closeDetail()
-              }}
-              aria-label="关闭详情"
-            >
-              ×
-            </button>
+            {showCloseButton ? (
+              <button
+                className="detail-close"
+                onClick={() => {
+                  setShowCategoryPicker(false)
+                  setShowCalendarPicker(false)
+                  closeDetail()
+                }}
+                aria-label="关闭详情"
+              >
+                ×
+              </button>
+            ) : null}
           </div>
 
           <div className="detail-scroll">
@@ -1976,6 +2365,7 @@ function CalendarBoard({
   setVisibleMonth,
   setSelectedDate,
   setSelectedTodoId,
+  onSelectTodo,
 }: {
   todosByDate: Map<string, TodoRecord[]>
   selectedDate: string
@@ -1984,6 +2374,7 @@ function CalendarBoard({
   setVisibleMonth: (value: string) => void
   setSelectedDate: (value: string) => void
   setSelectedTodoId: (value: string | null) => void
+  onSelectTodo: (todoId: string, trigger?: HTMLElement | null) => void
 }) {
   const [expandedDate, setExpandedDate] = useState<string | null>(null)
   const [showMonthPicker, setShowMonthPicker] = useState(false)
@@ -2086,7 +2477,7 @@ function CalendarBoard({
             </div>
 
             <div className="calendar-toolbar-main" ref={monthPickerRef}>
-            <div className="calendar-month-switcher" aria-label="年月切换">
+              <div className="calendar-month-switcher" aria-label="年月切换">
               <button
                 type="button"
                 className="calendar-nav-button"
@@ -2169,133 +2560,135 @@ function CalendarBoard({
           </div>
         </header>
 
-        <div className="calendar-weekdays" aria-hidden="true">
-          {['周一', '周二', '周三', '周四', '周五', '周六', '周日'].map((weekday) => (
-            <span key={weekday}>{weekday}</span>
-          ))}
-        </div>
+        <div className="calendar-grid-scroll">
+          <div className="calendar-weekdays" aria-hidden="true">
+            {['周一', '周二', '周三', '周四', '周五', '周六', '周日'].map((weekday) => (
+              <span key={weekday}>{weekday}</span>
+            ))}
+          </div>
 
-        <div className="calendar-grid" role="grid" aria-label={formatCalendarMonthTitle(visibleMonth)}>
-          {cells.map((cell, index) => {
-            const visibleTodos = cell.todos.slice(0, 3)
-            const overflowCount = Math.max(cell.todos.length - visibleTodos.length, 0)
-            const isExpanded = expandedDate === cell.date
-            const columnIndex = index % 7
-            const rowIndex = Math.floor(index / 7)
-            const popoverClassName = [
-              'calendar-day-popover',
-              columnIndex >= 5 ? 'align-right' : '',
-              rowIndex >= 4 ? 'open-upward' : '',
-            ]
-              .filter(Boolean)
-              .join(' ')
+          <div className="calendar-grid" role="grid" aria-label={formatCalendarMonthTitle(visibleMonth)}>
+            {cells.map((cell, index) => {
+              const visibleTodos = cell.todos.slice(0, 3)
+              const overflowCount = Math.max(cell.todos.length - visibleTodos.length, 0)
+              const isExpanded = expandedDate === cell.date
+              const columnIndex = index % 7
+              const rowIndex = Math.floor(index / 7)
+              const popoverClassName = [
+                'calendar-day-popover',
+                columnIndex >= 5 ? 'align-right' : '',
+                rowIndex >= 4 ? 'open-upward' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')
 
-            return (
-              <div
-                key={cell.date}
-                role="gridcell"
-                aria-selected={cell.isSelected}
-                tabIndex={0}
-                className={[
-                  'calendar-cell',
-                  cell.inCurrentMonth ? '' : 'is-muted',
-                  cell.isToday ? 'is-today' : '',
-                  cell.isSelected ? 'is-selected' : '',
-                  isExpanded ? 'is-expanded' : '',
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-                onClick={() => {
-                  if (overflowCount > 0) {
-                    toggleExpandedDate(cell.date, cell.inCurrentMonth)
-                    return
-                  }
+              return (
+                <div
+                  key={cell.date}
+                  role="gridcell"
+                  aria-selected={cell.isSelected}
+                  tabIndex={0}
+                  className={[
+                    'calendar-cell',
+                    cell.inCurrentMonth ? '' : 'is-muted',
+                    cell.isToday ? 'is-today' : '',
+                    cell.isSelected ? 'is-selected' : '',
+                    isExpanded ? 'is-expanded' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  onClick={() => {
+                    if (overflowCount > 0) {
+                      toggleExpandedDate(cell.date, cell.inCurrentMonth)
+                      return
+                    }
 
-                  focusCalendarDate(cell.date, cell.inCurrentMonth)
-                  setExpandedDate(null)
-                }}
-                onKeyDown={(event) => {
-                  if (event.target !== event.currentTarget) {
-                    return
-                  }
+                    focusCalendarDate(cell.date, cell.inCurrentMonth)
+                    setExpandedDate(null)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.target !== event.currentTarget) {
+                      return
+                    }
 
-                  if (event.key !== 'Enter' && event.key !== ' ') {
-                    return
-                  }
+                    if (event.key !== 'Enter' && event.key !== ' ') {
+                      return
+                    }
 
-                  event.preventDefault()
+                    event.preventDefault()
 
-                  if (overflowCount > 0) {
-                    toggleExpandedDate(cell.date, cell.inCurrentMonth)
-                    return
-                  }
+                    if (overflowCount > 0) {
+                      toggleExpandedDate(cell.date, cell.inCurrentMonth)
+                      return
+                    }
 
-                  focusCalendarDate(cell.date, cell.inCurrentMonth)
-                  setExpandedDate(null)
-                }}
-              >
-                <div className="calendar-cell-head">
-                  <span className="calendar-cell-day">{formatDayOfMonth(cell.date)}</span>
-                </div>
+                    focusCalendarDate(cell.date, cell.inCurrentMonth)
+                    setExpandedDate(null)
+                  }}
+                >
+                  <div className="calendar-cell-head">
+                    <span className="calendar-cell-day">{formatDayOfMonth(cell.date)}</span>
+                  </div>
 
-                <div className="calendar-cell-items">
-                  {visibleTodos.map((todo) => {
-                    return (
+                  <div className="calendar-cell-items">
+                    {visibleTodos.map((todo) => {
+                      return (
+                        <button
+                          key={todo.id}
+                          type="button"
+                          className={[
+                            'calendar-item',
+                            `status-${todo.status}`,
+                            selectedTodoId === todo.id ? 'active' : '',
+                          ]
+                            .filter(Boolean)
+                            .join(' ')}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            setSelectedDate(cell.date)
+                            onSelectTodo(todo.id, event.currentTarget)
+                            setExpandedDate(null)
+                          }}
+                        >
+                          <span className="calendar-item-title">{todo.title}</span>
+                        </button>
+                      )
+                    })}
+
+                    {overflowCount ? (
                       <button
-                        key={todo.id}
                         type="button"
-                        className={[
-                          'calendar-item',
-                          `status-${todo.status}`,
-                          selectedTodoId === todo.id ? 'active' : '',
-                        ]
-                          .filter(Boolean)
-                          .join(' ')}
+                        className="calendar-item-overflow"
+                        aria-label={`查看 ${formatCalendarFullDate(cell.date)} 剩余 ${overflowCount} 项任务`}
                         onClick={(event) => {
                           event.stopPropagation()
-                          setSelectedDate(cell.date)
-                          setSelectedTodoId(todo.id)
-                          setExpandedDate(null)
+                          toggleExpandedDate(cell.date, cell.inCurrentMonth)
                         }}
                       >
-                        <span className="calendar-item-title">{todo.title}</span>
+                        +{overflowCount}
                       </button>
-                    )
-                  })}
+                    ) : null}
+                  </div>
 
-                  {overflowCount ? (
-                    <button
-                      type="button"
-                      className="calendar-item-overflow"
-                      aria-label={`查看 ${formatCalendarFullDate(cell.date)} 剩余 ${overflowCount} 项任务`}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        toggleExpandedDate(cell.date, cell.inCurrentMonth)
+                  {isExpanded ? (
+                    <CalendarDayPopover
+                      popoverRef={expandedPopoverRef}
+                      className={popoverClassName}
+                      date={cell.date}
+                      todos={cell.todos}
+                      selectedTodoId={selectedTodoId}
+                      onClose={() => setExpandedDate(null)}
+                      onSelectTodo={(todoId, trigger) => {
+                        setSelectedDate(cell.date)
+                        onSelectTodo(todoId, trigger)
+                        setExpandedDate(null)
                       }}
-                    >
-                      +{overflowCount}
-                    </button>
+                    />
                   ) : null}
                 </div>
-
-                {isExpanded ? (
-                  <CalendarDayPopover
-                    popoverRef={expandedPopoverRef}
-                    className={popoverClassName}
-                    date={cell.date}
-                    todos={cell.todos}
-                    selectedTodoId={selectedTodoId}
-                    onClose={() => setExpandedDate(null)}
-                    onSelectTodo={(todoId) => {
-                      setSelectedDate(cell.date)
-                      setSelectedTodoId(todoId)
-                      setExpandedDate(null)
-                    }}
-                  />
-                ) : null}
-              </div>
-            )
-          })}
+              )
+            })}
+          </div>
         </div>
       </div>
     </section>
@@ -2317,7 +2710,7 @@ function CalendarDayPopover({
   todos: TodoRecord[]
   selectedTodoId: string | null
   onClose: () => void
-  onSelectTodo: (todoId: string) => void
+  onSelectTodo: (todoId: string, trigger?: HTMLElement | null) => void
 }) {
   return (
     <div
@@ -2351,7 +2744,7 @@ function CalendarDayPopover({
               ]
                 .filter(Boolean)
                 .join(' ')}
-              onClick={() => onSelectTodo(todo.id)}
+              onClick={(event) => onSelectTodo(todo.id, event.currentTarget)}
             >
               <span className="calendar-item-title">{todo.title}</span>
             </button>
@@ -2702,10 +3095,12 @@ function renderStatusIcon(status: TodoStatus) {
   }
 }
 
-function renderSidebarIcon(icon: 'today' | 'all' | 'calendar') {
+function renderSidebarIcon(icon: 'today' | 'all' | 'board' | 'calendar') {
   switch (icon) {
     case 'today':
       return <Sun size={18} strokeWidth={2.15} />
+    case 'board':
+      return <SquareKanban size={18} strokeWidth={2.15} />
     case 'calendar':
       return <CalendarDays size={18} strokeWidth={2.15} />
     default:
