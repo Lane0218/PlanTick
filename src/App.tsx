@@ -1690,7 +1690,6 @@ function App() {
   const sidebarProps = {
     workspaceId,
     sessionLabel,
-    workspaceLabel: isGuestMode ? '游客模式' : shortWorkspaceId(workspaceId),
     activeView,
     setActiveView,
     activeFilter,
@@ -2418,7 +2417,6 @@ function WorkspacePrimaryNav({
 type SidebarProps = {
   workspaceId: string
   sessionLabel: string
-  workspaceLabel: string
   className?: string
   id?: string
 } & WorkspacePrimaryNavProps & {
@@ -2455,7 +2453,6 @@ function Sidebar({ className, id, readOnly, ...props }: SidebarProps) {
 
 function SidebarContent({
   sessionLabel,
-  workspaceLabel,
   activeView,
   setActiveView,
   activeFilter,
@@ -2490,7 +2487,6 @@ function SidebarContent({
 }: Omit<SidebarProps, 'className' | 'id'>) {
   const [categoryDialogMode, setCategoryDialogMode] = useState<'create' | 'edit' | null>(null)
   const [pendingDeleteCategory, setPendingDeleteCategory] = useState<CategoryRecord | null>(null)
-  const sidebarTitle = workspaceLabel
 
   const dialogTitle = categoryDialogMode === 'edit' ? '编辑分类' : '新建分类'
 
@@ -2539,7 +2535,7 @@ function SidebarContent({
     <>
       <div className="sidebar-topbar">
         <div className="sidebar-topbar-copy">
-          <h2 title={sessionLabel}>{sidebarTitle}</h2>
+          <h2 title={sessionLabel}>PlanTick</h2>
         </div>
         <div className="sidebar-topbar-actions">
           {showWorkspaceControls ? (
@@ -5490,14 +5486,6 @@ function getWorkspaceSettingsRiskText(syncStatus: WorkspaceSettingsInfo['syncSta
   }
 
   return ''
-}
-
-function shortWorkspaceId(value: string) {
-  if (value.length <= 8) {
-    return value
-  }
-
-  return `${value.slice(0, 4)}…${value.slice(-4)}`
 }
 
 function serializeTodoDraft(draft: TodoDraft) {
