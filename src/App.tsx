@@ -4283,24 +4283,32 @@ function EventDetailPane({
                   <span>时间</span>
                 </div>
                 <div className="detail-time-grid detail-time-grid-event">
-                  <button
-                    type="button"
-                    className={eventDraft.allDay ? 'detail-myday-pill detail-time-toggle is-active' : 'detail-myday-pill detail-time-toggle'}
-                    onClick={() =>
-                      setEventDraft(
-                        normalizeEventDraft({
-                          ...eventDraft,
-                          allDay: !eventDraft.allDay,
-                        }),
-                      )
-                    }
-                    aria-pressed={eventDraft.allDay}
-                  >
-                    <Clock3 size={15} strokeWidth={2.1} />
-                    <span>全天</span>
-                  </button>
+                  <div className="detail-time-toggle-field">
+                    <span className="detail-time-field-label">全天</span>
+                    <button
+                      type="button"
+                      className={
+                        eventDraft.allDay
+                          ? 'detail-myday-pill detail-time-toggle is-active'
+                          : 'detail-myday-pill detail-time-toggle'
+                      }
+                      aria-label="全天"
+                      onClick={() =>
+                        setEventDraft(
+                          normalizeEventDraft({
+                            ...eventDraft,
+                            allDay: !eventDraft.allDay,
+                          }),
+                        )
+                      }
+                      aria-pressed={eventDraft.allDay}
+                    >
+                      <Clock3 size={15} strokeWidth={2.1} />
+                      <span>{eventDraft.allDay ? '已开启' : '未开启'}</span>
+                    </button>
+                  </div>
                   <label className="detail-time-field">
-                    <span>开始</span>
+                    <span className="detail-time-field-label">开始</span>
                     <input
                       className="detail-inline-input"
                       type="time"
@@ -4318,7 +4326,7 @@ function EventDetailPane({
                     />
                   </label>
                   <label className="detail-time-field">
-                    <span>结束</span>
+                    <span className="detail-time-field-label">结束</span>
                     <input
                       className="detail-inline-input"
                       type="time"
