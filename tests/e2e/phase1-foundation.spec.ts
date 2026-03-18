@@ -20,6 +20,10 @@ function getSyncActionButton(page: Page) {
   })
 }
 
+function getWorkspaceSettingsButton(page: Page) {
+  return page.getByRole('button', { name: '打开工作区设置' })
+}
+
 async function expectWorkspaceAccessDialog(page: Page) {
   const dialog = page.getByRole('dialog', { name: '创建或加入你的任务工作台' })
   await expect(dialog).toBeVisible()
@@ -349,7 +353,7 @@ test('phase 3 工作区设置：支持修改口令并退出当前工作区', asy
 
   await createWorkspaceFromDialog(page, oldPassphrase)
 
-  await page.getByRole('button', { name: '工作区设置' }).click()
+  await getWorkspaceSettingsButton(page).click()
   const settingsDialog = page.getByRole('dialog', { name: '工作区设置' })
   await expect(settingsDialog).toBeVisible()
   await expect(settingsDialog.getByText('工作区 ID')).toBeVisible()
@@ -380,7 +384,7 @@ test('phase 3 工作区设置：支持修改口令并退出当前工作区', asy
   await accessDialog.getByLabel('工作区口令').fill(newPassphrase)
   await accessDialog.getByRole('button', { name: '加入并进入工作台' }).click()
   await expect(accessDialog).toHaveCount(0)
-  await expect(page.getByRole('button', { name: '工作区设置' })).toBeVisible()
+  await expect(getWorkspaceSettingsButton(page)).toBeVisible()
 })
 
 test('phase 4 日程概览：月历展示截止事项并支持在日历中改期', async ({ page, baseURL }) => {

@@ -1569,6 +1569,8 @@ function App() {
     handleSaveCategory,
     handleDeleteCategory,
     openWorkspaceSettings,
+    workspaceSyncSnapshot,
+    handleManualSync,
     busy,
   }
 
@@ -1621,15 +1623,6 @@ function App() {
               <div className="mobile-board-toolbar-copy">
                 <h1>{boardTitle}</h1>
               </div>
-              {runtimeMode === 'workspace' ? (
-                <div className="mobile-board-toolbar-actions">
-                  <SyncActionButton
-                    syncSnapshot={workspaceSyncSnapshot}
-                    onClick={() => void handleManualSync()}
-                    disabled={busy || !workspaceSyncSnapshot}
-                  />
-                </div>
-              ) : null}
             </header>
           ) : null}
 
@@ -1670,15 +1663,6 @@ function App() {
               <div className="board-heading">
                 <h1>{boardTitle}</h1>
               </div>
-              {runtimeMode === 'workspace' ? (
-                <div className="board-header-actions">
-                  <SyncActionButton
-                    syncSnapshot={workspaceSyncSnapshot}
-                    onClick={() => void handleManualSync()}
-                    disabled={busy || !workspaceSyncSnapshot}
-                  />
-                </div>
-              ) : null}
             </header>
           )}
 
@@ -2305,6 +2289,8 @@ type SidebarProps = {
   handleSaveCategory: () => Promise<void>
   handleDeleteCategory: (category?: CategoryRecord) => Promise<void>
   openWorkspaceSettings: () => void
+  workspaceSyncSnapshot: WorkspaceSyncSnapshot | null
+  handleManualSync: () => Promise<void>
   busy: boolean
   readOnly: boolean
 }
@@ -2347,12 +2333,15 @@ function SidebarContent({
   handleSaveCategory,
   handleDeleteCategory,
   openWorkspaceSettings,
+  workspaceSyncSnapshot,
+  handleManualSync,
   busy,
   onNavigate,
   readOnly,
 }: Omit<SidebarProps, 'className' | 'id'>) {
   const [categoryDialogMode, setCategoryDialogMode] = useState<'create' | 'edit' | null>(null)
   const [pendingDeleteCategory, setPendingDeleteCategory] = useState<CategoryRecord | null>(null)
+  const sidebarTitle = readOnly ? '示例工作台' : shortWorkspaceId(workspaceId)
 
   const dialogTitle = categoryDialogMode === 'edit' ? '编辑分类' : '新建分类'
 
@@ -2399,12 +2388,31 @@ function SidebarContent({
 
   return (
     <>
-      <div className="sidebar-brandbar">
-        <div className="sidebar-brandmark" aria-hidden="true">
-          <Inbox size={18} strokeWidth={2.2} />
+      <div className="sidebar-topbar">
+        <div className="sidebar-topbar-copy">
+          <h2 title={sessionLabel}>{sidebarTitle}</h2>
         </div>
-        <div className="sidebar-brandcopy">
-          <h2 title={sessionLabel}>PlanTick</h2>
+        <div className="sidebar-topbar-actions">
+          {!readOnly ? (
+            <>
+              <SyncActionButton
+                syncSnapshot={workspaceSyncSnapshot}
+                onClick={() => void handleManualSync()}
+                disabled={busy || !workspaceSyncSnapshot}
+              />
+              <button
+                type="button"
+                className="sidebar-icon-button"
+                aria-label="打开工作区设置"
+                onClick={() => {
+                  openWorkspaceSettings()
+                  onNavigate?.()
+                }}
+              >
+                <Settings2 size={18} strokeWidth={2.15} />
+              </button>
+            </>
+          ) : null}
         </div>
       </div>
 
@@ -2499,33 +2507,6 @@ function SidebarContent({
           ))}
         </div>
       </section>
-
-      {!readOnly ? (
-        <section className="sidebar-section sidebar-card workspace-sidebar-section">
-          <div className="section-head">
-            <div>
-              <span>工作区</span>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            className="sidebar-item workspace-settings-trigger"
-            onClick={() => {
-              openWorkspaceSettings()
-              onNavigate?.()
-            }}
-          >
-            <span className="sidebar-item-main">
-              <span className="sidebar-icon sidebar-icon-settings" aria-hidden="true">
-                <Settings2 size={18} strokeWidth={2.15} />
-              </span>
-              <span>工作区设置</span>
-            </span>
-            <b>{shortWorkspaceId(workspaceId)}</b>
-          </button>
-        </section>
-      ) : null}
 
       {!readOnly && categoryDialogMode ? (
         <div className="category-dialog-backdrop" role="presentation" onClick={closeCategoryDialog}>

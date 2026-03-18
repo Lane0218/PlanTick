@@ -370,42 +370,37 @@
   background: #f5f7fa;
 }
 
-.sidebar-brandbar {
+.sidebar-topbar {
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: space-between;
+  gap: 16px;
   margin: -20px -20px 6px;
-  min-height: 56px;
+  min-height: 60px;
   padding: 0 16px;
-  background: #1f6e66;
-  color: #ffffff;
+  border-bottom: 1px solid #e7ebef;
+  background: #ffffff;
 }
 
-.sidebar-brandmark {
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.14);
+.sidebar-topbar-copy {
+  min-width: 0;
 }
 
-.sidebar-brandmark svg {
-  display: block;
-}
-
-.sidebar-brandcopy h2,
-.sidebar-brandcopy p {
+.sidebar-topbar-copy h2 {
   margin: 0;
-}
-
-.sidebar-brandcopy h2 {
-  font-size: 1rem;
+  color: #25364a;
+  font-size: 1.02rem;
   font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.sidebar-brandcopy p {
-  display: none;
+.sidebar-topbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .section-head span {
@@ -1044,14 +1039,6 @@
   letter-spacing: -0.05em;
 }
 
-.board-header-actions,
-.mobile-board-toolbar-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
 .mobile-board-toolbar {
   display: none;
 }
@@ -1099,8 +1086,25 @@
   box-shadow: 0 1px 0 rgba(15, 23, 42, 0.02);
 }
 
+.sidebar-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  min-width: 42px;
+  height: 42px;
+  padding: 0;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 14px;
+  background: #ffffff;
+  color: #0f8b8d;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.02);
+}
+
 .sync-action-button:hover,
-.sync-action-button:focus-visible {
+.sync-action-button:focus-visible,
+.sidebar-icon-button:hover,
+.sidebar-icon-button:focus-visible {
   background: #f3faf8;
   outline: none;
 }
@@ -3836,7 +3840,7 @@
     padding: 16px;
   }
 
-  .sidebar-brandbar {
+  .sidebar-topbar {
     margin: -16px -16px 6px;
     border-radius: 0;
   }
