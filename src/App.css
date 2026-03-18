@@ -1183,7 +1183,12 @@
 .board-header {
   display: flex;
   align-items: flex-start;
+  justify-content: space-between;
   gap: 16px;
+}
+
+.board-header-calendar {
+  margin-bottom: 4px;
 }
 
 .board-heading {
@@ -1197,6 +1202,14 @@
   font-size: clamp(1.6rem, 2vw, 2rem);
   line-height: 1;
   letter-spacing: -0.05em;
+}
+
+.board-header-actions,
+.mobile-board-toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
 }
 
 .mobile-board-toolbar {
@@ -1220,6 +1233,7 @@
 
 .mobile-board-toolbar-copy {
   min-width: 0;
+  flex: 1;
 }
 
 .mobile-board-toolbar-copy h1 {
@@ -1227,6 +1241,70 @@
   font-size: 1.18rem;
   line-height: 1.12;
   letter-spacing: -0.04em;
+}
+
+.sync-action-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  min-width: 42px;
+  height: 42px;
+  padding: 0;
+  border: 1px solid rgba(15, 138, 141, 0.16);
+  border-radius: 14px;
+  background: #ffffff;
+  color: #0f8b8d;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.02);
+}
+
+.sync-action-button:hover,
+.sync-action-button:focus-visible {
+  background: #f3faf8;
+  outline: none;
+}
+
+.sync-action-button.has-error {
+  border-color: rgba(212, 81, 95, 0.22);
+  color: #d4515f;
+}
+
+.sync-action-button.has-error:hover,
+.sync-action-button.has-error:focus-visible {
+  background: #fff5f6;
+}
+
+.sync-action-button:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.sync-action-button.is-syncing svg {
+  animation: sync-action-rotate 0.9s linear infinite;
+}
+
+.sync-action-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #0f8b8d;
+  color: #ffffff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 0 0 2px #ffffff;
+}
+
+.sync-action-button.has-error .sync-action-badge {
+  background: #d4515f;
 }
 
 .mobile-sidebar-layer,
@@ -3060,6 +3138,16 @@
 
   to {
     transform: translateX(0);
+  }
+}
+
+@keyframes sync-action-rotate {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
   }
 }
 

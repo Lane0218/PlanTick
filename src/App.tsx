@@ -20,6 +20,7 @@ import {
   Pencil,
   PlayCircle,
   Plus,
+  RefreshCw,
   Settings2,
   SquareKanban,
   Sun,
@@ -54,6 +55,7 @@ import type {
   WorkspaceSettingsInfo,
 } from './lib/types'
 import { enqueueRecordMutation, pullRemoteChanges, pushPendingOperations, reconcileRemoteChanges } from './lib/sync'
+import type { SyncStatus as WorkspaceSyncStatus } from './lib/sync-types'
 import {
   ensureAnonymousSession,
   getAuthenticatedSupabaseClient,
@@ -67,6 +69,8 @@ type WorkspaceView = 'todos' | 'board' | 'stats' | 'calendar'
 type TaskFilter = 'all' | 'today' | 'overdue' | 'completed'
 type WorkspaceRuntimeMode = 'workspace' | 'guest' | 'unattached'
 type WorkspaceSettingsBusyState = 'loading' | 'updating' | 'leaving' | null
+
+type WorkspaceSyncSnapshot = WorkspaceSettingsInfo['syncStatus']
 
 type WorkspacePrimaryNavProps = {
   activeView: WorkspaceView
@@ -354,6 +358,7 @@ function App() {
   const [workspaceSettingsInfo, setWorkspaceSettingsInfo] = useState<WorkspaceSettingsInfo | null>(null)
   const [workspaceSettingsBusyState, setWorkspaceSettingsBusyState] = useState<WorkspaceSettingsBusyState>(null)
   const [workspaceSettingsMessage, setWorkspaceSettingsMessage] = useState('')
+  const [workspaceSyncSnapshot, setWorkspaceSyncSnapshot] = useState<WorkspaceSyncSnapshot | null>(null)
   const [workspacePassphraseDraft, setWorkspacePassphraseDraft] = useState('')
   const [workspacePassphraseConfirm, setWorkspacePassphraseConfirm] = useState('')
   const [confirmLeaveWorkspace, setConfirmLeaveWorkspace] = useState(false)
@@ -525,6 +530,68 @@ function App() {
   const hasWorkspaceSettingsSyncRisk =
     (workspaceSettingsInfo?.syncStatus.pendingOutboxCount ?? 0) > 0 ||
     workspaceSettingsInfo?.syncStatus.status === 'error'
+  const isWorkspaceSyncing =
+    workspaceSyncSnapshot?.status === 'pushing' || workspaceSyncSnapshot?.status === 'pulling'
+
+  function applyWorkspaceSyncSnapshot(
+    snapshot: WorkspaceSyncSnapshot | null,
+    targetWorkspaceId = workspaceId,
+  ) {
+    setWorkspaceSyncSnapshot(snapshot)
+    setWorkspaceSettingsInfo((current) =>
+      current && current.workspaceId === targetWorkspaceId && snapshot
+        ? {
+            ...current,
+            syncStatus: snapshot,
+          }
+        : current,
+    )
+  }
+
+  async function readWorkspaceSyncSnapshot(targetWorkspaceId = workspaceId) {
+    if (!targetWorkspaceId) {
+      applyWorkspaceSyncSnapshot(null, targetWorkspaceId)
+      return null
+    }
+
+    const [syncMeta, pendingOutbox] = await Promise.all([
+      readSyncMeta(targetWorkspaceId),
+      listPendingOutbox(targetWorkspaceId),
+    ])
+
+    const snapshot: WorkspaceSyncSnapshot = {
+      status: syncMeta?.status ?? 'idle',
+      lastPushAt: syncMeta?.lastPushAt ?? null,
+      lastPullAt: syncMeta?.lastPullAt ?? null,
+      pendingOutboxCount: pendingOutbox.length,
+      lastError: syncMeta?.lastError ?? null,
+    }
+
+    applyWorkspaceSyncSnapshot(snapshot, targetWorkspaceId)
+    return snapshot
+  }
+
+  function setOptimisticWorkspaceSyncStatus(
+    status: Extract<WorkspaceSyncStatus, 'pushing' | 'pulling'>,
+    targetWorkspaceId = workspaceId,
+  ) {
+    const fallback: WorkspaceSyncSnapshot = {
+      status,
+      lastPushAt: null,
+      lastPullAt: null,
+      pendingOutboxCount: 0,
+      lastError: null,
+    }
+
+    applyWorkspaceSyncSnapshot(
+      {
+        ...(workspaceSyncSnapshot ?? fallback),
+        status,
+        lastError: null,
+      },
+      targetWorkspaceId,
+    )
+  }
 
   async function loadWorkspaceSettingsInfo(targetWorkspaceId = workspaceId) {
     if (!targetWorkspaceId) {
@@ -539,10 +606,9 @@ function App() {
     setWorkspaceSettingsMessage('')
 
     try {
-      const [workspaceMeta, syncMeta, pendingOutbox, createdAt] = await Promise.all([
+      const [workspaceMeta, syncSnapshot, createdAt] = await Promise.all([
         getCurrentWorkspaceMeta(),
-        readSyncMeta(targetWorkspaceId),
-        listPendingOutbox(targetWorkspaceId),
+        readWorkspaceSyncSnapshot(targetWorkspaceId),
         loadWorkspaceCreatedAt(targetWorkspaceId),
       ])
 
@@ -560,13 +626,7 @@ function App() {
         joinedAt: workspaceMeta.joinedAt,
         lastSeenAt: workspaceMeta.lastSeenAt,
         createdAt,
-        syncStatus: {
-          status: syncMeta?.status ?? 'idle',
-          lastPushAt: syncMeta?.lastPushAt ?? null,
-          lastPullAt: syncMeta?.lastPullAt ?? null,
-          pendingOutboxCount: pendingOutbox.length,
-          lastError: syncMeta?.lastError ?? null,
-        },
+        syncStatus: syncSnapshot ?? createDefaultWorkspaceSyncSnapshot('idle'),
       })
     } catch (error) {
       if (workspaceSettingsRequestIdRef.current !== requestId) {
@@ -637,6 +697,8 @@ function App() {
     }
 
     void restore()
+    // `refreshWorkspaceData` is intentionally invoked only during initial restore.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -749,9 +811,7 @@ function App() {
       recurrenceType: updated.recurrenceType,
     })
     setTodos((current) => current.map((todo) => (todo.id === updated.id ? updated : todo)))
-    void pushPendingOperations().catch((error) => {
-      console.warn('推送任务详情自动保存失败', error)
-    })
+    triggerBackgroundPush('推送任务详情自动保存失败')
   })
 
   const persistEventDraft = useEffectEvent(async (draft: EventDraft, baseEvent: EventRecord) => {
@@ -780,9 +840,7 @@ function App() {
       note: updated.note,
     })
     setEvents((current) => current.map((event) => (event.id === updated.id ? updated : event)))
-    void pushPendingOperations().catch((error) => {
-      console.warn('推送事件详情自动保存失败', error)
-    })
+    triggerBackgroundPush('推送事件详情自动保存失败')
   })
 
   useEffect(() => {
@@ -819,43 +877,7 @@ function App() {
     return () => window.clearTimeout(timer)
   }, [eventDraft, selectedEvent])
 
-  async function refreshWorkspaceData(nextWorkspaceId?: string) {
-    const requestId = refreshRequestIdRef.current + 1
-    refreshRequestIdRef.current = requestId
-    const resolvedWorkspaceId = nextWorkspaceId ?? (await loadWorkspaceId())
-    if (!resolvedWorkspaceId) {
-      if (requestId !== refreshRequestIdRef.current) {
-        return
-      }
-
-      setWorkspaceId('')
-      setRuntimeMode('unattached')
-      setCategories([])
-      setTodos([])
-      setEvents([])
-      setSelectedCategoryId(null)
-      setSelectedUncategorized(false)
-      setActiveFilter('all')
-      setSelectedTodoId(null)
-      setSelectedEventId(null)
-      setActiveView('todos')
-      setSessionLabel('尚未建立匿名会话')
-      return
-    }
-
-    try {
-      await pushPendingOperations()
-    } catch (error) {
-      console.warn('刷新工作区时推送本地变更失败', error)
-    }
-
-    try {
-      const pullResult = await pullRemoteChanges()
-      await reconcileRemoteChanges(resolvedWorkspaceId, pullResult)
-    } catch (error) {
-      console.warn('刷新工作区时拉取远端数据失败', error)
-    }
-
+  async function hydrateWorkspaceData(resolvedWorkspaceId: string, requestId = refreshRequestIdRef.current) {
     const [workspaceMeta, nextCategories, nextTodos, nextEvents] = await Promise.all([
       getCurrentWorkspaceMeta(),
       listCategories(resolvedWorkspaceId),
@@ -890,6 +912,51 @@ function App() {
     setSelectedEventId((current) =>
       current && nextEvents.some((event) => event.id === current && !event.deleted) ? current : null,
     )
+
+    await readWorkspaceSyncSnapshot(resolvedWorkspaceId)
+  }
+
+  async function refreshWorkspaceData(nextWorkspaceId?: string) {
+    const requestId = refreshRequestIdRef.current + 1
+    refreshRequestIdRef.current = requestId
+    const resolvedWorkspaceId = nextWorkspaceId ?? (await loadWorkspaceId())
+    if (!resolvedWorkspaceId) {
+      if (requestId !== refreshRequestIdRef.current) {
+        return
+      }
+
+      setWorkspaceId('')
+      setRuntimeMode('unattached')
+      setCategories([])
+      setTodos([])
+      setEvents([])
+      setSelectedCategoryId(null)
+      setSelectedUncategorized(false)
+      setActiveFilter('all')
+      setSelectedTodoId(null)
+      setSelectedEventId(null)
+      applyWorkspaceSyncSnapshot(null)
+      setActiveView('todos')
+      setSessionLabel('尚未建立匿名会话')
+      return
+    }
+
+    try {
+      setOptimisticWorkspaceSyncStatus('pushing', resolvedWorkspaceId)
+      await pushPendingOperations()
+    } catch (error) {
+      console.warn('刷新工作区时推送本地变更失败', error)
+    }
+
+    try {
+      setOptimisticWorkspaceSyncStatus('pulling', resolvedWorkspaceId)
+      const pullResult = await pullRemoteChanges()
+      await reconcileRemoteChanges(resolvedWorkspaceId, pullResult)
+    } catch (error) {
+      console.warn('刷新工作区时拉取远端数据失败', error)
+    }
+
+    await hydrateWorkspaceData(resolvedWorkspaceId, requestId)
   }
 
   async function handleWorkspaceSubmit(event: FormEvent<HTMLFormElement>) {
@@ -925,6 +992,59 @@ function App() {
     } finally {
       setBusy(false)
     }
+  }
+
+  async function handleManualSync() {
+    if (runtimeMode !== 'workspace' || !workspaceId || isWorkspaceSyncing) {
+      return
+    }
+
+    const requestId = refreshRequestIdRef.current + 1
+    refreshRequestIdRef.current = requestId
+
+    try {
+      setOptimisticWorkspaceSyncStatus('pushing', workspaceId)
+      const pushResult = await pushPendingOperations()
+
+      setOptimisticWorkspaceSyncStatus('pulling', workspaceId)
+      const pullResult = await pullRemoteChanges()
+      await reconcileRemoteChanges(workspaceId, pullResult)
+      await hydrateWorkspaceData(workspaceId, requestId)
+
+      const pulledCount =
+        pullResult.changes.categories.length +
+        pullResult.changes.todos.length +
+        pullResult.changes.events.length
+      const hasChanges = pushResult.pushedOperationIds.length > 0 || pulledCount > 0
+      const nextMessage = hasChanges ? '同步完成。' : '暂无待同步变更，已拉取最新数据。'
+      setMessage(nextMessage)
+      if (workspaceSettingsOpen) {
+        setWorkspaceSettingsMessage(nextMessage)
+      }
+    } catch (error) {
+      const nextMessage =
+        error instanceof Error ? normalizeSyncErrorMessage(error.message) : '同步失败，请稍后重试。'
+      await readWorkspaceSyncSnapshot(workspaceId)
+      setMessage(nextMessage)
+      if (workspaceSettingsOpen) {
+        setWorkspaceSettingsMessage(nextMessage)
+      }
+    }
+  }
+
+  function triggerBackgroundPush(logMessage: string, targetWorkspaceId = workspaceId) {
+    if (runtimeMode !== 'workspace' || !targetWorkspaceId || isWorkspaceSyncing) {
+      return
+    }
+
+    setOptimisticWorkspaceSyncStatus('pushing', targetWorkspaceId)
+    void pushPendingOperations()
+      .catch((error) => {
+        console.warn(logMessage, error)
+      })
+      .finally(() => {
+        void readWorkspaceSyncSnapshot(targetWorkspaceId)
+      })
   }
 
   async function handleCopyWorkspaceField(label: string, value: string) {
@@ -1121,9 +1241,7 @@ function App() {
       setSelectedTodoId(record.id)
       setSelectedEventId(null)
       setMessage(`任务「${record.title}」已创建。`)
-      void pushPendingOperations().catch((error) => {
-        console.warn('推送新建任务失败', error)
-      })
+      triggerBackgroundPush('推送新建任务失败')
     } finally {
       setBusy(false)
     }
@@ -1199,9 +1317,7 @@ function App() {
           ? `任务「${todo.title}」已完成，并已生成下一次：${formatMonthDay(recurringTodo.dueDate!)}。`
           : `任务「${todo.title}」状态已切换为 ${todoStatusMeta[updated.status].label}。`,
       )
-      void pushPendingOperations().catch((error) => {
-        console.warn('推送任务状态变更失败', error)
-      })
+      triggerBackgroundPush('推送任务状态变更失败')
     } finally {
       setBusy(false)
     }
@@ -1531,6 +1647,15 @@ function App() {
               <div className="mobile-board-toolbar-copy">
                 <h1>{boardTitle}</h1>
               </div>
+              {runtimeMode === 'workspace' ? (
+                <div className="mobile-board-toolbar-actions">
+                  <SyncActionButton
+                    syncSnapshot={workspaceSyncSnapshot}
+                    onClick={() => void handleManualSync()}
+                    disabled={busy || !workspaceSyncSnapshot}
+                  />
+                </div>
+              ) : null}
             </header>
           ) : null}
 
@@ -1566,11 +1691,20 @@ function App() {
             sidebarCounts={sidebarCounts}
           />
 
-          {activeView === 'calendar' || isMobileViewport ? null : (
-            <header className="board-header">
+          {isMobileViewport ? null : (
+            <header className={activeView === 'calendar' ? 'board-header board-header-calendar' : 'board-header'}>
               <div className="board-heading">
                 <h1>{boardTitle}</h1>
               </div>
+              {runtimeMode === 'workspace' ? (
+                <div className="board-header-actions">
+                  <SyncActionButton
+                    syncSnapshot={workspaceSyncSnapshot}
+                    onClick={() => void handleManualSync()}
+                    disabled={busy || !workspaceSyncSnapshot}
+                  />
+                </div>
+              ) : null}
             </header>
           )}
 
@@ -1750,6 +1884,46 @@ function App() {
         closeDialog={closeWorkspaceSettings}
       />
     </>
+  )
+}
+
+function SyncActionButton({
+  syncSnapshot,
+  onClick,
+  disabled,
+}: {
+  syncSnapshot: WorkspaceSyncSnapshot | null
+  onClick: () => void
+  disabled: boolean
+}) {
+  const status = syncSnapshot?.status ?? 'idle'
+  const isSyncing = status === 'pushing' || status === 'pulling'
+  const hasError = status === 'error'
+  const pendingCount = syncSnapshot?.pendingOutboxCount ?? 0
+  const label = formatSyncActionLabel(syncSnapshot)
+
+  return (
+    <button
+      type="button"
+      className={[
+        'sync-action-button',
+        isSyncing ? 'is-syncing' : '',
+        hasError ? 'has-error' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+      aria-label={label}
+      title={label}
+      disabled={disabled || isSyncing}
+      onClick={onClick}
+    >
+      <RefreshCw size={18} strokeWidth={2.15} aria-hidden="true" />
+      {pendingCount > 0 ? (
+        <span className="sync-action-badge" aria-hidden="true">
+          {pendingCount > 99 ? '99+' : pendingCount}
+        </span>
+      ) : null}
+    </button>
   )
 }
 
@@ -5280,6 +5454,66 @@ async function loadWorkspaceCreatedAt(workspaceId: string) {
     console.warn('读取工作区创建时间失败', error)
     return null
   }
+}
+
+function createDefaultWorkspaceSyncSnapshot(
+  status: WorkspaceSyncStatus = 'idle',
+): WorkspaceSyncSnapshot {
+  return {
+    status,
+    lastPushAt: null,
+    lastPullAt: null,
+    pendingOutboxCount: 0,
+    lastError: null,
+  }
+}
+
+function formatSyncActionLabel(syncSnapshot: WorkspaceSyncSnapshot | null) {
+  if (!syncSnapshot) {
+    return '读取同步状态中'
+  }
+
+  if (syncSnapshot.status === 'pushing') {
+    return '正在推送本地变更'
+  }
+
+  if (syncSnapshot.status === 'pulling') {
+    return '正在拉取最新数据'
+  }
+
+  if (syncSnapshot.status === 'error') {
+    return syncSnapshot.lastError
+      ? `同步异常：${normalizeSyncErrorMessage(syncSnapshot.lastError)}，点击重试`
+      : '同步异常，点击重试'
+  }
+
+  if (syncSnapshot.pendingOutboxCount > 0) {
+    return `立即同步，当前有 ${syncSnapshot.pendingOutboxCount} 项待同步变更`
+  }
+
+  return '立即同步'
+}
+
+function normalizeSyncErrorMessage(message: string) {
+  const normalizedMessage = message.toLowerCase()
+
+  if (
+    normalizedMessage.includes('当前设备会话已失效') ||
+    normalizedMessage.includes('session') ||
+    normalizedMessage.includes('row-level security')
+  ) {
+    return '当前设备会话已失效，请重新加入工作区。'
+  }
+
+  if (
+    normalizedMessage.includes('failed to fetch') ||
+    normalizedMessage.includes('network') ||
+    normalizedMessage.includes('fetch')
+  ) {
+    return '同步失败，请检查网络后重试。'
+  }
+
+  return message
 }
 
 function normalizeWorkspacePassphraseUpdateError(message: string) {

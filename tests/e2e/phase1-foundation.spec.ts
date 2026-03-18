@@ -14,6 +14,12 @@ function weekdayLabel(date: Date) {
   return ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][date.getDay()]
 }
 
+function getSyncActionButton(page: Page) {
+  return page.getByRole('button', {
+    name: /^(立即同步|读取同步状态中|正在推送本地变更|正在拉取最新数据|同步异常)/,
+  })
+}
+
 async function expectWorkspaceAccessDialog(page: Page) {
   const dialog = page.getByRole('dialog', { name: '创建或加入你的任务工作台' })
   await expect(dialog).toBeVisible()
@@ -65,6 +71,7 @@ test('phase 2 首次进入直接展示工作台并支持游客模式', async ({ 
 
   await expect(page.getByRole('status')).toContainText('游客模式')
   await expect(page.getByRole('button', { name: '查看任务 整理今天的优先事项' })).toBeVisible()
+  await expect(getSyncActionButton(page)).toHaveCount(0)
   await expect(page.getByRole('button', { name: '查看任务 补完上周遗留的发布检查' })).toBeVisible()
   await expect(page.getByLabel('快速新建任务')).toBeDisabled()
   await expect(page.getByRole('button', { name: '查看任务 整理今天的优先事项' })).toBeVisible()
@@ -412,7 +419,7 @@ test('phase 4 日程概览：月历展示截止事项并支持在日历中改期
   ).toBeVisible()
 
   await page.getByRole('button', { name: '日程概览' }).click()
-  await expect(page.getByRole('heading', { name: '日程概览' })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: '日程概览' })).toBeVisible()
   await expect(page.locator('.calendar-grid')).toBeVisible()
   await expect(page.locator('.calendar-grid').getByText('月历任务一')).toBeVisible()
   await expect(page.locator('.calendar-grid').getByText('月历任务三')).toBeVisible()
@@ -537,6 +544,7 @@ test('phase 4 双设备同步：事件创建、编辑、删除可跨设备补拉
   const openCalendar = async (page: Page) => {
     await page.getByRole('button', { name: '日程概览' }).click()
     await expect(page.locator('.calendar-grid')).toBeVisible()
+    await expect(getSyncActionButton(page)).toBeVisible()
   }
 
   try {
@@ -554,8 +562,7 @@ test('phase 4 双设备同步：事件创建、编辑、删除可跨设备补拉
     await pageA.getByLabel('快速新建事件').press('Enter')
     await expect(pageA.getByLabel('事件标题')).toHaveValue(eventTitle)
 
-    await pageB.reload()
-    await openCalendar(pageB)
+    await getSyncActionButton(pageB).click()
     await expect(pageB.locator('.calendar-grid').getByText(eventTitle)).toBeVisible()
 
     await pageA.locator('.calendar-grid').getByText(eventTitle).click()
@@ -565,8 +572,7 @@ test('phase 4 双设备同步：事件创建、编辑、删除可跨设备补拉
     await pageA.getByLabel('事件备注').fill('双设备编辑验证')
     await pageA.waitForTimeout(1200)
 
-    await pageB.reload()
-    await openCalendar(pageB)
+    await getSyncActionButton(pageB).click()
     await pageB.locator('.calendar-grid').getByText(updatedTitle).click()
     await expect(pageB.getByLabel('事件标题')).toHaveValue(updatedTitle)
     await expect(pageB.getByLabel('开始时间')).toHaveValue('10:00')
@@ -578,8 +584,7 @@ test('phase 4 双设备同步：事件创建、编辑、删除可跨设备补拉
     await pageA.locator('.detail-footer-actions').getByRole('button', { name: '删除' }).click()
     await expect(pageA.locator('.detail-pane.is-open')).toHaveCount(0)
 
-    await pageB.reload()
-    await openCalendar(pageB)
+    await getSyncActionButton(pageB).click()
     await expect(pageB.locator('.calendar-grid').getByText(updatedTitle)).toHaveCount(0)
   } finally {
     await pageA.close()
