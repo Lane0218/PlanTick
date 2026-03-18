@@ -230,6 +230,19 @@ export async function saveWorkspaceId(workspaceId: string) {
   await saveCurrentWorkspaceMeta(workspaceId)
 }
 
+export async function clearCurrentWorkspaceMeta() {
+  const database = await getDatabase()
+  const transaction = database.transaction(['workspace_meta', legacyStoreName], 'readwrite')
+
+  await transaction.objectStore('workspace_meta').delete('current')
+
+  if (database.objectStoreNames.contains(legacyStoreName)) {
+    await transaction.objectStore(legacyStoreName).delete('workspaceId')
+  }
+
+  await transaction.done
+}
+
 export async function loadWorkspaceId() {
   const current = await getCurrentWorkspaceMeta()
   return current?.workspaceId ?? ''

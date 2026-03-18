@@ -306,6 +306,7 @@
 }
 
 .workspace-form label,
+.workspace-settings-form label,
 .category-create label,
 .category-editor label,
 .detail-field {
@@ -314,6 +315,7 @@
 }
 
 .workspace-form input,
+.workspace-settings-form input,
 .category-create input,
 .category-editor input,
 .detail-field input,
@@ -826,6 +828,166 @@
 
 .workspace-dialog-actions {
   margin-top: 4px;
+}
+
+.workspace-settings-dialog {
+  width: min(720px, 100%);
+  max-height: min(calc(100vh - 40px), 920px);
+  gap: 20px;
+  overflow-y: auto;
+}
+
+.workspace-settings-head {
+  align-items: flex-start;
+}
+
+.workspace-settings-headcopy {
+  display: grid;
+  gap: 6px;
+}
+
+.workspace-settings-headcopy p {
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.6;
+}
+
+.workspace-settings-panel {
+  display: grid;
+  gap: 16px;
+  padding: 18px 20px;
+  border: 1px solid #e2e8ee;
+  border-radius: 18px;
+  background: #ffffff;
+}
+
+.workspace-settings-panel-head,
+.workspace-settings-actions,
+.workspace-settings-field,
+.workspace-copy-button {
+  display: flex;
+  align-items: center;
+}
+
+.workspace-settings-panel-head,
+.workspace-settings-field {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.workspace-settings-panel-head strong {
+  color: var(--text-strong);
+  font-size: 1rem;
+}
+
+.workspace-settings-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.workspace-settings-field {
+  padding: 14px 16px;
+  border: 1px solid #edf1f5;
+  border-radius: 14px;
+  background: #f8fafb;
+}
+
+.workspace-settings-field-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.workspace-settings-field-main span,
+.workspace-settings-field-main small {
+  color: var(--text-soft);
+}
+
+.workspace-settings-field-main span {
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.workspace-settings-field-main strong {
+  color: var(--text-strong);
+  font-size: 0.98rem;
+  line-height: 1.6;
+  word-break: break-all;
+}
+
+.workspace-settings-field-main small {
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.workspace-settings-field-action {
+  flex-shrink: 0;
+}
+
+.workspace-copy-button,
+.workspace-settings-leave-actions .danger-button {
+  gap: 8px;
+  justify-content: center;
+}
+
+.workspace-settings-form {
+  gap: 14px;
+}
+
+.workspace-settings-actions {
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.workspace-settings-danger-zone {
+  background: #fffafb;
+  border-color: #f2dce0;
+}
+
+.workspace-settings-danger-copy,
+.workspace-settings-warning,
+.workspace-settings-confirm,
+.workspace-settings-message,
+.workspace-settings-empty {
+  margin: 0;
+  line-height: 1.7;
+}
+
+.workspace-settings-danger-copy,
+.workspace-settings-empty {
+  color: var(--text-soft);
+}
+
+.workspace-settings-warning {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #fff4f5;
+  color: #b64654;
+}
+
+.workspace-settings-confirm {
+  color: var(--text-soft);
+}
+
+.workspace-settings-message {
+  min-height: 24px;
+  color: var(--text-soft);
+  font-size: 0.92rem;
+}
+
+.workspace-sidebar-section {
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+.workspace-settings-trigger {
+  justify-content: space-between;
+}
+
+.workspace-settings-trigger b {
+  color: var(--text-soft);
+  font-size: 0.82rem;
 }
 
 .workspace-banner {
@@ -3536,6 +3698,16 @@
   .detail-pane-sheet .detail-status-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+
+  .workspace-settings-field {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .workspace-settings-field-action,
+  .workspace-copy-button {
+    width: 100%;
+  }
 }
 
 @media (hover: hover) {
@@ -3631,6 +3803,14 @@
     max-width: calc(100vw - 56px);
     padding: 0;
     border-radius: 0;
+  }
+
+  .workspace-settings-dialog,
+  .workspace-dialog,
+  .category-dialog {
+    width: min(100%, 100%);
+    padding: 24px 20px;
+    border-radius: 20px;
   }
 
   .sidebar-pane-drawer {
@@ -3792,5 +3972,21 @@
   .todo-due,
   .status-card-due {
     text-align: left;
+  }
+
+  .workspace-settings-panel {
+    padding: 16px;
+  }
+
+  .workspace-settings-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .workspace-settings-actions .primary-button,
+  .workspace-settings-actions .secondary-button,
+  .workspace-settings-actions .danger-button,
+  .workspace-settings-panel-head .ghost-button {
+    width: 100%;
   }
 }

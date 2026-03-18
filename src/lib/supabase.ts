@@ -8,6 +8,11 @@ type WorkspaceResponse = {
   joined: boolean
 }
 
+type WorkspacePassphraseUpdateResponse = {
+  workspaceId: string
+  updated: boolean
+}
+
 const { supabaseUrl, supabaseAnonKey } = getSupabaseEnv()
 
 export const supabase = isSupabaseConfigured
@@ -98,5 +103,53 @@ export async function invokeWorkspaceFunction(
   return {
     workspaceId: payload.workspaceId,
     joined: Boolean(payload.joined),
+  }
+}
+
+export async function updateWorkspacePassphrase(
+  workspaceId: string,
+  newPassphrase: string,
+) {
+  requireClient()
+  const session = await ensureAnonymousSession()
+  const { supabaseUrl, supabaseAnonKey } = getSupabaseEnv()
+
+  const response = await fetch(`${supabaseUrl}/functions/v1/workspace-update-passphrase`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: supabaseAnonKey,
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({
+      workspaceId,
+      newPassphrase,
+    }),
+  })
+
+  const text = await response.text()
+  let payload: (Partial<WorkspacePassphraseUpdateResponse> & { error?: string }) | null = null
+
+  if (text) {
+    try {
+      payload = JSON.parse(text) as Partial<WorkspacePassphraseUpdateResponse> & { error?: string }
+    } catch {
+      payload = {
+        error: text,
+      }
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error(payload?.error ?? `函数调用失败，HTTP ${response.status}`)
+  }
+
+  if (!payload?.workspaceId) {
+    throw new Error('函数未返回 workspaceId')
+  }
+
+  return {
+    workspaceId: payload.workspaceId,
+    updated: Boolean(payload.updated),
   }
 }

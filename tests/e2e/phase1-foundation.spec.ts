@@ -321,6 +321,46 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   await expect(restoredTask.getByText('明天')).toBeVisible()
 })
 
+test('phase 3 工作区设置：支持修改口令并退出当前工作区', async ({ page, baseURL }) => {
+  const oldPassphrase = `phase3-settings-old-${Date.now()}`
+  const newPassphrase = `phase3-settings-new-${Date.now()}`
+
+  await page.goto(baseURL!)
+  await page.setViewportSize({ width: 1440, height: 960 })
+
+  await createWorkspaceFromDialog(page, oldPassphrase)
+
+  await page.getByRole('button', { name: '工作区设置' }).click()
+  const settingsDialog = page.getByRole('dialog', { name: '工作区设置' })
+  await expect(settingsDialog).toBeVisible()
+  await expect(settingsDialog.getByText('工作区 ID')).toBeVisible()
+  await expect(settingsDialog.getByText('同步状态')).toBeVisible()
+
+  await settingsDialog.getByRole('textbox', { name: '新口令', exact: true }).fill(newPassphrase)
+  await settingsDialog.getByRole('textbox', { name: '确认新口令', exact: true }).fill(newPassphrase)
+  await settingsDialog.getByRole('button', { name: '更新口令' }).click()
+  await expect(settingsDialog.getByText('工作区口令已更新。')).toBeVisible()
+
+  await settingsDialog.getByRole('button', { name: '退出当前工作区' }).click()
+  await expect(settingsDialog.getByText('再次确认后会回到工作区接入页。')).toBeVisible()
+  await settingsDialog.getByRole('button', { name: '确认退出当前工作区' }).click()
+
+  const accessDialog = page.getByRole('dialog', { name: '创建或加入你的任务工作台' })
+  await expect(accessDialog).toBeVisible()
+  await expect(accessDialog.getByText('已退出当前工作区，你可以重新创建或加入其他工作区。')).toBeVisible()
+
+  await accessDialog.getByRole('button', { name: '加入工作区' }).click()
+  await accessDialog.getByLabel('工作区口令').fill(oldPassphrase)
+  await accessDialog.getByRole('button', { name: '加入并进入工作台' }).click()
+  await expect(accessDialog.getByText('Invalid passphrase.')).toBeVisible()
+  await expect(page.getByRole('button', { name: '新建分类' })).toHaveCount(0)
+
+  await accessDialog.getByLabel('工作区口令').fill(newPassphrase)
+  await accessDialog.getByRole('button', { name: '加入并进入工作台' }).click()
+  await expect(accessDialog).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '工作区设置' })).toBeVisible()
+})
+
 test('phase 4 日程概览：月历展示截止事项并支持在日历中改期', async ({ page, baseURL }) => {
   const passphrase = `phase4-${Date.now()}-pw`
 

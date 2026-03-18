@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.workspace-join]
 verify_jwt = false
+
+[functions.workspace-update-passphrase]
+verify_jwt = false

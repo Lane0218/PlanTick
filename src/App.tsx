@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, FormEvent, RefObject } from 'react'
+import type { CSSProperties, FormEvent, ReactNode, RefObject } from 'react'
 import { DayPicker } from 'react-day-picker'
 import 'react-day-picker/dist/style.css'
 import {
@@ -12,12 +12,15 @@ import {
   ChevronRight,
   Circle,
   Clock3,
+  Copy,
   Inbox,
+  LogOut,
   Menu,
   PauseCircle,
   Pencil,
   PlayCircle,
   Plus,
+  Settings2,
   SquareKanban,
   Sun,
   Trash2,
@@ -26,11 +29,14 @@ import {
 import { zhCN } from 'date-fns/locale'
 import './App.css'
 import {
+  clearCurrentWorkspaceMeta,
   getCurrentWorkspaceMeta,
   listCategories,
   listEvents,
+  listPendingOutbox,
   listTodos,
   loadWorkspaceId,
+  readSyncMeta,
   runIndexedDbProbe,
   saveCurrentWorkspaceMeta,
   saveWorkspaceId,
@@ -39,14 +45,27 @@ import {
   upsertTodo,
 } from './lib/db'
 import { isSupabaseConfigured } from './lib/env'
-import type { CategoryRecord, EventRecord, TodoRecord, TodoRecurrenceType, TodoStatus } from './lib/types'
+import type {
+  CategoryRecord,
+  EventRecord,
+  TodoRecord,
+  TodoRecurrenceType,
+  TodoStatus,
+  WorkspaceSettingsInfo,
+} from './lib/types'
 import { enqueueRecordMutation, pullRemoteChanges, pushPendingOperations, reconcileRemoteChanges } from './lib/sync'
-import { ensureAnonymousSession, invokeWorkspaceFunction } from './lib/supabase'
+import {
+  ensureAnonymousSession,
+  getAuthenticatedSupabaseClient,
+  invokeWorkspaceFunction,
+  updateWorkspacePassphrase,
+} from './lib/supabase'
 
 type WorkspaceMode = 'create' | 'join'
 type WorkspaceView = 'todos' | 'board' | 'stats' | 'calendar'
 type TaskFilter = 'all' | 'today' | 'overdue' | 'completed'
 type WorkspaceRuntimeMode = 'workspace' | 'guest' | 'unattached'
+type WorkspaceSettingsBusyState = 'loading' | 'updating' | 'leaving' | null
 
 type WorkspacePrimaryNavProps = {
   activeView: WorkspaceView
@@ -330,6 +349,13 @@ function App() {
   const [workspaceId, setWorkspaceId] = useState('')
   const [runtimeMode, setRuntimeMode] = useState<WorkspaceRuntimeMode>('unattached')
   const [workspaceDialogOpen, setWorkspaceDialogOpen] = useState(false)
+  const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = useState(false)
+  const [workspaceSettingsInfo, setWorkspaceSettingsInfo] = useState<WorkspaceSettingsInfo | null>(null)
+  const [workspaceSettingsBusyState, setWorkspaceSettingsBusyState] = useState<WorkspaceSettingsBusyState>(null)
+  const [workspaceSettingsMessage, setWorkspaceSettingsMessage] = useState('')
+  const [workspacePassphraseDraft, setWorkspacePassphraseDraft] = useState('')
+  const [workspacePassphraseConfirm, setWorkspacePassphraseConfirm] = useState('')
+  const [confirmLeaveWorkspace, setConfirmLeaveWorkspace] = useState(false)
   const [sessionLabel, setSessionLabel] = useState('尚未建立匿名会话')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('请选择工作区后开始管理任务。')
@@ -365,6 +391,7 @@ function App() {
   const lastSavedDraftRef = useRef('')
   const lastSavedEventDraftRef = useRef('')
   const refreshRequestIdRef = useRef(0)
+  const workspaceSettingsRequestIdRef = useRef(0)
 
   const sourceCategories = runtimeMode === 'guest' ? demoCategories : categories
   const sourceTodos = runtimeMode === 'guest' ? demoTodos : todos
@@ -498,6 +525,88 @@ function App() {
   )
   const nextSevenDayLoad = useMemo<StatsDayLoad[]>(() => buildUpcomingDayLoad(activeTodos, activeEvents), [activeEvents, activeTodos])
   const historicalCompletionSeries = useMemo<StatsHistoricalCompletionPoint[]>(() => buildHistoricalCompletionSeries(activeTodos), [activeTodos])
+  const hasWorkspaceSettingsSyncRisk =
+    (workspaceSettingsInfo?.syncStatus.pendingOutboxCount ?? 0) > 0 ||
+    workspaceSettingsInfo?.syncStatus.status === 'error'
+
+  async function loadWorkspaceSettingsInfo(targetWorkspaceId = workspaceId) {
+    if (!targetWorkspaceId) {
+      setWorkspaceSettingsInfo(null)
+      setWorkspaceSettingsMessage('当前没有可管理的工作区。')
+      return
+    }
+
+    const requestId = workspaceSettingsRequestIdRef.current + 1
+    workspaceSettingsRequestIdRef.current = requestId
+    setWorkspaceSettingsBusyState('loading')
+    setWorkspaceSettingsMessage('')
+
+    try {
+      const [workspaceMeta, syncMeta, pendingOutbox, createdAt] = await Promise.all([
+        getCurrentWorkspaceMeta(),
+        readSyncMeta(targetWorkspaceId),
+        listPendingOutbox(targetWorkspaceId),
+        loadWorkspaceCreatedAt(targetWorkspaceId),
+      ])
+
+      if (workspaceSettingsRequestIdRef.current !== requestId) {
+        return
+      }
+
+      if (!workspaceMeta || workspaceMeta.workspaceId !== targetWorkspaceId) {
+        throw new Error('缺少当前工作区上下文。')
+      }
+
+      setWorkspaceSettingsInfo({
+        workspaceId: targetWorkspaceId,
+        anonymousUserId: workspaceMeta.anonymousUserId,
+        joinedAt: workspaceMeta.joinedAt,
+        lastSeenAt: workspaceMeta.lastSeenAt,
+        createdAt,
+        syncStatus: {
+          status: syncMeta?.status ?? 'idle',
+          lastPushAt: syncMeta?.lastPushAt ?? null,
+          lastPullAt: syncMeta?.lastPullAt ?? null,
+          pendingOutboxCount: pendingOutbox.length,
+          lastError: syncMeta?.lastError ?? null,
+        },
+      })
+    } catch (error) {
+      if (workspaceSettingsRequestIdRef.current !== requestId) {
+        return
+      }
+
+      setWorkspaceSettingsInfo(null)
+      setWorkspaceSettingsMessage(error instanceof Error ? error.message : '读取工作区设置失败。')
+    } finally {
+      if (workspaceSettingsRequestIdRef.current === requestId) {
+        setWorkspaceSettingsBusyState(null)
+      }
+    }
+  }
+
+  function openWorkspaceSettings() {
+    if (runtimeMode !== 'workspace' || !workspaceId) {
+      return
+    }
+
+    setWorkspaceSettingsOpen(true)
+    setConfirmLeaveWorkspace(false)
+    setWorkspacePassphraseDraft('')
+    setWorkspacePassphraseConfirm('')
+    setWorkspaceSettingsMessage('')
+    void loadWorkspaceSettingsInfo(workspaceId)
+  }
+
+  function closeWorkspaceSettings() {
+    workspaceSettingsRequestIdRef.current += 1
+    setWorkspaceSettingsOpen(false)
+    setConfirmLeaveWorkspace(false)
+    setWorkspacePassphraseDraft('')
+    setWorkspacePassphraseConfirm('')
+    setWorkspaceSettingsBusyState(null)
+    setWorkspaceSettingsMessage('')
+  }
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(max-width: 980px)')
@@ -531,6 +640,14 @@ function App() {
 
     void restore()
   }, [])
+
+  useEffect(() => {
+    if (runtimeMode === 'workspace') {
+      return
+    }
+
+    setWorkspaceSettingsOpen(false)
+  }, [runtimeMode])
 
   useEffect(() => {
     if (!selectedCategory) {
@@ -803,6 +920,85 @@ function App() {
       setMessage(error instanceof Error ? error.message : '工作区操作失败')
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function handleCopyWorkspaceField(label: string, value: string) {
+    if (!navigator.clipboard) {
+      setWorkspaceSettingsMessage(`${label}当前无法自动复制，请手动复制。`)
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(value)
+      setWorkspaceSettingsMessage(`${label}已复制。`)
+    } catch {
+      setWorkspaceSettingsMessage(`${label}复制失败，请检查浏览器权限。`)
+    }
+  }
+
+  async function handleUpdateWorkspacePassphrase(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (!workspaceId) {
+      setWorkspaceSettingsMessage('当前没有可更新口令的工作区。')
+      return
+    }
+
+    if (!isSupabaseConfigured) {
+      setWorkspaceSettingsMessage('缺少 Supabase 环境变量，当前无法更新工作区口令。')
+      return
+    }
+
+    const nextPassphrase = workspacePassphraseDraft.trim()
+    const confirmPassphrase = workspacePassphraseConfirm.trim()
+
+    if (nextPassphrase.length < 6) {
+      setWorkspaceSettingsMessage('新口令至少需要 6 个字符。')
+      return
+    }
+
+    if (nextPassphrase !== confirmPassphrase) {
+      setWorkspaceSettingsMessage('两次输入的新口令不一致。')
+      return
+    }
+
+    setWorkspaceSettingsBusyState('updating')
+    try {
+      await updateWorkspacePassphrase(workspaceId, nextPassphrase)
+      setWorkspacePassphraseDraft('')
+      setWorkspacePassphraseConfirm('')
+      setConfirmLeaveWorkspace(false)
+      setWorkspaceSettingsMessage('工作区口令已更新。')
+      setMessage('工作区口令已更新。')
+    } catch (error) {
+      const nextMessage =
+        error instanceof Error ? normalizeWorkspacePassphraseUpdateError(error.message) : '工作区口令更新失败。'
+      setWorkspaceSettingsMessage(nextMessage)
+    } finally {
+      setWorkspaceSettingsBusyState(null)
+    }
+  }
+
+  async function handleLeaveWorkspace() {
+    if (!workspaceId) {
+      setWorkspaceSettingsMessage('当前没有可退出的工作区。')
+      return
+    }
+
+    setWorkspaceSettingsBusyState('leaving')
+    try {
+      await clearCurrentWorkspaceMeta()
+      closeWorkspaceSettings()
+      await refreshWorkspaceData('')
+      setWorkspaceMode('join')
+      setWorkspaceDialogOpen(true)
+      setIsMobileSidebarOpen(false)
+      setMessage('已退出当前工作区，你可以重新创建或加入其他工作区。')
+    } catch (error) {
+      setWorkspaceSettingsMessage(error instanceof Error ? error.message : '退出工作区失败。')
+    } finally {
+      setWorkspaceSettingsBusyState(null)
     }
   }
 
@@ -1230,6 +1426,7 @@ function App() {
               : filterLabels[activeFilter]
 
   const sidebarProps = {
+    workspaceId,
     sessionLabel,
     activeView,
     setActiveView,
@@ -1255,6 +1452,7 @@ function App() {
     setCategoryEditorColor,
     handleSaveCategory,
     handleDeleteCategory,
+    openWorkspaceSettings,
     busy,
   }
 
@@ -1504,6 +1702,25 @@ function App() {
         message={message}
         closeDialog={closeWorkspaceDialog}
       />
+
+      <WorkspaceSettingsDialog
+        open={workspaceSettingsOpen}
+        info={workspaceSettingsInfo}
+        busyState={workspaceSettingsBusyState}
+        message={workspaceSettingsMessage}
+        passphraseDraft={workspacePassphraseDraft}
+        setPassphraseDraft={setWorkspacePassphraseDraft}
+        passphraseConfirm={workspacePassphraseConfirm}
+        setPassphraseConfirm={setWorkspacePassphraseConfirm}
+        confirmLeaveWorkspace={confirmLeaveWorkspace}
+        setConfirmLeaveWorkspace={setConfirmLeaveWorkspace}
+        hasSyncRisk={hasWorkspaceSettingsSyncRisk}
+        handleCopyField={handleCopyWorkspaceField}
+        handleUpdatePassphrase={handleUpdateWorkspacePassphrase}
+        handleLeaveWorkspace={handleLeaveWorkspace}
+        reloadWorkspaceSettings={() => void loadWorkspaceSettingsInfo()}
+        closeDialog={closeWorkspaceSettings}
+      />
     </>
   )
 }
@@ -1599,6 +1816,251 @@ function WorkspaceAccessDialog({
           </div>
         </form>
       </div>
+    </div>
+  )
+}
+
+function WorkspaceSettingsDialog({
+  open,
+  info,
+  busyState,
+  message,
+  passphraseDraft,
+  setPassphraseDraft,
+  passphraseConfirm,
+  setPassphraseConfirm,
+  confirmLeaveWorkspace,
+  setConfirmLeaveWorkspace,
+  hasSyncRisk,
+  handleCopyField,
+  handleUpdatePassphrase,
+  handleLeaveWorkspace,
+  reloadWorkspaceSettings,
+  closeDialog,
+}: {
+  open: boolean
+  info: WorkspaceSettingsInfo | null
+  busyState: WorkspaceSettingsBusyState
+  message: string
+  passphraseDraft: string
+  setPassphraseDraft: (value: string) => void
+  passphraseConfirm: string
+  setPassphraseConfirm: (value: string) => void
+  confirmLeaveWorkspace: boolean
+  setConfirmLeaveWorkspace: (value: boolean) => void
+  hasSyncRisk: boolean
+  handleCopyField: (label: string, value: string) => Promise<void>
+  handleUpdatePassphrase: (event: FormEvent<HTMLFormElement>) => Promise<void>
+  handleLeaveWorkspace: () => Promise<void>
+  reloadWorkspaceSettings: () => void
+  closeDialog: () => void
+}) {
+  if (!open) {
+    return null
+  }
+
+  const loading = busyState === 'loading'
+  const updating = busyState === 'updating'
+  const leaving = busyState === 'leaving'
+  const syncStatusLabel = info ? formatWorkspaceSyncStatus(info.syncStatus.status) : '读取中'
+
+  return (
+    <div className="category-dialog-backdrop workspace-dialog-backdrop" role="presentation" onClick={closeDialog}>
+      <div
+        className="category-dialog workspace-settings-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="workspace-settings-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="category-dialog-head workspace-settings-head">
+          <div className="workspace-settings-headcopy">
+            <h3 id="workspace-settings-title">工作区设置</h3>
+            <p>管理当前工作区绑定、同步信息和口令。</p>
+          </div>
+
+          <button type="button" className="detail-close" aria-label="关闭工作区设置" onClick={closeDialog}>
+            ×
+          </button>
+        </div>
+
+        <section className="workspace-settings-panel" aria-label="工作区信息">
+          <div className="workspace-settings-panel-head">
+            <strong>当前工作区</strong>
+            <button type="button" className="ghost-button" onClick={reloadWorkspaceSettings} disabled={loading || leaving}>
+              {loading ? '读取中...' : '刷新'}
+            </button>
+          </div>
+
+          {info ? (
+            <div className="workspace-settings-grid">
+              <WorkspaceSettingsField
+                label="工作区 ID"
+                value={info.workspaceId}
+                action={
+                  <button
+                    type="button"
+                    className="ghost-button workspace-copy-button"
+                    onClick={() => void handleCopyField('工作区 ID', info.workspaceId)}
+                  >
+                    <Copy size={15} strokeWidth={2.15} aria-hidden="true" />
+                    <span>复制</span>
+                  </button>
+                }
+              />
+              <WorkspaceSettingsField
+                label="设备会话"
+                value={info.anonymousUserId ?? '尚未建立匿名会话'}
+                action={
+                  info.anonymousUserId ? (
+                    <button
+                      type="button"
+                      className="ghost-button workspace-copy-button"
+                      onClick={() => void handleCopyField('设备会话 ID', info.anonymousUserId!)}
+                    >
+                      <Copy size={15} strokeWidth={2.15} aria-hidden="true" />
+                      <span>复制</span>
+                    </button>
+                  ) : null
+                }
+              />
+              <WorkspaceSettingsField label="加入时间" value={formatWorkspaceDateTime(info.joinedAt)} />
+              <WorkspaceSettingsField label="最近活跃" value={formatWorkspaceDateTime(info.lastSeenAt)} />
+              <WorkspaceSettingsField label="创建时间" value={formatWorkspaceDateTime(info.createdAt)} />
+              <WorkspaceSettingsField label="同步状态" value={syncStatusLabel} />
+              <WorkspaceSettingsField label="最近推送" value={formatWorkspaceDateTime(info.syncStatus.lastPushAt)} />
+              <WorkspaceSettingsField label="最近拉取" value={formatWorkspaceDateTime(info.syncStatus.lastPullAt)} />
+              <WorkspaceSettingsField
+                label="待同步变更"
+                value={String(info.syncStatus.pendingOutboxCount)}
+                helper={info.syncStatus.pendingOutboxCount > 0 ? '退出前建议先等待同步完成。' : undefined}
+              />
+              <WorkspaceSettingsField
+                label="最近错误"
+                value={info.syncStatus.lastError ?? '无'}
+                helper={info.syncStatus.lastError ? '如需退出，请确认本地未丢失待同步数据。' : undefined}
+              />
+            </div>
+          ) : (
+            <p className="workspace-settings-empty">{loading ? '正在读取工作区信息…' : '暂时无法读取工作区信息。'}</p>
+          )}
+        </section>
+
+        <form className="workspace-settings-panel workspace-settings-form" onSubmit={(event) => void handleUpdatePassphrase(event)}>
+          <div className="workspace-settings-panel-head">
+            <strong>修改工作区口令</strong>
+          </div>
+
+          <label>
+            <span>新口令</span>
+            <input
+              value={passphraseDraft}
+              onChange={(event) => setPassphraseDraft(event.target.value)}
+              placeholder="至少 6 个字符…"
+              minLength={6}
+              autoComplete="off"
+              name="workspaceSettingsNewPassphrase"
+            />
+          </label>
+
+          <label>
+            <span>确认新口令</span>
+            <input
+              value={passphraseConfirm}
+              onChange={(event) => setPassphraseConfirm(event.target.value)}
+              placeholder="再次输入新口令…"
+              minLength={6}
+              autoComplete="off"
+              name="workspaceSettingsConfirmPassphrase"
+            />
+          </label>
+
+          <div className="workspace-settings-actions">
+            <button className="primary-button" type="submit" disabled={updating || leaving || loading || !info}>
+              {updating ? '更新中...' : '更新口令'}
+            </button>
+          </div>
+        </form>
+
+        <section className="workspace-settings-panel workspace-settings-danger-zone" aria-label="退出当前工作区">
+          <div className="workspace-settings-panel-head">
+            <strong>退出当前工作区</strong>
+          </div>
+
+          <p className="workspace-settings-danger-copy">
+            退出只会清除当前设备的工作区绑定，不会删除云端数据，也不会清空本地缓存。
+          </p>
+
+          {hasSyncRisk ? (
+            <p className="workspace-settings-warning" role="status">
+              当前仍有待同步变更或同步异常，立即退出可能让你暂时看不到这部分本地变更。
+            </p>
+          ) : null}
+
+          {confirmLeaveWorkspace ? (
+            <p className="workspace-settings-confirm" role="status">
+              再次确认后会回到工作区接入页。
+            </p>
+          ) : null}
+
+          <div className="workspace-settings-actions workspace-settings-leave-actions">
+            {confirmLeaveWorkspace ? (
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => setConfirmLeaveWorkspace(false)}
+                disabled={leaving}
+              >
+                取消
+              </button>
+            ) : null}
+
+            <button
+              className="danger-button"
+              type="button"
+              onClick={() => {
+                if (!confirmLeaveWorkspace) {
+                  setConfirmLeaveWorkspace(true)
+                  return
+                }
+
+                void handleLeaveWorkspace()
+              }}
+              disabled={leaving || loading}
+            >
+              <LogOut size={16} strokeWidth={2.1} aria-hidden="true" />
+              <span>{leaving ? '退出中...' : confirmLeaveWorkspace ? '确认退出当前工作区' : '退出当前工作区'}</span>
+            </button>
+          </div>
+        </section>
+
+        <p className="workspace-settings-message" role="status" aria-live="polite">
+          {message || ' '}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function WorkspaceSettingsField({
+  label,
+  value,
+  helper,
+  action,
+}: {
+  label: string
+  value: string
+  helper?: string
+  action?: ReactNode
+}) {
+  return (
+    <div className="workspace-settings-field">
+      <div className="workspace-settings-field-main">
+        <span>{label}</span>
+        <strong title={value}>{value}</strong>
+        {helper ? <small>{helper}</small> : null}
+      </div>
+      {action ? <div className="workspace-settings-field-action">{action}</div> : null}
     </div>
   )
 }
@@ -1722,6 +2184,7 @@ function WorkspacePrimaryNav({
 }
 
 type SidebarProps = {
+  workspaceId: string
   sessionLabel: string
   className?: string
   id?: string
@@ -1739,6 +2202,7 @@ type SidebarProps = {
   setCategoryEditorColor: (value: string) => void
   handleSaveCategory: () => Promise<void>
   handleDeleteCategory: (category?: CategoryRecord) => Promise<void>
+  openWorkspaceSettings: () => void
   busy: boolean
   readOnly: boolean
 }
@@ -1754,6 +2218,7 @@ function Sidebar({ className, id, readOnly, ...props }: SidebarProps) {
 }
 
 function SidebarContent({
+  workspaceId,
   sessionLabel,
   activeView,
   setActiveView,
@@ -1779,6 +2244,7 @@ function SidebarContent({
   setCategoryEditorColor,
   handleSaveCategory,
   handleDeleteCategory,
+  openWorkspaceSettings,
   busy,
   onNavigate,
   readOnly,
@@ -1931,6 +2397,33 @@ function SidebarContent({
           ))}
         </div>
       </section>
+
+      {!readOnly ? (
+        <section className="sidebar-section sidebar-card workspace-sidebar-section">
+          <div className="section-head">
+            <div>
+              <span>工作区</span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            className="sidebar-item workspace-settings-trigger"
+            onClick={() => {
+              openWorkspaceSettings()
+              onNavigate?.()
+            }}
+          >
+            <span className="sidebar-item-main">
+              <span className="sidebar-icon sidebar-icon-settings" aria-hidden="true">
+                <Settings2 size={18} strokeWidth={2.15} />
+              </span>
+              <span>工作区设置</span>
+            </span>
+            <b>{shortWorkspaceId(workspaceId)}</b>
+          </button>
+        </section>
+      ) : null}
 
       {!readOnly && categoryDialogMode ? (
         <div className="category-dialog-backdrop" role="presentation" onClick={closeCategoryDialog}>
@@ -4687,6 +5180,91 @@ function renderSidebarIcon(icon: 'today' | 'all' | 'board' | 'stats' | 'calendar
     default:
       return <Inbox size={18} strokeWidth={2.15} />
   }
+}
+
+async function loadWorkspaceCreatedAt(workspaceId: string) {
+  if (!isSupabaseConfigured) {
+    return null
+  }
+
+  try {
+    const client = await getAuthenticatedSupabaseClient()
+    const { data, error } = await client
+      .from('workspaces')
+      .select('created_at')
+      .eq('id', workspaceId)
+      .maybeSingle()
+
+    if (error) {
+      throw error
+    }
+
+    return typeof data?.created_at === 'string' ? data.created_at : null
+  } catch (error) {
+    console.warn('读取工作区创建时间失败', error)
+    return null
+  }
+}
+
+function normalizeWorkspacePassphraseUpdateError(message: string) {
+  const normalizedMessage = message.toLowerCase()
+
+  if (normalizedMessage.includes('already exists')) {
+    return '该工作区口令已被其他工作区使用，请更换一个新的口令。'
+  }
+
+  if (normalizedMessage.includes('access denied')) {
+    return '当前设备没有修改这个工作区口令的权限。'
+  }
+
+  if (normalizedMessage.includes('workspace not found')) {
+    return '当前工作区不存在或已无法访问。'
+  }
+
+  if (normalizedMessage.includes('at least 6 characters')) {
+    return '新口令至少需要 6 个字符。'
+  }
+
+  return message
+}
+
+function formatWorkspaceSyncStatus(status: WorkspaceSettingsInfo['syncStatus']['status']) {
+  switch (status) {
+    case 'pushing':
+      return '正在推送'
+    case 'pulling':
+      return '正在拉取'
+    case 'error':
+      return '同步异常'
+    default:
+      return '空闲'
+  }
+}
+
+function formatWorkspaceDateTime(value: string | null) {
+  if (!value) {
+    return '暂不可用'
+  }
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function shortWorkspaceId(value: string) {
+  if (value.length <= 8) {
+    return value
+  }
+
+  return `${value.slice(0, 4)}…${value.slice(-4)}`
 }
 
 function serializeTodoDraft(draft: TodoDraft) {
