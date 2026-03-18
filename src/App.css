@@ -937,6 +937,34 @@
   padding-top: 8px;
 }
 
+.guest-sidebar-section {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.guest-sidebar-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.guest-sidebar-copy strong {
+  color: var(--accent);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.guest-sidebar-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.guest-sidebar-actions .primary-button,
+.guest-sidebar-actions .secondary-button {
+  width: 100%;
+  justify-content: center;
+}
+
 .workspace-settings-trigger {
   justify-content: space-between;
 }
@@ -945,35 +973,6 @@
   color: var(--text-soft);
   font-size: 0.82rem;
 }
-.workspace-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 10px 12px;
-  border: 1px solid #dcebe7;
-  border-radius: 14px;
-  background: #eef8f5;
-}
-
-.workspace-banner strong,
-.workspace-banner p {
-  margin: 0;
-}
-
-.workspace-banner strong {
-  display: block;
-  color: #1f6e66;
-  font-size: 0.88rem;
-  line-height: 1.4;
-}
-
-.workspace-banner-actions {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
 @media (max-width: 640px) {
   .workspace-dialog {
     padding: 28px 22px 24px;

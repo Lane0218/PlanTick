@@ -1660,15 +1660,13 @@ function App() {
     setMessage('当前改动仅保留在本次会话。')
   }
 
+  const shouldShowDesktopCalendarDetail = !isMobileViewport && activeView === 'calendar' && Boolean(selectedTodoId || selectedEventId)
+  const shouldShowDesktopTodoDetail = !isMobileViewport && activeView !== 'board' && activeView !== 'stats' && activeView !== 'calendar' && Boolean(selectedTodoId)
+
   const shellClassName = [
     'workspace-shell',
     activeView === 'calendar' ? 'calendar-layout' : '',
-    !isMobileViewport &&
-    activeView !== 'board' &&
-    activeView !== 'stats' &&
-    (selectedTodoId || selectedEventId)
-      ? 'has-detail'
-      : '',
+    shouldShowDesktopCalendarDetail || shouldShowDesktopTodoDetail ? 'has-detail' : '',
     isMobileViewport ? 'mobile-workspace-shell' : '',
   ]
     .filter(Boolean)
@@ -1690,6 +1688,7 @@ function App() {
   const sidebarProps = {
     workspaceId,
     sessionLabel,
+    workspaceLabel: isGuestMode ? '游客模式' : 'PlanTick',
     activeView,
     setActiveView,
     activeFilter,
@@ -1718,6 +1717,8 @@ function App() {
     workspaceSyncSnapshot,
     handleManualSync,
     showWorkspaceControls,
+    isGuestMode,
+    openWorkspaceDialog,
     busy,
   }
 
@@ -1769,23 +1770,6 @@ function App() {
                 <h1>{boardTitle}</h1>
               </div>
             </header>
-          ) : null}
-
-          {runtimeMode === 'guest' ? (
-            <div className="workspace-banner" role="status">
-              <div>
-                <p className="eyebrow">游客模式</p>
-                <strong>当前改动仅保留在本次会话。</strong>
-              </div>
-              <div className="workspace-banner-actions">
-                <button className="secondary-button" type="button" onClick={() => openWorkspaceDialog('create')}>
-                  创建工作区
-                </button>
-                <button className="primary-button" type="button" onClick={() => openWorkspaceDialog('join')}>
-                  加入工作区
-                </button>
-              </div>
-            </div>
           ) : null}
 
           <WorkspacePrimaryNav
@@ -1937,7 +1921,7 @@ function App() {
               readOnly={isReadOnly}
             />
           ) : null
-        ) : activeView === 'board' || activeView === 'stats' ? null : isGuestMode && !selectedTodo ? null : (
+        ) : activeView === 'board' || activeView === 'stats' ? null : !shouldShowDesktopTodoDetail ? null : (
           <TodoDetailPane
             selectedTodo={selectedTodo}
             categories={activeCategories}
@@ -2417,6 +2401,7 @@ function WorkspacePrimaryNav({
 type SidebarProps = {
   workspaceId: string
   sessionLabel: string
+  workspaceLabel: string
   className?: string
   id?: string
 } & WorkspacePrimaryNavProps & {
@@ -2437,6 +2422,8 @@ type SidebarProps = {
   workspaceSyncSnapshot: WorkspaceSyncSnapshot | null
   handleManualSync: () => Promise<void>
   showWorkspaceControls: boolean
+  isGuestMode: boolean
+  openWorkspaceDialog: (mode?: WorkspaceMode) => void
   busy: boolean
   readOnly: boolean
 }
@@ -2453,6 +2440,7 @@ function Sidebar({ className, id, readOnly, ...props }: SidebarProps) {
 
 function SidebarContent({
   sessionLabel,
+  workspaceLabel,
   activeView,
   setActiveView,
   activeFilter,
@@ -2481,6 +2469,8 @@ function SidebarContent({
   workspaceSyncSnapshot,
   handleManualSync,
   showWorkspaceControls,
+  isGuestMode,
+  openWorkspaceDialog,
   busy,
   onNavigate,
   readOnly,
@@ -2535,7 +2525,7 @@ function SidebarContent({
     <>
       <div className="sidebar-topbar">
         <div className="sidebar-topbar-copy">
-          <h2 title={sessionLabel}>PlanTick</h2>
+          <h2 title={sessionLabel}>{workspaceLabel}</h2>
         </div>
         <div className="sidebar-topbar-actions">
           {showWorkspaceControls ? (
@@ -2652,6 +2642,37 @@ function SidebarContent({
           ))}
         </div>
       </section>
+
+      {isGuestMode ? (
+        <section className="sidebar-section sidebar-card workspace-sidebar-section guest-sidebar-section" role="status">
+          <div className="guest-sidebar-copy">
+            <p className="eyebrow">游客模式</p>
+            <strong>当前改动仅保留在本次会话。</strong>
+          </div>
+          <div className="guest-sidebar-actions">
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() => {
+                openWorkspaceDialog('create')
+                onNavigate?.()
+              }}
+            >
+              创建工作区
+            </button>
+            <button
+              className="primary-button"
+              type="button"
+              onClick={() => {
+                openWorkspaceDialog('join')
+                onNavigate?.()
+              }}
+            >
+              加入工作区
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       {!readOnly && categoryDialogMode ? (
         <div className="category-dialog-backdrop" role="presentation" onClick={closeCategoryDialog}>
