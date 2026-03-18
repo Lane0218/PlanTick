@@ -1,6 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import type { CategoryRecord, EventRecord, TodoRecord, WorkspaceMeta } from './local-types'
-import type { OutboxOperation, RemoteChangeSet, SyncMeta, SyncStoreAdapter } from './sync-types'
+import type { OutboxOperation, RemoteChangeSet, SyncMeta, SyncRecord, SyncStoreAdapter } from './sync-types'
 
 const databaseName = 'plantick-app'
 const legacyStoreName = 'phase0_meta'
@@ -110,6 +110,29 @@ function normalizeEventAllDay(
   const start = typeof record.startAt === 'string' ? record.startAt : typeof record.start_at === 'string' ? record.start_at : null
   const end = typeof record.endAt === 'string' ? record.endAt : typeof record.end_at === 'string' ? record.end_at : null
   return !start && !end
+}
+
+function normalizeEventSyncRecord(
+  record: SyncRecord,
+) {
+  return {
+    ...record,
+    status: normalizeEventStatus(record),
+    all_day: normalizeEventAllDay(record),
+    start_at: typeof record.start_at === 'string' ? record.start_at : null,
+    end_at: typeof record.end_at === 'string' ? record.end_at : null,
+  } satisfies SyncRecord
+}
+
+function normalizeOutboxOperation(operation: OutboxOperation) {
+  if (operation.entity !== 'events') {
+    return operation
+  }
+
+  return {
+    ...operation,
+    payload: normalizeEventSyncRecord(operation.payload),
+  } satisfies OutboxOperation
 }
 
 export async function getDatabase() {
@@ -344,13 +367,24 @@ export async function listEvents(workspaceId: string) {
 
 export async function writeOutbox(operation: OutboxOperation) {
   const database = await getDatabase()
-  await database.put('outbox', operation)
+  await database.put('outbox', normalizeOutboxOperation(operation))
 }
 
 export async function listPendingOutbox(workspaceId: string, limit = 100) {
   const database = await getDatabase()
   const operations = await database.getAllFromIndex('outbox', 'by-workspace', workspaceId)
-  return operations
+  const normalizedOperations = operations.map(normalizeOutboxOperation)
+  const patchedOperations = normalizedOperations.filter(
+    (operation, index) => JSON.stringify(operation.payload) !== JSON.stringify(operations[index]?.payload),
+  )
+
+  if (patchedOperations.length) {
+    const transaction = database.transaction('outbox', 'readwrite')
+    await Promise.all(patchedOperations.map((operation) => transaction.store.put(operation)))
+    await transaction.done
+  }
+
+  return normalizedOperations
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
     .slice(0, limit)
 }

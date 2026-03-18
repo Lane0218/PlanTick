@@ -750,6 +750,141 @@ test('phase 4 双设备同步：事件创建、编辑、删除可跨设备补拉
   }
 })
 
+test('phase 4 双设备同步：旧版事件 outbox payload 会在推送前自动补齐全天字段', async ({ browser, baseURL }) => {
+  test.setTimeout(60_000)
+
+  const passphrase = `phase4-legacy-event-outbox-${Date.now()}-pw`
+  const legacyEventTitle = '旧版事件 payload'
+  const viewport = { width: 1440, height: 960 }
+
+  const deviceA = await browser.newContext()
+  const deviceB = await browser.newContext()
+  const pageA = await deviceA.newPage()
+  const pageB = await deviceB.newPage()
+
+  const openCalendar = async (page: Page) => {
+    await page.getByRole('button', { name: '日程概览' }).click()
+    await expect(page.locator('.calendar-grid')).toBeVisible()
+    await expect(getSyncActionButton(page)).toBeVisible()
+  }
+
+  try {
+    await pageA.goto(baseURL!)
+    await pageA.setViewportSize(viewport)
+    await createWorkspaceFromDialog(pageA, passphrase)
+    await openCalendar(pageA)
+
+    const injectedEventId = await pageA.evaluate(async ({ title }) => {
+      const now = new Date().toISOString()
+      const today = now.slice(0, 10)
+
+      const openDatabase = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open('plantick-app')
+        request.onerror = () => reject(request.error)
+        request.onsuccess = () => resolve(request.result)
+      })
+
+      const readTransaction = openDatabase.transaction(['workspace_meta'], 'readonly')
+      const workspaceMeta = await new Promise<{ workspaceId: string }>((resolve, reject) => {
+        const request = readTransaction.objectStore('workspace_meta').get('current')
+        request.onerror = () => reject(request.error)
+        request.onsuccess = () => resolve(request.result)
+      })
+
+      const eventId = crypto.randomUUID()
+      const eventRecord = {
+        id: eventId,
+        workspaceId: workspaceMeta.workspaceId,
+        title,
+        date: today,
+        status: 'not_completed',
+        allDay: true,
+        startAt: null,
+        endAt: null,
+        note: '模拟旧版 outbox payload',
+        updatedAt: now,
+        deleted: false,
+      }
+      const outboxRecord = {
+        id: `outbox-${crypto.randomUUID()}`,
+        workspaceId: workspaceMeta.workspaceId,
+        entity: 'events',
+        kind: 'upsert',
+        recordId: eventId,
+        payload: {
+          id: eventId,
+          workspace_id: workspaceMeta.workspaceId,
+          title,
+          date: today,
+          start_at: null,
+          end_at: null,
+          note: '模拟旧版 outbox payload',
+          updated_at: now,
+          deleted: false,
+        },
+        createdAt: now,
+        retryCount: 0,
+        lastError: null,
+      }
+
+      const writeTransaction = openDatabase.transaction(['events', 'outbox'], 'readwrite')
+      writeTransaction.objectStore('events').put(eventRecord)
+      writeTransaction.objectStore('outbox').put(outboxRecord)
+
+      await new Promise<void>((resolve, reject) => {
+        writeTransaction.oncomplete = () => resolve()
+        writeTransaction.onerror = () => reject(writeTransaction.error)
+        writeTransaction.onabort = () => reject(writeTransaction.error)
+      })
+
+      openDatabase.close()
+      return eventId
+    }, { title: legacyEventTitle })
+
+    await pageA.reload()
+    await openCalendar(pageA)
+    await expect(pageA.locator('.calendar-grid').getByText(legacyEventTitle)).toBeVisible()
+
+    await getSyncActionButton(pageA).click()
+    await expect(getSyncActionButton(pageA)).not.toContainText('同步异常')
+    await expect.poll(async () => pageA.evaluate(async ({ eventId }) => {
+      const openDatabase = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open('plantick-app')
+        request.onerror = () => reject(request.error)
+        request.onsuccess = () => resolve(request.result)
+      })
+
+      const transaction = openDatabase.transaction(['outbox'], 'readonly')
+      const records = await new Promise<Array<{ recordId: string }>>((resolve, reject) => {
+        const request = transaction.objectStore('outbox').getAll()
+        request.onerror = () => reject(request.error)
+        request.onsuccess = () => resolve(request.result)
+      })
+
+      openDatabase.close()
+      return records.filter((record) => record.recordId === eventId).length
+    }, { eventId: injectedEventId })).toBe(0)
+
+    await pageB.goto(baseURL!)
+    await pageB.setViewportSize(viewport)
+    await joinWorkspaceFromDialog(pageB, passphrase)
+    await openCalendar(pageB)
+    await getSyncActionButton(pageB).click()
+    await expect(pageB.locator('.calendar-grid').getByText(legacyEventTitle)).toBeVisible()
+
+    await pageB.locator('.calendar-grid').getByText(legacyEventTitle).click()
+    await expect(pageB.getByLabel('事件详情').getByRole('button', { name: '全天', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    await expect(pageB.getByLabel('事件详情').getByRole('button', { name: '未完成', exact: true })).toHaveClass(/active/)
+    await expect(pageB.getByLabel('开始时间')).toBeDisabled()
+    await expect(pageB.getByLabel('结束时间')).toBeDisabled()
+  } finally {
+    await pageA.close()
+    await pageB.close()
+    await deviceA.close()
+    await deviceB.close()
+  }
+})
+
 test('phase 4 移动端壳层：抽屉、底部详情与纵向看板', async ({ page, baseURL }) => {
   const passphrase = `phase4-mobile-${Date.now()}-pw`
   const categoryName = '移动分类'
