@@ -645,8 +645,8 @@ test('phase 4 日程概览：支持事件创建、编辑、刷新恢复与删除
   await expect(page.getByLabel('事件标题')).toHaveValue(eventTitle)
   await expect(page.locator('.calendar-grid').getByText(eventTitle)).toBeVisible()
   await expect(page.getByLabel('事件详情').getByRole('button', { name: '全天', exact: true })).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByLabel('开始时间')).toBeDisabled()
-  await expect(page.getByLabel('结束时间')).toBeDisabled()
+  await expect(page.getByLabel('开始时间')).toHaveCount(0)
+  await expect(page.getByLabel('结束时间')).toHaveCount(0)
 
   await page.getByLabel('事件标题').fill(updatedTitle)
   await page.getByLabel('事件详情').getByRole('button', { name: '全天', exact: true }).click()
@@ -875,8 +875,8 @@ test('phase 4 双设备同步：旧版事件 outbox payload 会在推送前自�
     await pageB.locator('.calendar-grid').getByText(legacyEventTitle).click()
     await expect(pageB.getByLabel('事件详情').getByRole('button', { name: '全天', exact: true })).toHaveAttribute('aria-pressed', 'true')
     await expect(pageB.getByLabel('事件详情').getByRole('button', { name: '未完成', exact: true })).toHaveClass(/active/)
-    await expect(pageB.getByLabel('开始时间')).toBeDisabled()
-    await expect(pageB.getByLabel('结束时间')).toBeDisabled()
+    await expect(pageB.getByLabel('开始时间')).toHaveCount(0)
+    await expect(pageB.getByLabel('结束时间')).toHaveCount(0)
   } finally {
     await pageA.close()
     await pageB.close()

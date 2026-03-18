@@ -2717,38 +2717,15 @@
   gap: 12px;
 }
 
-.detail-time-grid-event {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-items: start;
+.detail-time-stack {
+  display: grid;
   gap: 12px;
 }
 
-.detail-time-toggle-field {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-}
-
 .detail-time-toggle {
-  width: 100%;
-  min-height: 44px;
+  width: fit-content;
+  min-height: 36px;
   padding: 0 14px;
-  justify-content: center;
-  border-color: #dce4ea;
-  border-radius: 14px;
-  background: #ffffff;
-  color: #5f6f86;
-  box-shadow: none;
-  font-size: 0.95rem;
-  font-weight: 500;
-  line-height: 1;
-}
-
-.detail-time-toggle.is-active {
-  border-color: rgba(31, 110, 102, 0.18);
-  background: linear-gradient(180deg, #eef9f6, #e3f3ee);
-  color: #1f6e66;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
 }
 
 .detail-time-field {
@@ -2761,12 +2738,7 @@
   color: #6b7c93;
   font-size: 0.82rem;
   font-weight: 600;
-  text-align: center;
-}
-
-.detail-time-grid-event .detail-inline-input {
-  padding: 0 12px;
-  text-align: center;
+  text-align: left;
 }
 
 .event-detail-pill {
@@ -3341,7 +3313,6 @@
   }
 
   .detail-time-grid,
-  .detail-time-grid-event,
   .calendar-quick-create {
     grid-template-columns: minmax(0, 1fr);
   }

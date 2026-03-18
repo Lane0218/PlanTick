@@ -4282,67 +4282,63 @@ function EventDetailPane({
                 <div className="detail-card-head">
                   <span>时间</span>
                 </div>
-                <div className="detail-time-grid detail-time-grid-event">
-                  <div className="detail-time-toggle-field">
-                    <span className="detail-time-field-label">全天</span>
-                    <button
-                      type="button"
-                      className={
-                        eventDraft.allDay
-                          ? 'detail-myday-pill detail-time-toggle is-active'
-                          : 'detail-myday-pill detail-time-toggle'
-                      }
-                      aria-label="全天"
-                      onClick={() =>
-                        setEventDraft(
-                          normalizeEventDraft({
-                            ...eventDraft,
-                            allDay: !eventDraft.allDay,
-                          }),
-                        )
-                      }
-                      aria-pressed={eventDraft.allDay}
-                    >
-                      <Clock3 size={15} strokeWidth={2.1} />
-                      <span>{eventDraft.allDay ? '已开启' : '未开启'}</span>
-                    </button>
-                  </div>
-                  <label className="detail-time-field">
-                    <span className="detail-time-field-label">开始</span>
-                    <input
-                      className="detail-inline-input"
-                      type="time"
-                      value={eventDraft.startTime}
-                      onChange={(event) =>
-                        setEventDraft(
-                          normalizeEventDraft({
-                            ...eventDraft,
-                            startTime: event.target.value,
-                          }),
-                        )
-                      }
-                      aria-label="开始时间"
-                      disabled={eventDraft.allDay}
-                    />
-                  </label>
-                  <label className="detail-time-field">
-                    <span className="detail-time-field-label">结束</span>
-                    <input
-                      className="detail-inline-input"
-                      type="time"
-                      value={eventDraft.endTime}
-                      onChange={(event) =>
-                        setEventDraft(
-                          normalizeEventDraft({
-                            ...eventDraft,
-                            endTime: event.target.value,
-                          }),
-                        )
-                      }
-                      aria-label="结束时间"
-                      disabled={eventDraft.allDay}
-                    />
-                  </label>
+                <div className="detail-time-stack">
+                  <button
+                    type="button"
+                    className={eventDraft.allDay ? 'detail-myday-pill detail-time-toggle is-active' : 'detail-myday-pill detail-time-toggle'}
+                    aria-label="全天"
+                    onClick={() =>
+                      setEventDraft(
+                        normalizeEventDraft({
+                          ...eventDraft,
+                          allDay: !eventDraft.allDay,
+                        }),
+                      )
+                    }
+                    aria-pressed={eventDraft.allDay}
+                  >
+                    <Clock3 size={15} strokeWidth={2.1} />
+                    <span>全天</span>
+                  </button>
+
+                  {eventDraft.allDay ? null : (
+                    <div className="detail-time-grid">
+                      <label className="detail-time-field">
+                        <span className="detail-time-field-label">开始时间</span>
+                        <input
+                          className="detail-inline-input"
+                          type="time"
+                          value={eventDraft.startTime}
+                          onChange={(event) =>
+                            setEventDraft(
+                              normalizeEventDraft({
+                                ...eventDraft,
+                                startTime: event.target.value,
+                              }),
+                            )
+                          }
+                          aria-label="开始时间"
+                        />
+                      </label>
+                      <label className="detail-time-field">
+                        <span className="detail-time-field-label">结束时间</span>
+                        <input
+                          className="detail-inline-input"
+                          type="time"
+                          value={eventDraft.endTime}
+                          onChange={(event) =>
+                            setEventDraft(
+                              normalizeEventDraft({
+                                ...eventDraft,
+                                endTime: event.target.value,
+                              }),
+                            )
+                          }
+                          aria-label="结束时间"
+                        />
+                      </label>
+                    </div>
+                  )}
                 </div>
               </section>
 
