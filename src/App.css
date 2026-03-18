@@ -1340,6 +1340,10 @@
   padding: 18px;
 }
 
+.stats-distribution-card {
+  align-content: start;
+}
+
 .stats-card-head {
   display: flex;
   align-items: center;
@@ -1393,6 +1397,10 @@
 .stats-bar-list {
   display: grid;
   gap: 0;
+}
+
+.stats-distribution-card .stats-bar-list {
+  align-content: start;
 }
 
 .stats-bar-row {

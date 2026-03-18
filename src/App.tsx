@@ -3118,7 +3118,7 @@ function StatsDistributionCard({
   const visibleItems = items.filter((item) => item.value > 0)
 
   return (
-    <article className="stats-panel stats-card">
+    <article className="stats-panel stats-card stats-distribution-card">
       <div className="stats-card-head">
         <h2>{title}</h2>
       </div>
