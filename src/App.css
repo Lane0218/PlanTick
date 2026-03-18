@@ -811,15 +811,17 @@
 .workspace-dialog-mode-row {
   display: flex;
   justify-content: center;
+  width: 100%;
 }
 
 .workspace-dialog-segmented {
-  width: fit-content;
-  margin: 0 auto;
+  width: 100%;
+  margin: 0;
 }
 
 .workspace-dialog-segmented button {
-  min-width: 138px;
+  flex: 1;
+  min-width: 0;
 }
 
 .workspace-dialog-actions {
