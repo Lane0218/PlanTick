@@ -974,7 +974,8 @@ function App() {
 
     setWorkspaceSettingsBusyState('updating')
     try {
-      await updateWorkspacePassphrase(workspaceId, nextPassphrase)
+      const workspaceMeta = await getCurrentWorkspaceMeta()
+      await updateWorkspacePassphrase(workspaceId, nextPassphrase, workspaceMeta?.anonymousUserId ?? null)
       setWorkspacePassphraseDraft('')
       setWorkspacePassphraseConfirm('')
       setConfirmLeaveWorkspace(false)
@@ -5287,7 +5288,8 @@ async function loadWorkspaceCreatedAt(workspaceId: string) {
   }
 
   try {
-    const client = await getAuthenticatedSupabaseClient()
+    const workspaceMeta = await getCurrentWorkspaceMeta()
+    const client = await getAuthenticatedSupabaseClient(workspaceMeta?.anonymousUserId ?? null)
     const { data, error } = await client
       .from('workspaces')
       .select('created_at')

@@ -13,6 +13,11 @@ type WorkspacePassphraseUpdateResponse = {
   updated: boolean
 }
 
+type SessionOptions = {
+  expectedUserId?: string | null
+  allowAnonymousBootstrap?: boolean
+}
+
 const { supabaseUrl, supabaseAnonKey } = getSupabaseEnv()
 
 export const supabase = isSupabaseConfigured
@@ -31,14 +36,25 @@ export function getSupabaseClient() {
   return requireClient()
 }
 
-export async function getAuthenticatedSupabaseClient() {
+function createWorkspaceSessionError() {
+  return new Error('当前设备会话已失效，请重新加入工作区。')
+}
+
+export async function getAuthenticatedSupabaseClient(expectedUserId?: string | null) {
   const client = requireClient()
-  await ensureAnonymousSession()
+  await ensureAnonymousSession({
+    expectedUserId,
+    allowAnonymousBootstrap: !expectedUserId,
+  })
   return client
 }
 
-export async function ensureAnonymousSession() {
+export async function ensureAnonymousSession(options: SessionOptions = {}) {
   const client = requireClient()
+  const {
+    expectedUserId = null,
+    allowAnonymousBootstrap = true,
+  } = options
   const { data: currentSession, error: sessionError } =
     await client.auth.getSession()
 
@@ -47,7 +63,15 @@ export async function ensureAnonymousSession() {
   }
 
   if (currentSession.session) {
+    if (expectedUserId && currentSession.session.user.id !== expectedUserId) {
+      throw createWorkspaceSessionError()
+    }
+
     return currentSession.session
+  }
+
+  if (!allowAnonymousBootstrap) {
+    throw createWorkspaceSessionError()
   }
 
   const { data, error } = await client.auth.signInAnonymously()
@@ -109,9 +133,13 @@ export async function invokeWorkspaceFunction(
 export async function updateWorkspacePassphrase(
   workspaceId: string,
   newPassphrase: string,
+  expectedUserId?: string | null,
 ) {
   requireClient()
-  const session = await ensureAnonymousSession()
+  const session = await ensureAnonymousSession({
+    expectedUserId,
+    allowAnonymousBootstrap: !expectedUserId,
+  })
   const { supabaseUrl, supabaseAnonKey } = getSupabaseEnv()
 
   const response = await fetch(`${supabaseUrl}/functions/v1/workspace-update-passphrase`, {

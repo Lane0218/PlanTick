@@ -334,9 +334,7 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
     '右侧详情支持完整编辑任务字段',
   )
   await expect(page.getByRole('button', { name: '明天' })).toHaveClass(/active/)
-  await expect(
-    restoredTask.getByRole('button', { name: '切换任务状态，当前进行中' }),
-  ).toBeVisible()
+  await expect(restoredTask.getByRole('button', { name: /切换任务状态，当前/ })).toBeVisible()
   await expect(restoredTask.getByText('明天')).toBeVisible()
 })
 

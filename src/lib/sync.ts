@@ -119,7 +119,7 @@ export async function pushPendingOperations(): Promise<PushResult> {
   })
 
   try {
-    const client = await getAuthenticatedSupabaseClient()
+    const client = await getAuthenticatedSupabaseClient(workspace.anonymousUserId)
 
     for (const entity of ['categories', 'todos', 'events'] as const) {
       const entityOperations = operations.filter((item) => item.entity === entity)
@@ -183,7 +183,7 @@ export async function pullRemoteChanges(): Promise<PullResult> {
   })
 
   try {
-    const client = await getAuthenticatedSupabaseClient()
+    const client = await getAuthenticatedSupabaseClient(workspace.anonymousUserId)
     const nextCursor = createDefaultCursor()
     const changes: PullResult['changes'] = {
       categories: [],
