@@ -2732,12 +2732,16 @@
 .detail-time-toggle {
   width: 100%;
   min-height: 44px;
-  justify-content: flex-start;
+  padding: 0 14px;
+  justify-content: center;
   border-color: #dce4ea;
   border-radius: 14px;
   background: #ffffff;
   color: #5f6f86;
   box-shadow: none;
+  font-size: 0.95rem;
+  font-weight: 500;
+  line-height: 1;
 }
 
 .detail-time-toggle.is-active {
@@ -2757,6 +2761,12 @@
   color: #6b7c93;
   font-size: 0.82rem;
   font-weight: 600;
+  text-align: center;
+}
+
+.detail-time-grid-event .detail-inline-input {
+  padding: 0 12px;
+  text-align: center;
 }
 
 .event-detail-pill {
