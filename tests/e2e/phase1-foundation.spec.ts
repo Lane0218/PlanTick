@@ -520,6 +520,46 @@ test('phase 4 日程概览：月历展示截止事项并支持在日历中改期
   await expect(page.locator('.calendar-grid').getByText('月历任务一')).toBeVisible()
 })
 
+test('phase 4 日程概览：同一天内事件排在任务前，全天事件排在定时事件前', async ({ page, baseURL }) => {
+  const passphrase = `phase4-calendar-order-${Date.now()}-pw`
+  const taskTitle = '同日任务'
+  const allDayEventTitle = '全天事件'
+  const timedEventTitle = '定时事件'
+
+  await page.goto(baseURL!)
+  await page.setViewportSize({ width: 1440, height: 960 })
+
+  await createWorkspaceFromDialog(page, passphrase)
+
+  await page.getByLabel('快速新建任务').fill(taskTitle)
+  await page.getByLabel('快速新建任务').press('Enter')
+  await page.locator('.detail-info-card, .detail-section').filter({ hasText: '截止日期' }).first().getByRole('button', { name: '今天', exact: true }).click()
+  await page.waitForTimeout(500)
+  await page.getByRole('button', { name: '关闭详情' }).click()
+
+  await page.getByRole('button', { name: '日程概览' }).click()
+
+  await page.getByLabel('快速新建事件').fill(allDayEventTitle)
+  await page.getByLabel('快速新建事件').press('Enter')
+  await page.getByRole('button', { name: '关闭详情' }).click()
+
+  await page.getByLabel('快速新建事件').fill(timedEventTitle)
+  await page.getByLabel('快速新建事件').press('Enter')
+  await page.getByLabel('事件详情').getByRole('button', { name: '全天', exact: true }).click()
+  await page.getByLabel('开始时间').fill('10:00')
+  await page.getByLabel('结束时间').fill('11:00')
+  await page.waitForTimeout(500)
+  await page.getByRole('button', { name: '关闭详情' }).click()
+
+  const orderedTitles = await page
+    .locator('.calendar-cell.is-selected .calendar-item .calendar-item-title')
+    .evaluateAll((elements) => elements.map((element) => element.textContent?.trim() ?? ''))
+
+  await expect(page.locator('.calendar-cell.is-selected .calendar-item-time').nth(0)).toHaveText('全天')
+  await expect(page.locator('.calendar-cell.is-selected .calendar-item-time').nth(1)).toHaveText('10:00-11:00')
+  expect(orderedTitles).toEqual([allDayEventTitle, timedEventTitle, taskTitle])
+})
+
 test('phase 4 日程概览：支持事件创建、编辑、刷新恢复与删除', async ({ page, baseURL }) => {
   const passphrase = `phase4-events-${Date.now()}-pw`
   const eventTitle = '评审会议'
@@ -536,10 +576,15 @@ test('phase 4 日程概览：支持事件创建、编辑、刷新恢复与删除
 
   await expect(page.getByLabel('事件标题')).toHaveValue(eventTitle)
   await expect(page.locator('.calendar-grid').getByText(eventTitle)).toBeVisible()
+  await expect(page.getByLabel('事件详情').getByRole('button', { name: '全天', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByLabel('开始时间')).toBeDisabled()
+  await expect(page.getByLabel('结束时间')).toBeDisabled()
 
   await page.getByLabel('事件标题').fill(updatedTitle)
+  await page.getByLabel('事件详情').getByRole('button', { name: '全天', exact: true }).click()
   await page.getByLabel('开始时间').fill('14:00')
   await page.getByLabel('结束时间').fill('15:30')
+  await page.getByLabel('事件详情').getByRole('button', { name: '已完成', exact: true }).click()
   await page.getByLabel('事件备注').fill('同步本周发布计划')
   await page.waitForTimeout(500)
   await page.getByRole('button', { name: '关闭详情' }).click()
@@ -547,11 +592,14 @@ test('phase 4 日程概览：支持事件创建、编辑、刷新恢复与删除
   await page.reload()
   await page.getByRole('button', { name: '日程概览' }).click()
   await expect(page.locator('.calendar-grid').getByText(updatedTitle)).toBeVisible()
+  await expect(page.locator('.calendar-grid .calendar-item-event.status-completed').getByText(updatedTitle)).toBeVisible()
 
   await page.locator('.calendar-grid').getByText(updatedTitle).click()
   await expect(page.getByLabel('事件标题')).toHaveValue(updatedTitle)
+  await expect(page.getByLabel('事件详情').getByRole('button', { name: '全天', exact: true })).toHaveAttribute('aria-pressed', 'false')
   await expect(page.getByLabel('开始时间')).toHaveValue('14:00')
   await expect(page.getByLabel('结束时间')).toHaveValue('15:30')
+  await expect(page.getByLabel('事件详情').getByRole('button', { name: '已完成', exact: true })).toHaveClass(/active/)
   await expect(page.getByLabel('事件备注')).toHaveValue('同步本周发布计划')
 
   await page.getByRole('button', { name: '删除' }).click()
@@ -593,22 +641,29 @@ test('phase 4 双设备同步：事件创建、编辑、删除可跨设备补拉
     await pageA.getByLabel('快速新建事件').fill(eventTitle)
     await pageA.getByLabel('快速新建事件').press('Enter')
     await expect(pageA.getByLabel('事件标题')).toHaveValue(eventTitle)
+    await expect(pageA.getByLabel('事件详情').getByRole('button', { name: '全天', exact: true })).toHaveAttribute('aria-pressed', 'true')
 
+    await getSyncActionButton(pageA).click()
     await getSyncActionButton(pageB).click()
     await expect(pageB.locator('.calendar-grid').getByText(eventTitle)).toBeVisible()
 
     await pageA.locator('.calendar-grid').getByText(eventTitle).click()
     await pageA.getByLabel('事件标题').fill(updatedTitle)
+    await pageA.getByLabel('事件详情').getByRole('button', { name: '全天', exact: true }).click()
     await pageA.getByLabel('开始时间').fill('10:00')
     await pageA.getByLabel('结束时间').fill('11:30')
+    await pageA.getByLabel('事件详情').getByRole('button', { name: '已完成', exact: true }).click()
     await pageA.getByLabel('事件备注').fill('双设备编辑验证')
     await pageA.waitForTimeout(1200)
 
+    await getSyncActionButton(pageA).click()
     await getSyncActionButton(pageB).click()
     await pageB.locator('.calendar-grid').getByText(updatedTitle).click()
     await expect(pageB.getByLabel('事件标题')).toHaveValue(updatedTitle)
+    await expect(pageB.getByLabel('事件详情').getByRole('button', { name: '全天', exact: true })).toHaveAttribute('aria-pressed', 'false')
     await expect(pageB.getByLabel('开始时间')).toHaveValue('10:00')
     await expect(pageB.getByLabel('结束时间')).toHaveValue('11:30')
+    await expect(pageB.getByLabel('事件详情').getByRole('button', { name: '已完成', exact: true })).toHaveClass(/active/)
     await expect(pageB.getByLabel('事件备注')).toHaveValue('双设备编辑验证')
     await pageB.getByRole('button', { name: '关闭详情' }).click()
 
@@ -616,6 +671,7 @@ test('phase 4 双设备同步：事件创建、编辑、删除可跨设备补拉
     await pageA.locator('.detail-footer-actions').getByRole('button', { name: '删除' }).click()
     await expect(pageA.locator('.detail-pane.is-open')).toHaveCount(0)
 
+    await getSyncActionButton(pageA).click()
     await getSyncActionButton(pageB).click()
     await expect(pageB.locator('.calendar-grid').getByText(updatedTitle)).toHaveCount(0)
   } finally {

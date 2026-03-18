@@ -49,6 +49,7 @@ import { isSupabaseConfigured } from './lib/env'
 import type {
   CategoryRecord,
   EventRecord,
+  EventStatus,
   TodoRecord,
   TodoRecurrenceType,
   TodoStatus,
@@ -138,6 +139,8 @@ type TodoDraft = {
 type EventDraft = {
   title: string
   date: string
+  status: EventStatus
+  allDay: boolean
   startTime: string
   endTime: string
   note: string
@@ -219,6 +222,19 @@ const todoStatusMeta: Record<TodoStatus, { label: string; tone: string; accent: 
     label: '取消',
     tone: '#90A4AE',
     accent: '#F5F7FA',
+  },
+}
+
+const eventStatusMeta: Record<EventStatus, { label: string; tone: string; accent: string }> = {
+  not_completed: {
+    label: '未完成',
+    tone: '#3457A2',
+    accent: '#EDF4FF',
+  },
+  completed: {
+    label: '已完成',
+    tone: '#5F6F86',
+    accent: '#EEF2F6',
   },
 }
 
@@ -329,6 +345,8 @@ const demoEvents: EventRecord[] = [
     workspaceId: demoWorkspaceId,
     title: '产品评审会',
     date: todayDate(),
+    status: 'not_completed',
+    allDay: false,
     startAt: `${todayDate()}T14:00:00.000Z`,
     endAt: `${todayDate()}T15:00:00.000Z`,
     note: '核对本周需求优先级。',
@@ -340,6 +358,8 @@ const demoEvents: EventRecord[] = [
     workspaceId: demoWorkspaceId,
     title: '深度工作时段',
     date: nextDate(1),
+    status: 'not_completed',
+    allDay: false,
     startAt: `${nextDate(1)}T01:30:00.000Z`,
     endAt: `${nextDate(1)}T03:00:00.000Z`,
     note: '留给任务推进。',
@@ -758,6 +778,8 @@ function App() {
     const nextDraft = {
       title: selectedEvent.title,
       date: selectedEvent.date,
+      status: selectedEvent.status,
+      allDay: selectedEvent.allDay,
       startTime: toTimeInputValue(selectedEvent.startAt),
       endTime: toTimeInputValue(selectedEvent.endAt),
       note: selectedEvent.note,
@@ -842,8 +864,10 @@ function App() {
       ...baseEvent,
       title: normalized.title.trim(),
       date: normalized.date,
-      startAt: buildEventTimestamp(normalized.date, normalized.startTime),
-      endAt: buildEventTimestamp(normalized.date, normalized.endTime),
+      status: normalized.status,
+      allDay: normalized.allDay,
+      startAt: normalized.allDay ? null : buildEventTimestamp(normalized.date, normalized.startTime),
+      endAt: normalized.allDay ? null : buildEventTimestamp(normalized.date, normalized.endTime),
       note: normalized.note,
       updatedAt: new Date().toISOString(),
     }
@@ -852,6 +876,8 @@ function App() {
       lastSavedEventDraftRef.current = serializeEventDraft({
         title: updated.title,
         date: updated.date,
+        status: updated.status,
+        allDay: updated.allDay,
         startTime: toTimeInputValue(updated.startAt),
         endTime: toTimeInputValue(updated.endAt),
         note: updated.note,
@@ -865,6 +891,8 @@ function App() {
     lastSavedEventDraftRef.current = serializeEventDraft({
       title: updated.title,
       date: updated.date,
+      status: updated.status,
+      allDay: updated.allDay,
       startTime: toTimeInputValue(updated.startAt),
       endTime: toTimeInputValue(updated.endAt),
       note: updated.note,
@@ -4057,6 +4085,7 @@ function EventDetailPane({
   showCloseButton?: boolean
   readOnly: boolean
 }) {
+  const eventStatusOptions: EventStatus[] = ['not_completed', 'completed']
   const detailPaneClassName = [
     className ?? 'detail-pane',
     selectedEvent ? 'is-open' : '',
@@ -4097,11 +4126,20 @@ function EventDetailPane({
                   <p className="detail-readonly-value">{formatCalendarFullDate(selectedEvent.date)}</p>
                 </section>
 
+                <section className="detail-section detail-section-tight" aria-label="事件状态">
+                  <div className="detail-card-head">
+                    <span>状态</span>
+                  </div>
+                  <p className="detail-readonly-value">{eventStatusMeta[selectedEvent.status].label}</p>
+                </section>
+
                 <section className="detail-section detail-section-tight" aria-label="时间范围">
                   <div className="detail-card-head">
                     <span>时间</span>
                   </div>
-                  <p className="detail-readonly-value">{formatEventTimeRange(selectedEvent.startAt, selectedEvent.endAt)}</p>
+                  <p className="detail-readonly-value">
+                    {formatEventTimeRange(selectedEvent.startAt, selectedEvent.endAt, selectedEvent.allDay)}
+                  </p>
                 </section>
 
                 <section className="detail-section detail-section-tight" aria-label="备注">
@@ -4184,6 +4222,66 @@ function EventDetailPane({
                 />
               </label>
 
+              <section className="detail-section detail-section-tight" aria-label="事件状态">
+                <div className="detail-card-head">
+                  <span>状态</span>
+                </div>
+                <div className="detail-status-grid detail-status-grid-binary">
+                  {eventStatusOptions.map((status) => {
+                    const statusMeta = eventStatusMeta[status]
+                    const isActive = eventDraft.status === status
+                    return (
+                      <button
+                        key={status}
+                        type="button"
+                        className={isActive ? 'detail-status-choice active' : 'detail-status-choice'}
+                        style={
+                          isActive
+                            ? ({
+                                '--detail-status-tone': statusMeta.tone,
+                                '--detail-status-accent': statusMeta.accent,
+                              } as CSSProperties)
+                            : undefined
+                        }
+                        onClick={() =>
+                          setEventDraft({
+                            ...eventDraft,
+                            status,
+                          })
+                        }
+                      >
+                        <span className="detail-status-choice-icon" aria-hidden="true">
+                          {status === 'completed' ? <CheckCircle2 size={15} strokeWidth={2.1} /> : <Circle size={15} strokeWidth={2.1} />}
+                        </span>
+                        <span>{statusMeta.label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </section>
+
+              <section className="detail-section detail-section-tight" aria-label="事件时间类型">
+                <div className="detail-card-head">
+                  <span>时间类型</span>
+                </div>
+                <button
+                  type="button"
+                  className={eventDraft.allDay ? 'detail-myday-pill is-active' : 'detail-myday-pill'}
+                  onClick={() =>
+                    setEventDraft(
+                      normalizeEventDraft({
+                        ...eventDraft,
+                        allDay: !eventDraft.allDay,
+                      }),
+                    )
+                  }
+                  aria-pressed={eventDraft.allDay}
+                >
+                  <Clock3 size={15} strokeWidth={2.1} />
+                  <span>全天</span>
+                </button>
+              </section>
+
               <section className="detail-section detail-section-tight" aria-label="事件时间">
                 <div className="detail-card-head">
                   <span>时间</span>
@@ -4204,6 +4302,7 @@ function EventDetailPane({
                         )
                       }
                       aria-label="开始时间"
+                      disabled={eventDraft.allDay}
                     />
                   </label>
                   <label className="detail-time-field">
@@ -4221,9 +4320,11 @@ function EventDetailPane({
                         )
                       }
                       aria-label="结束时间"
+                      disabled={eventDraft.allDay}
                     />
                   </label>
                 </div>
+                {eventDraft.allDay ? <p className="detail-readonly-subtle">全天事件不需要填写开始和结束时间。</p> : null}
               </section>
 
               <label className="detail-field detail-description-field">
@@ -4703,7 +4804,7 @@ function CalendarEntryButton({
     )
   }
 
-  const timeLabel = formatEventTimeBadge(entry.event.startAt, entry.event.endAt)
+  const timeLabel = formatEventTimeBadge(entry.event.startAt, entry.event.endAt, entry.event.allDay)
 
   return (
     <button
@@ -4712,6 +4813,7 @@ function CalendarEntryButton({
         'calendar-item',
         'calendar-item-event',
         className ?? '',
+        `status-${entry.event.status}`,
         selectedEventId === entry.event.id ? 'active' : '',
       ]
         .filter(Boolean)
@@ -4904,19 +5006,27 @@ function compareTodos(left: TodoRecord, right: TodoRecord) {
 }
 
 function compareEvents(left: EventRecord, right: EventRecord) {
-  if (left.startAt && right.startAt) {
-    return left.startAt.localeCompare(right.startAt) || left.updatedAt.localeCompare(right.updatedAt)
-  }
-
-  if (left.startAt) {
+  if (left.allDay && !right.allDay) {
     return -1
   }
 
-  if (right.startAt) {
+  if (!left.allDay && right.allDay) {
     return 1
   }
 
-  return left.updatedAt.localeCompare(right.updatedAt) || left.title.localeCompare(right.title, 'zh-CN')
+  if (left.startAt && right.startAt) {
+    return left.startAt.localeCompare(right.startAt) || right.updatedAt.localeCompare(left.updatedAt)
+  }
+
+  if (!left.startAt && right.startAt) {
+    return -1
+  }
+
+  if (left.startAt && !right.startAt) {
+    return 1
+  }
+
+  return right.updatedAt.localeCompare(left.updatedAt) || left.title.localeCompare(right.title, 'zh-CN')
 }
 
 function compareCalendarEntries(left: CalendarEntry, right: CalendarEntry) {
@@ -4965,6 +5075,8 @@ function createEventRecord(workspaceId: string, title: string, date: string): Ev
     workspaceId,
     title,
     date,
+    status: 'not_completed',
+    allDay: true,
     startAt: null,
     endAt: null,
     note: '',
@@ -5071,7 +5183,11 @@ function formatTimeValue(value: string | null) {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
-function formatEventTimeBadge(startAt: string | null, endAt: string | null) {
+function formatEventTimeBadge(startAt: string | null, endAt: string | null, allDay = false) {
+  if (allDay) {
+    return '全天'
+  }
+
   if (startAt && endAt) {
     return `${formatTimeValue(startAt)}-${formatTimeValue(endAt)}`
   }
@@ -5087,8 +5203,8 @@ function formatEventTimeBadge(startAt: string | null, endAt: string | null) {
   return ''
 }
 
-function formatEventTimeRange(startAt: string | null, endAt: string | null) {
-  const badge = formatEventTimeBadge(startAt, endAt)
+function formatEventTimeRange(startAt: string | null, endAt: string | null, allDay = false) {
+  const badge = formatEventTimeBadge(startAt, endAt, allDay)
   return badge || '未设置时间'
 }
 
@@ -5105,6 +5221,14 @@ function buildEventTimestamp(date: string, time: string) {
 }
 
 function normalizeEventDraft(draft: EventDraft): EventDraft {
+  if (draft.allDay) {
+    return {
+      ...draft,
+      startTime: '',
+      endTime: '',
+    }
+  }
+
   if (draft.startTime && draft.endTime && draft.endTime < draft.startTime) {
     return {
       ...draft,
@@ -5551,6 +5675,8 @@ function serializeEventDraft(draft: EventDraft) {
   return JSON.stringify([
     draft.title.trim(),
     draft.date,
+    draft.status,
+    draft.allDay,
     draft.startTime,
     draft.endTime,
     draft.note,
@@ -5591,6 +5717,8 @@ function toSyncEvent(record: EventRecord) {
     workspace_id: record.workspaceId,
     title: record.title,
     date: record.date,
+    status: record.status,
+    all_day: record.allDay,
     start_at: record.startAt,
     end_at: record.endAt,
     note: record.note,

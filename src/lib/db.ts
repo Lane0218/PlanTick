@@ -90,6 +90,28 @@ function normalizeTodoStatus(
       : 'not_started'
 }
 
+function normalizeEventStatus(
+  record: Record<string, unknown> & { status?: unknown },
+): EventRecord['status'] {
+  return record.status === 'completed' ? 'completed' : 'not_completed'
+}
+
+function normalizeEventAllDay(
+  record: Record<string, unknown> & { allDay?: unknown; startAt?: unknown; endAt?: unknown; all_day?: unknown; start_at?: unknown; end_at?: unknown },
+) {
+  if (typeof record.allDay === 'boolean') {
+    return record.allDay
+  }
+
+  if (typeof record.all_day === 'boolean') {
+    return record.all_day
+  }
+
+  const start = typeof record.startAt === 'string' ? record.startAt : typeof record.start_at === 'string' ? record.start_at : null
+  const end = typeof record.endAt === 'string' ? record.endAt : typeof record.end_at === 'string' ? record.end_at : null
+  return !start && !end
+}
+
 export async function getDatabase() {
   if (!databasePromise) {
     databasePromise = openDB<PlantickDBSchema>(databaseName, 3, {
@@ -310,7 +332,14 @@ export async function upsertEvent(record: EventRecord) {
 
 export async function listEvents(workspaceId: string) {
   const database = await getDatabase()
-  return database.getAllFromIndex('events', 'by-workspace', workspaceId)
+  const records = await database.getAllFromIndex('events', 'by-workspace', workspaceId)
+  return records.map((record) => ({
+    ...record,
+    status: normalizeEventStatus(record),
+    allDay: normalizeEventAllDay(record),
+    startAt: typeof record.startAt === 'string' ? record.startAt : null,
+    endAt: typeof record.endAt === 'string' ? record.endAt : null,
+  }))
 }
 
 export async function writeOutbox(operation: OutboxOperation) {
@@ -390,6 +419,8 @@ export async function applyRemoteChanges(changes: RemoteChangeSet) {
         workspaceId: record.workspace_id,
         title: String(record.title ?? ''),
         date: String(record.date ?? ''),
+        status: normalizeEventStatus(record),
+        allDay: normalizeEventAllDay(record),
         startAt: typeof record.start_at === 'string' ? record.start_at : null,
         endAt: typeof record.end_at === 'string' ? record.end_at : null,
         note: String(record.note ?? ''),

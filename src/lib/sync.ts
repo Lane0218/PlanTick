@@ -331,6 +331,8 @@ export function createEventSeed(workspaceId: string): EventRecord {
     workspaceId,
     title: 'Phase 1 日历样本',
     date: now.slice(0, 10),
+    status: 'not_completed',
+    allDay: false,
     startAt: now,
     endAt: now,
     note: '用于验证事件本地存储结构。',

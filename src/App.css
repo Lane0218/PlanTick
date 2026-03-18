@@ -2570,6 +2570,12 @@
   box-shadow: 0 0 0 3px rgba(31, 110, 102, 0.12);
 }
 
+.detail-inline-input:disabled {
+  background: #f5f7fa;
+  color: #90a4ae;
+  cursor: not-allowed;
+}
+
 .detail-time-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3030,6 +3036,10 @@
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
+}
+
+.detail-status-grid-binary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .detail-status-choice {
@@ -3583,6 +3593,21 @@
 
 .calendar-item-event.active {
   background: #dce9ff;
+}
+
+.calendar-item-event.status-completed {
+  background: #eef2f6;
+  color: #6b7c93;
+}
+
+.calendar-item-event.status-completed .calendar-item-title {
+  color: inherit;
+  text-decoration: none;
+}
+
+.calendar-item-event.status-completed .calendar-item-time {
+  background: rgba(107, 124, 147, 0.12);
+  color: inherit;
 }
 
 .calendar-item-time {

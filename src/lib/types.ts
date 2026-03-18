@@ -37,6 +37,7 @@ export type CategoryRecord = {
 
 export type TodoRecurrenceType = 'none' | 'daily' | 'weekly' | 'monthly'
 export type TodoStatus = 'not_started' | 'in_progress' | 'completed' | 'blocked' | 'canceled'
+export type EventStatus = 'not_completed' | 'completed'
 
 export type TodoRecord = {
   id: EntityId
@@ -58,6 +59,8 @@ export type EventRecord = {
   workspaceId: string
   title: string
   date: string
+  status: EventStatus
+  allDay: boolean
   startAt: IsoDatetime | null
   endAt: IsoDatetime | null
   note: string
