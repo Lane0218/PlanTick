@@ -1833,8 +1833,8 @@ function App() {
             sidebarCounts={sidebarCounts}
           />
 
-          {isMobileViewport ? null : (
-            <header className={activeView === 'calendar' ? 'board-header board-header-calendar' : 'board-header'}>
+          {isMobileViewport || activeView === 'calendar' ? null : (
+            <header className="board-header">
               <div className="board-heading">
                 <h1>{boardTitle}</h1>
               </div>
@@ -4532,6 +4532,11 @@ function CalendarBoard({
     <section className="calendar-board">
       <div className="calendar-shell">
         <header className="calendar-toolbar">
+          <div className="calendar-toolbar-copy">
+            <h1>日程概览</h1>
+            <span>当前选中 {formatCalendarFullDate(selectedDate)}，点击日期即可切换添加目标</span>
+          </div>
+
           <div className="calendar-toolbar-controls">
             <div className="calendar-toolbar-actions">
               <button type="button" className="calendar-today-icon" aria-label="回到今天" onClick={returnToToday}>
@@ -4621,28 +4626,31 @@ function CalendarBoard({
               ) : null}
             </div>
           </div>
-        </header>
 
-        <div className="calendar-create-row">
-          <div className="calendar-create-copy">
-            <strong>{formatCalendarFullDate(selectedDate)}</strong>
-            <span>在选中日期里安排会议、专注时段或其他事件</span>
-          </div>
           <form className="calendar-quick-create" onSubmit={(event) => void handleQuickCreateEvent(event)}>
+            <div className="calendar-selected-date" aria-hidden="true">
+              <CalendarDays size={16} strokeWidth={2.1} />
+              <strong>{formatMonthDay(selectedDate)}</strong>
+            </div>
             <input
               value={quickEventTitle}
               onChange={(event) => setQuickEventTitle(event.target.value)}
-              placeholder={readOnly ? '游客模式下不可新建事件' : `在 ${formatMonthDay(selectedDate)} 添加事件`}
+              placeholder={readOnly ? '游客模式下不可新建事件' : `为 ${formatMonthDay(selectedDate)} 添加事件`}
               aria-label="快速新建事件"
               name="quickEventTitle"
               autoComplete="off"
               disabled={readOnly}
             />
-            <button type="submit" className="primary-button" disabled={readOnly || !quickEventTitle.trim()}>
-              新建事件
+            <button
+              type="submit"
+              className="primary-button calendar-quick-create-button"
+              disabled={readOnly || !quickEventTitle.trim()}
+            >
+              <Plus size={16} strokeWidth={2.2} />
+              添加事件
             </button>
           </form>
-        </div>
+        </header>
 
         <div className="calendar-grid-scroll">
           <div className="calendar-weekdays" aria-hidden="true">
