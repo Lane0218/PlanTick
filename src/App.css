@@ -1308,32 +1308,39 @@
 .app-toast-viewport {
   position: fixed;
   top: 18px;
-  left: 50%;
-  z-index: 120;
-  width: min(100vw - 24px, 680px);
-  transform: translateX(-50%);
+  right: 18px;
+  z-index: 75;
+  width: min(calc(100vw - 24px), 420px);
   pointer-events: none;
 }
 
 .app-toast {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 16px;
+  gap: 14px;
   align-items: start;
-  padding: 16px 18px;
-  border: 1px solid rgba(132, 31, 43, 0.28);
-  border-radius: 18px;
-  background:
-    linear-gradient(135deg, rgba(255, 244, 245, 0.98), rgba(255, 250, 250, 0.98));
-  box-shadow:
-    0 22px 50px rgba(114, 28, 36, 0.16),
-    0 8px 18px rgba(114, 28, 36, 0.1);
+  padding: 14px 14px 14px 18px;
+  border: 1px solid #e3e9ee;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 18px 36px rgba(31, 42, 55, 0.12);
   pointer-events: auto;
+  overflow: hidden;
+}
+
+.app-toast::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: linear-gradient(180deg, #d4515f, #c94050);
 }
 
 .app-toast-copy {
   display: grid;
-  gap: 6px;
+  gap: 4px;
+  padding-right: 4px;
 }
 
 .app-toast-copy strong,
@@ -1342,35 +1349,50 @@
 }
 
 .app-toast-copy strong {
-  color: #7c2230;
-  font-size: 0.82rem;
-  letter-spacing: 0.12em;
+  color: #9d4550;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .app-toast-copy p {
-  color: #3a2226;
-  line-height: 1.55;
+  color: var(--text-strong);
+  font-size: 0.94rem;
+  line-height: 1.6;
 }
 
 .app-toast-close {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  min-width: 34px;
-  height: 34px;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
   padding: 0;
-  border: 0;
-  border-radius: 12px;
-  background: rgba(124, 34, 48, 0.08);
-  color: #7c2230;
+  border: 1px solid #e2e8ee;
+  border-radius: 10px;
+  background: #f7f9fb;
+  color: #8b4c55;
 }
 
 .app-toast-close:hover,
 .app-toast-close:focus-visible {
-  background: rgba(124, 34, 48, 0.14);
+  border-color: #d8e0e7;
+  background: #eef2f5;
   outline: none;
+}
+
+@media (max-width: 980px) {
+  .app-toast-viewport {
+    top: 12px;
+    right: 12px;
+    width: min(calc(100vw - 24px), 360px);
+  }
+
+  .app-toast {
+    padding: 13px 13px 13px 17px;
+  }
 }
 
 .mobile-sidebar-layer,
