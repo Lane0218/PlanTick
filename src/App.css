@@ -869,6 +869,7 @@
 
 .workspace-settings-section-head,
 .workspace-settings-value-shell,
+.workspace-settings-meta-actions,
 .workspace-settings-keyline,
 .workspace-settings-actions,
 .workspace-copy-button,
@@ -879,6 +880,7 @@
 
 .workspace-settings-section-head,
 .workspace-settings-value-shell,
+.workspace-settings-meta-actions,
 .workspace-settings-actions {
   justify-content: space-between;
   gap: 16px;
@@ -940,6 +942,10 @@
   border-color: #f2d8dc;
   background: #fff6f7;
   color: var(--danger);
+}
+
+.workspace-settings-meta-actions {
+  flex-shrink: 0;
 }
 
 .workspace-copy-button,
@@ -1099,6 +1105,7 @@
 
   .workspace-settings-section-head,
   .workspace-settings-value-shell,
+  .workspace-settings-meta-actions,
   .workspace-settings-actions,
   .workspace-settings-leave-actions {
     align-items: stretch;

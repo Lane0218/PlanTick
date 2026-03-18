@@ -2205,43 +2205,10 @@ function WorkspaceSettingsDialog({
           </button>
         </div>
 
-        <section className="workspace-settings-section" aria-label="当前工作区">
-          <div className="workspace-settings-section-head">
-            <div className="workspace-settings-section-copy">
-              <strong className="workspace-settings-label">当前工作区</strong>
-            </div>
-            {hasSyncRisk && syncRiskText ? (
-              <span className="workspace-settings-badge workspace-settings-badge-warning">{syncRiskText}</span>
-            ) : (
-              <span className="workspace-settings-badge">已连接</span>
-            )}
-          </div>
-
-          {info ? (
-            <div className="workspace-settings-value-shell">
-              <div className="workspace-settings-keyline">
-                <span>工作区 ID</span>
-                <strong title={info.workspaceId}>{info.workspaceId}</strong>
-              </div>
-              <button
-                type="button"
-                className="ghost-button workspace-copy-button"
-                onClick={() => void handleCopyField('工作区 ID', info.workspaceId)}
-              >
-                <Copy size={15} strokeWidth={2.15} aria-hidden="true" />
-                <span>复制</span>
-              </button>
-            </div>
-          ) : (
-            <p className="workspace-settings-empty">{loading ? '正在读取工作区信息…' : '暂时无法读取工作区信息。'}</p>
-          )}
-        </section>
-
         <form className="workspace-settings-section workspace-settings-form" onSubmit={(event) => void handleUpdatePassphrase(event)}>
           <div className="workspace-settings-section-head">
             <div className="workspace-settings-section-copy">
               <strong className="workspace-settings-label">修改口令</strong>
-              <p>更新后，新设备需使用新口令加入。</p>
             </div>
           </div>
 
@@ -2278,12 +2245,38 @@ function WorkspaceSettingsDialog({
           </div>
         </form>
 
-        <section className="workspace-settings-section workspace-settings-exit" aria-label="退出当前工作区">
+        <section className="workspace-settings-section workspace-settings-exit" aria-label="配置工作区">
           <div className="workspace-settings-section-head">
             <div className="workspace-settings-section-copy">
-              <strong className="workspace-settings-label">退出工作区</strong>
+              <strong className="workspace-settings-label">配置工作区</strong>
             </div>
           </div>
+
+          {info ? (
+            <div className="workspace-settings-value-shell">
+              <div className="workspace-settings-keyline">
+                <span>工作区 ID</span>
+                <strong title={info.workspaceId}>{info.workspaceId}</strong>
+              </div>
+              <div className="workspace-settings-meta-actions">
+                {hasSyncRisk && syncRiskText ? (
+                  <span className="workspace-settings-badge workspace-settings-badge-warning">{syncRiskText}</span>
+                ) : (
+                  <span className="workspace-settings-badge">已连接</span>
+                )}
+                <button
+                  type="button"
+                  className="ghost-button workspace-copy-button"
+                  onClick={() => void handleCopyField('工作区 ID', info.workspaceId)}
+                >
+                  <Copy size={15} strokeWidth={2.15} aria-hidden="true" />
+                  <span>复制</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="workspace-settings-empty">{loading ? '正在读取工作区信息…' : '暂时无法读取工作区信息。'}</p>
+          )}
 
           <div className="workspace-settings-actions workspace-settings-leave-actions">
             {confirmLeaveWorkspace ? (
