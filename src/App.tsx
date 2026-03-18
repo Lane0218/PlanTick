@@ -75,6 +75,11 @@ type WorkspaceSyncSnapshot = {
   lastError: string | null
 }
 
+type AppToast = {
+  id: number
+  message: string
+}
+
 type WorkspacePrimaryNavProps = {
   activeView: WorkspaceView
   setActiveView: (view: WorkspaceView) => void
@@ -388,6 +393,7 @@ function App() {
   const [workspaceSettingsBusyState, setWorkspaceSettingsBusyState] = useState<WorkspaceSettingsBusyState>(null)
   const [workspaceSettingsMessage, setWorkspaceSettingsMessage] = useState('')
   const [workspaceSyncSnapshot, setWorkspaceSyncSnapshot] = useState<WorkspaceSyncSnapshot | null>(null)
+  const [toast, setToast] = useState<AppToast | null>(null)
   const [workspacePassphraseDraft, setWorkspacePassphraseDraft] = useState('')
   const [workspacePassphraseConfirm, setWorkspacePassphraseConfirm] = useState('')
   const [confirmLeaveWorkspace, setConfirmLeaveWorkspace] = useState(false)
@@ -423,10 +429,12 @@ function App() {
   const [isMobileDetailOpen, setIsMobileDetailOpen] = useState(false)
   const mobileDetailTriggerRef = useRef<HTMLElement | null>(null)
   const mobileSidebarButtonRef = useRef<HTMLButtonElement | null>(null)
+  const toastIdRef = useRef(0)
   const lastSavedDraftRef = useRef('')
   const lastSavedEventDraftRef = useRef('')
   const refreshRequestIdRef = useRef(0)
   const workspaceSettingsRequestIdRef = useRef(0)
+  const lastSyncErrorToastKeyRef = useRef<string | null>(null)
 
   const sourceCategories = categories
   const sourceTodos = todos
@@ -434,6 +442,18 @@ function App() {
   const isGuestMode = runtimeMode === 'guest'
   const isReadOnly = runtimeMode === 'unattached'
   const showWorkspaceControls = runtimeMode === 'workspace'
+
+  const dismissToast = useEffectEvent(() => {
+    setToast(null)
+  })
+
+  const showErrorToast = useEffectEvent((nextMessage: string) => {
+    toastIdRef.current += 1
+    setToast({
+      id: toastIdRef.current,
+      message: nextMessage,
+    })
+  })
 
   const activeCategories = useMemo(
     () =>
@@ -564,10 +584,36 @@ function App() {
   const isWorkspaceSyncing =
     workspaceSyncSnapshot?.status === 'pushing' || workspaceSyncSnapshot?.status === 'pulling'
 
+  useEffect(() => {
+    if (!toast) {
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      setToast((current) => (current?.id === toast.id ? null : current))
+    }, 10_000)
+
+    return () => window.clearTimeout(timer)
+  }, [toast])
+
   function applyWorkspaceSyncSnapshot(
     snapshot: WorkspaceSyncSnapshot | null,
     targetWorkspaceId = workspaceId,
   ) {
+    if (snapshot?.status === 'error') {
+      const normalizedMessage = snapshot.lastError
+        ? normalizeSyncErrorMessage(snapshot.lastError)
+        : '同步失败，请稍后重试。'
+      const nextKey = `${targetWorkspaceId}:${normalizedMessage}`
+
+      if (lastSyncErrorToastKeyRef.current !== nextKey) {
+        lastSyncErrorToastKeyRef.current = nextKey
+        showErrorToast(normalizedMessage)
+      }
+    } else {
+      lastSyncErrorToastKeyRef.current = null
+    }
+
     setWorkspaceSyncSnapshot(snapshot)
     setWorkspaceSettingsInfo((current) =>
       current && current.workspaceId === targetWorkspaceId && snapshot
@@ -659,7 +705,8 @@ function App() {
       }
 
       setWorkspaceSettingsInfo(null)
-      setWorkspaceSettingsMessage(error instanceof Error ? error.message : '读取工作区设置失败。')
+      setWorkspaceSettingsMessage('')
+      showErrorToast(error instanceof Error ? error.message : '读取工作区设置失败。')
     } finally {
       if (workspaceSettingsRequestIdRef.current === requestId) {
         setWorkspaceSettingsBusyState(null)
@@ -1021,12 +1068,12 @@ function App() {
     event.preventDefault()
 
     if (!isSupabaseConfigured) {
-      setMessage('缺少 Supabase 环境变量，当前无法创建或加入工作区。')
+      showErrorToast('缺少 Supabase 环境变量，当前无法创建或加入工作区。')
       return
     }
 
     if (passphrase.trim().length < 6) {
-      setMessage('工作区口令至少需要 6 个字符。')
+      showErrorToast('工作区口令至少需要 6 个字符。')
       return
     }
 
@@ -1046,7 +1093,7 @@ function App() {
       )
       setPassphrase('')
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '工作区操作失败')
+      showErrorToast(error instanceof Error ? error.message : '工作区操作失败')
     } finally {
       setBusy(false)
     }
@@ -1062,30 +1109,16 @@ function App() {
 
     try {
       setOptimisticWorkspaceSyncStatus('pushing', workspaceId)
-      const pushResult = await pushPendingOperations()
+      await pushPendingOperations()
 
       setOptimisticWorkspaceSyncStatus('pulling', workspaceId)
       const pullResult = await pullRemoteChanges()
       await reconcileRemoteChanges(workspaceId, pullResult)
       await hydrateWorkspaceData(workspaceId, requestId)
-
-      const pulledCount =
-        pullResult.changes.categories.length +
-        pullResult.changes.todos.length +
-        pullResult.changes.events.length
-      const hasChanges = pushResult.pushedOperationIds.length > 0 || pulledCount > 0
-      const nextMessage = hasChanges ? '同步完成。' : '暂无待同步变更，已拉取最新数据。'
-      setMessage(nextMessage)
-      if (workspaceSettingsOpen) {
-        setWorkspaceSettingsMessage(nextMessage)
-      }
     } catch (error) {
-      const nextMessage =
-        error instanceof Error ? normalizeSyncErrorMessage(error.message) : '同步失败，请稍后重试。'
       await readWorkspaceSyncSnapshot(workspaceId)
-      setMessage(nextMessage)
-      if (workspaceSettingsOpen) {
-        setWorkspaceSettingsMessage(nextMessage)
+      if (!(error instanceof Error)) {
+        showErrorToast('同步失败，请稍后重试。')
       }
     }
   }
@@ -1107,7 +1140,7 @@ function App() {
 
   async function handleCopyWorkspaceField(label: string, value: string) {
     if (!navigator.clipboard) {
-      setWorkspaceSettingsMessage(`${label}当前无法自动复制，请手动复制。`)
+      showErrorToast(`${label}当前无法自动复制，请手动复制。`)
       return
     }
 
@@ -1115,7 +1148,7 @@ function App() {
       await navigator.clipboard.writeText(value)
       setWorkspaceSettingsMessage(`${label}已复制。`)
     } catch {
-      setWorkspaceSettingsMessage(`${label}复制失败，请检查浏览器权限。`)
+      showErrorToast(`${label}复制失败，请检查浏览器权限。`)
     }
   }
 
@@ -1123,12 +1156,12 @@ function App() {
     event.preventDefault()
 
     if (!workspaceId) {
-      setWorkspaceSettingsMessage('当前没有可更新口令的工作区。')
+      showErrorToast('当前没有可更新口令的工作区。')
       return
     }
 
     if (!isSupabaseConfigured) {
-      setWorkspaceSettingsMessage('缺少 Supabase 环境变量，当前无法更新工作区口令。')
+      showErrorToast('缺少 Supabase 环境变量，当前无法更新工作区口令。')
       return
     }
 
@@ -1136,12 +1169,12 @@ function App() {
     const confirmPassphrase = workspacePassphraseConfirm.trim()
 
     if (nextPassphrase.length < 6) {
-      setWorkspaceSettingsMessage('新口令至少需要 6 个字符。')
+      showErrorToast('新口令至少需要 6 个字符。')
       return
     }
 
     if (nextPassphrase !== confirmPassphrase) {
-      setWorkspaceSettingsMessage('两次输入的新口令不一致。')
+      showErrorToast('两次输入的新口令不一致。')
       return
     }
 
@@ -1155,9 +1188,9 @@ function App() {
       setWorkspaceSettingsMessage('工作区口令已更新。')
       setMessage('工作区口令已更新。')
     } catch (error) {
-      const nextMessage =
-        error instanceof Error ? normalizeWorkspacePassphraseUpdateError(error.message) : '工作区口令更新失败。'
-      setWorkspaceSettingsMessage(nextMessage)
+      showErrorToast(
+        error instanceof Error ? normalizeWorkspacePassphraseUpdateError(error.message) : '工作区口令更新失败。',
+      )
     } finally {
       setWorkspaceSettingsBusyState(null)
     }
@@ -1165,7 +1198,7 @@ function App() {
 
   async function handleLeaveWorkspace() {
     if (!workspaceId) {
-      setWorkspaceSettingsMessage('当前没有可退出的工作区。')
+      showErrorToast('当前没有可退出的工作区。')
       return
     }
 
@@ -1178,7 +1211,7 @@ function App() {
       setIsMobileSidebarOpen(false)
       setMessage('已退出当前工作区。')
     } catch (error) {
-      setWorkspaceSettingsMessage(error instanceof Error ? error.message : '退出工作区失败。')
+      showErrorToast(error instanceof Error ? error.message : '退出工作区失败。')
     } finally {
       setWorkspaceSettingsBusyState(null)
     }
@@ -1965,6 +1998,8 @@ function App() {
         )}
       </main>
 
+      <AppToastViewport toast={toast} onClose={dismissToast} />
+
       <WorkspaceAccessDialog
         open={workspaceDialogOpen}
         workspaceMode={workspaceMode}
@@ -2025,7 +2060,6 @@ function SyncActionButton({
         .filter(Boolean)
         .join(' ')}
       aria-label={label}
-      title={label}
       disabled={disabled || isSyncing}
       onClick={onClick}
     >
@@ -2036,6 +2070,32 @@ function SyncActionButton({
         </span>
       ) : null}
     </button>
+  )
+}
+
+function AppToastViewport({
+  toast,
+  onClose,
+}: {
+  toast: AppToast | null
+  onClose: () => void
+}) {
+  if (!toast) {
+    return null
+  }
+
+  return (
+    <div className="app-toast-viewport" aria-live="assertive" aria-atomic="true">
+      <section className="app-toast app-toast-error" role="alert">
+        <div className="app-toast-copy">
+          <strong>操作失败</strong>
+          <p>{toast.message}</p>
+        </div>
+        <button type="button" className="app-toast-close" aria-label="关闭提示" onClick={onClose}>
+          <X size={16} strokeWidth={2.2} aria-hidden="true" />
+        </button>
+      </section>
+    </div>
   )
 }
 
@@ -5584,9 +5644,7 @@ function formatSyncActionLabel(syncSnapshot: WorkspaceSyncSnapshot | null) {
   }
 
   if (syncSnapshot.status === 'error') {
-    return syncSnapshot.lastError
-      ? `同步异常：${normalizeSyncErrorMessage(syncSnapshot.lastError)}，点击重试`
-      : '同步异常，点击重试'
+    return '同步异常'
   }
 
   if (syncSnapshot.pendingOutboxCount > 0) {

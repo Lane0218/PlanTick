@@ -54,6 +54,48 @@ async function joinWorkspaceFromDialog(page: Page, passphrase: string) {
   await expect(page.getByRole('button', { name: '新建分类' })).toBeVisible()
 }
 
+async function seedWorkspaceSyncError(page: Page, lastError: string) {
+  await page.evaluate(async (message) => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = window.indexedDB.open('plantick-app')
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    })
+
+    const transaction = database.transaction(['workspace_meta', 'sync_meta'], 'readwrite')
+    const workspaceMeta = await new Promise<{ workspaceId?: string } | undefined>((resolve, reject) => {
+      const request = transaction.objectStore('workspace_meta').get('current')
+      request.onsuccess = () => resolve(request.result as { workspaceId?: string } | undefined)
+      request.onerror = () => reject(request.error)
+    })
+
+    if (!workspaceMeta?.workspaceId) {
+      throw new Error('缺少当前工作区。')
+    }
+
+    transaction.objectStore('sync_meta').put({
+      workspaceId: workspaceMeta.workspaceId,
+      status: 'error',
+      lastPushAt: null,
+      lastPullAt: null,
+      lastError: message,
+      cursor: {
+        categories: { updatedAt: null },
+        todos: { updatedAt: null },
+        events: { updatedAt: null },
+      },
+    })
+
+    await new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => resolve()
+      transaction.onerror = () => reject(transaction.error)
+      transaction.onabort = () => reject(transaction.error)
+    })
+
+    database.close()
+  }, lastError)
+}
+
 test('phase 2 首次进入直接展示工作台并支持游客模式', async ({ page, baseURL }) => {
   await page.goto(baseURL!)
   await page.setViewportSize({ width: 1440, height: 960 })
@@ -409,13 +451,36 @@ test('phase 3 工作区设置：支持修改口令并退出当前工作区', asy
   await accessDialog.getByRole('button', { name: '加入工作区' }).click()
   await accessDialog.getByLabel('工作区口令').fill(oldPassphrase)
   await accessDialog.getByRole('button', { name: '加入并进入工作台' }).click()
-  await expect(accessDialog.getByText('Invalid passphrase.')).toBeVisible()
+  await expect(page.getByRole('alert')).toContainText('Invalid passphrase.')
   await expect(page.getByRole('button', { name: '新建分类' })).toHaveCount(0)
 
   await accessDialog.getByLabel('工作区口令').fill(newPassphrase)
   await accessDialog.getByRole('button', { name: '加入并进入工作台' }).click()
   await expect(accessDialog).toHaveCount(0)
   await expect(getWorkspaceSettingsButton(page)).toBeVisible()
+})
+
+test('phase 3 同步异常通过 toast 展示且同步按钮不再暴露长错误 tooltip', async ({ page, baseURL }) => {
+  const passphrase = `phase3-sync-toast-${Date.now()}`
+
+  await page.goto(baseURL!)
+  await page.setViewportSize({ width: 1440, height: 960 })
+  await createWorkspaceFromDialog(page, passphrase)
+
+  await seedWorkspaceSyncError(
+    page,
+    "event 同步失败：Could not find the 'all_day' column of 'events' in the schema cache",
+  )
+
+  await getWorkspaceSettingsButton(page).click()
+
+  const toast = page.getByRole('alert')
+  await expect(toast).toContainText("Could not find the 'all_day' column of 'events' in the schema cache")
+  await expect(getSyncActionButton(page)).toHaveAttribute('aria-label', '同步异常')
+  await expect(getSyncActionButton(page)).not.toHaveAttribute('title', /Could not find/)
+
+  await toast.getByRole('button', { name: '关闭提示' }).click()
+  await expect(page.getByRole('alert')).toHaveCount(0)
 })
 
 test('phase 4 日程概览：月历展示截止事项并支持在日历中改期', async ({ page, baseURL }) => {
