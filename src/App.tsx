@@ -63,7 +63,6 @@ import {
 } from './lib/supabase'
 
 type WorkspaceMode = 'create' | 'join'
-type WorkspaceDialogStep = 'selection' | 'form'
 type WorkspaceView = 'todos' | 'board' | 'stats' | 'calendar'
 type TaskFilter = 'all' | 'today' | 'overdue' | 'completed'
 type WorkspaceRuntimeMode = 'workspace' | 'guest' | 'unattached'
@@ -351,7 +350,6 @@ const demoEvents: EventRecord[] = [
 
 function App() {
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>('create')
-  const [workspaceDialogStep, setWorkspaceDialogStep] = useState<WorkspaceDialogStep>('selection')
   const [activeView, setActiveView] = useState<WorkspaceView>('todos')
   const [passphrase, setPassphrase] = useState('')
   const [workspaceId, setWorkspaceId] = useState('')
@@ -367,7 +365,7 @@ function App() {
   const [confirmLeaveWorkspace, setConfirmLeaveWorkspace] = useState(false)
   const [sessionLabel, setSessionLabel] = useState('尚未建立匿名会话')
   const [busy, setBusy] = useState(false)
-  const [message, setMessage] = useState('请选择工作区后开始管理任务。')
+  const [message, setMessage] = useState('')
 
   const [categories, setCategories] = useState<CategoryRecord[]>([])
   const [todos, setTodos] = useState<TodoRecord[]>([])
@@ -683,9 +681,8 @@ function App() {
       const restoredWorkspaceId = await loadWorkspaceId()
       if (!restoredWorkspaceId) {
         setRuntimeMode('unattached')
-        setWorkspaceDialogStep('selection')
         setWorkspaceDialogOpen(true)
-        setMessage('请选择进入方式。')
+        setMessage('')
         return
       }
 
@@ -1491,41 +1488,21 @@ function App() {
     }
   }, [isMobileDetailOpen, isMobileSidebarOpen, isMobileViewport])
 
-  function getWorkspaceDialogHint(mode: WorkspaceMode) {
-    return mode === 'create' ? '设置一个至少 6 个字符的工作区口令。' : '输入已有工作区口令。'
-  }
-
-  function openWorkspaceDialog(mode: WorkspaceMode = workspaceMode, step: WorkspaceDialogStep = 'form') {
+  function openWorkspaceDialog(mode: WorkspaceMode = workspaceMode) {
     setWorkspaceMode(mode)
-    setWorkspaceDialogStep(step)
     setPassphrase('')
-    setMessage(step === 'selection' ? '请选择进入方式。' : getWorkspaceDialogHint(mode))
+    setMessage('')
     setWorkspaceDialogOpen(true)
-  }
-
-  function enterWorkspaceDialogForm(mode: WorkspaceMode) {
-    setWorkspaceMode(mode)
-    setWorkspaceDialogStep('form')
-    setPassphrase('')
-    setMessage(getWorkspaceDialogHint(mode))
-  }
-
-  function returnToWorkspaceDialogSelection() {
-    setWorkspaceDialogStep('selection')
-    setPassphrase('')
-    setMessage('请选择进入方式。')
   }
 
   function closeWorkspaceDialog() {
     setWorkspaceDialogOpen(false)
-    setWorkspaceDialogStep('selection')
   }
 
   function enterGuestMode() {
     setRuntimeMode('guest')
     setWorkspaceId('')
     setWorkspaceDialogOpen(false)
-    setWorkspaceDialogStep('selection')
     setSelectedCategoryId(null)
     setSelectedUncategorized(false)
     setActiveFilter('all')
@@ -1850,11 +1827,9 @@ function App() {
       <WorkspaceAccessDialog
         open={workspaceDialogOpen}
         workspaceMode={workspaceMode}
-        workspaceDialogStep={workspaceDialogStep}
         passphrase={passphrase}
         setPassphrase={setPassphrase}
-        enterWorkspaceDialogForm={enterWorkspaceDialogForm}
-        returnToWorkspaceDialogSelection={returnToWorkspaceDialogSelection}
+        setWorkspaceMode={setWorkspaceMode}
         handleWorkspaceSubmit={handleWorkspaceSubmit}
         enterGuestMode={enterGuestMode}
         busy={busy}
@@ -1926,11 +1901,9 @@ function SyncActionButton({
 function WorkspaceAccessDialog({
   open,
   workspaceMode,
-  workspaceDialogStep,
   passphrase,
   setPassphrase,
-  enterWorkspaceDialogForm,
-  returnToWorkspaceDialogSelection,
+  setWorkspaceMode,
   handleWorkspaceSubmit,
   enterGuestMode,
   busy,
@@ -1939,11 +1912,9 @@ function WorkspaceAccessDialog({
 }: {
   open: boolean
   workspaceMode: WorkspaceMode
-  workspaceDialogStep: WorkspaceDialogStep
   passphrase: string
   setPassphrase: (value: string) => void
-  enterWorkspaceDialogForm: (mode: WorkspaceMode) => void
-  returnToWorkspaceDialogSelection: () => void
+  setWorkspaceMode: (mode: WorkspaceMode) => void
   handleWorkspaceSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>
   enterGuestMode: () => void
   busy: boolean
@@ -1954,11 +1925,6 @@ function WorkspaceAccessDialog({
     return null
   }
 
-  const isSelectionStep = workspaceDialogStep === 'selection'
-  const dialogTitle = isSelectionStep ? '创建或加入你的任务工作台' : workspaceMode === 'create' ? '创建工作区' : '加入工作区'
-  const dialogDescription =
-    workspaceMode === 'create' ? '设置一个工作区口令，创建后就能在其他设备继续接入。' : '输入已有工作区口令，继续进入同一个工作区。'
-
   return (
     <div className="category-dialog-backdrop workspace-dialog-backdrop" role="presentation" onClick={closeDialog}>
       <div
@@ -1966,120 +1932,73 @@ function WorkspaceAccessDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="workspace-dialog-title"
-        aria-describedby={isSelectionStep ? 'workspace-dialog-selection-note' : 'workspace-dialog-form-note'}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="category-dialog-head workspace-dialog-head">
-          <h3 id="workspace-dialog-title">{dialogTitle}</h3>
+          <h3 id="workspace-dialog-title">创建或加入你的任务工作台</h3>
           <button type="button" className="detail-close" aria-label="关闭工作区对话框" onClick={closeDialog}>
             ×
           </button>
         </div>
 
-        {isSelectionStep ? (
-          <div className="workspace-dialog-selection">
-            <p id="workspace-dialog-selection-note" className="workspace-dialog-note">
-              选择一个入口后再输入工作区口令。
-            </p>
-
-            <div className="workspace-dialog-entry-grid">
+        <form className="category-dialog-form workspace-form workspace-dialog-form" onSubmit={handleWorkspaceSubmit}>
+          <div className="workspace-dialog-mode-row">
+            <div className="segmented workspace-dialog-segmented" aria-label="工作区接入方式">
               <button
                 type="button"
-                className="workspace-entry-button"
-                onClick={() => enterWorkspaceDialogForm('create')}
+                className={workspaceMode === 'create' ? 'active' : ''}
+                onClick={() => setWorkspaceMode('create')}
               >
-                <strong>创建工作区</strong>
-                <span>设置新的工作区口令</span>
+                创建工作区
               </button>
               <button
                 type="button"
-                className="workspace-entry-button"
-                onClick={() => enterWorkspaceDialogForm('join')}
+                className={workspaceMode === 'join' ? 'active' : ''}
+                onClick={() => setWorkspaceMode('join')}
               >
-                <strong>加入工作区</strong>
-                <span>输入已有工作区口令</span>
+                加入工作区
               </button>
             </div>
+          </div>
 
-            <button className="ghost-button workspace-dialog-guest-button" type="button" onClick={enterGuestMode}>
+          <label>
+            <span>工作区口令</span>
+            <input
+              value={passphrase}
+              onChange={(event) => setPassphrase(event.target.value)}
+              placeholder="至少 6 个字符…"
+              minLength={6}
+              name="workspacePassphrase"
+              autoComplete="off"
+              autoFocus
+            />
+          </label>
+
+          {message ? (
+            <p className="workspace-dialog-message" role="status" aria-live="polite">
+              {message}
+            </p>
+          ) : null}
+
+          {!isSupabaseConfigured ? (
+            <p className="workspace-dialog-message" role="status" aria-live="polite">
+              缺少 Supabase 环境变量，当前仅可查看示例数据。
+            </p>
+          ) : null}
+
+          <div className="category-dialog-actions category-form-actions workspace-dialog-actions">
+            <button className="secondary-button" type="button" onClick={enterGuestMode}>
               游客模式
             </button>
-
-            <p className="workspace-dialog-message" role="status" aria-live="polite">
-              {message}
-            </p>
-
-            {!isSupabaseConfigured ? (
-              <p className="workspace-dialog-message" role="status" aria-live="polite">
-                缺少 Supabase 环境变量，当前仅可查看示例数据。
-              </p>
-            ) : null}
+            <button className="primary-button" type="submit" disabled={busy || !isSupabaseConfigured}>
+              {busy
+                ? '提交中...'
+                : workspaceMode === 'create'
+                  ? '创建并进入工作台'
+                  : '加入并进入工作台'}
+            </button>
           </div>
-        ) : (
-          <form className="category-dialog-form workspace-form workspace-dialog-form" onSubmit={handleWorkspaceSubmit}>
-            <div className="workspace-dialog-mode-row">
-              <button
-                type="button"
-                className="workspace-dialog-back-button"
-                onClick={returnToWorkspaceDialogSelection}
-              >
-                <ChevronLeft size={16} strokeWidth={2.2} />
-                返回
-              </button>
-
-              <div className="segmented workspace-dialog-segmented" aria-label="工作区接入方式">
-                <button
-                  type="button"
-                  className={workspaceMode === 'create' ? 'active' : ''}
-                  onClick={() => enterWorkspaceDialogForm('create')}
-                >
-                  创建工作区
-                </button>
-                <button
-                  type="button"
-                  className={workspaceMode === 'join' ? 'active' : ''}
-                  onClick={() => enterWorkspaceDialogForm('join')}
-                >
-                  加入工作区
-                </button>
-              </div>
-            </div>
-
-            <p id="workspace-dialog-form-note" className="workspace-dialog-note">
-              {dialogDescription}
-            </p>
-
-            <label>
-              <span>工作区口令</span>
-              <input
-                value={passphrase}
-                onChange={(event) => setPassphrase(event.target.value)}
-                placeholder="至少 6 个字符…"
-                minLength={6}
-                name="workspacePassphrase"
-                autoComplete="off"
-                autoFocus
-              />
-            </label>
-
-            <p className="workspace-dialog-message" role="status" aria-live="polite">
-              {message}
-            </p>
-
-            <div className="category-dialog-actions category-form-actions workspace-dialog-actions">
-              <button className="secondary-button" type="button" onClick={enterGuestMode}>
-                游客模式
-              </button>
-              <button className="primary-button" type="submit" disabled={busy || !isSupabaseConfigured}>
-                {busy
-                  ? '提交中...'
-                  : workspaceMode === 'create'
-                    ? '创建并进入工作台'
-                    : '加入并进入工作台'}
-              </button>
-            </div>
-          </form>
-        )}
+        </form>
       </div>
     </div>
   )
