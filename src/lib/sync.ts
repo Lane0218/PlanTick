@@ -27,6 +27,36 @@ type RemoteEntityRecord = SyncRecord & {
   updated_at: string
 }
 
+function isMissingCategorySortOrderColumn(errorMessage: string) {
+  return errorMessage.includes("Could not find the 'sort_order' column of 'categories' in the schema cache")
+}
+
+function stripCategorySortOrder(payload: SyncRecord) {
+  const { sort_order: _sortOrder, ...rest } = payload
+  return rest satisfies SyncRecord
+}
+
+async function pushEntityOperations(
+  client: Awaited<ReturnType<typeof getAuthenticatedSupabaseClient>>,
+  entity: SyncEntityName,
+  operations: OutboxOperation[],
+) {
+  const payloads = operations.map((item) => item.payload)
+  const attempt = async (records: SyncRecord[]) =>
+    client.from(entity).upsert(records, { onConflict: 'id' })
+
+  let { error } = await attempt(payloads)
+
+  if (error && entity === 'categories' && isMissingCategorySortOrderColumn(error.message)) {
+    console.warn('远端 categories.sort_order 尚未可用，已回退为兼容推送。')
+    ;({ error } = await attempt(payloads.map((payload) => stripCategorySortOrder(payload))))
+  }
+
+  if (error) {
+    throw new Error(`${mapEntityName(entity)} 同步失败：${error.message}`)
+  }
+}
+
 function createDefaultCursor(): SyncCursor {
   return {
     categories: { updatedAt: null },
@@ -142,14 +172,7 @@ export async function pushPendingOperations(): Promise<PushResult> {
         continue
       }
 
-      const { error } = await client.from(entity).upsert(
-        collapsedOperations.map((item) => item.payload),
-        { onConflict: 'id' },
-      )
-
-      if (error) {
-        throw new Error(`${mapEntityName(entity)} 同步失败：${error.message}`)
-      }
+      await pushEntityOperations(client, entity, collapsedOperations)
 
       await syncStoreAdapter.removeOutbox(entityOperations.map((item) => item.id))
     }
