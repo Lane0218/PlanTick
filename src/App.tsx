@@ -4282,11 +4282,10 @@ function EventDetailPane({
                 <div className="detail-card-head">
                   <span>时间</span>
                 </div>
-                <div className="detail-time-option-row">
-                  <span className="detail-time-option-label">时间类型</span>
+                <div className="detail-time-grid detail-time-grid-event">
                   <button
                     type="button"
-                    className={eventDraft.allDay ? 'detail-myday-pill is-active' : 'detail-myday-pill'}
+                    className={eventDraft.allDay ? 'detail-myday-pill detail-time-toggle is-active' : 'detail-myday-pill detail-time-toggle'}
                     onClick={() =>
                       setEventDraft(
                         normalizeEventDraft({
@@ -4300,8 +4299,6 @@ function EventDetailPane({
                     <Clock3 size={15} strokeWidth={2.1} />
                     <span>全天</span>
                   </button>
-                </div>
-                <div className="detail-time-grid">
                   <label className="detail-time-field">
                     <span>开始</span>
                     <input

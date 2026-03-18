@@ -2717,17 +2717,15 @@
   gap: 12px;
 }
 
-.detail-time-option-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
+.detail-time-grid-event {
+  grid-template-columns: minmax(112px, auto) repeat(2, minmax(0, 1fr));
+  align-items: end;
 }
 
-.detail-time-option-label {
-  color: #6b7c93;
-  font-size: 0.82rem;
-  font-weight: 600;
+.detail-time-toggle {
+  align-self: end;
+  justify-self: start;
+  min-height: 44px;
 }
 
 .detail-time-field {
@@ -3313,6 +3311,7 @@
   }
 
   .detail-time-grid,
+  .detail-time-grid-event,
   .calendar-quick-create {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -3397,6 +3396,7 @@
   font-size: clamp(1.45rem, 1.8vw, 1.84rem);
   line-height: 1;
   letter-spacing: -0.05em;
+  white-space: nowrap;
 }
 
 .calendar-toolbar-controls {
@@ -3594,6 +3594,19 @@
 .calendar-quick-create-button {
   min-width: fit-content;
   white-space: nowrap;
+}
+
+.workspace-shell.calendar-layout.has-detail .calendar-toolbar {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.workspace-shell.calendar-layout.has-detail .calendar-toolbar-controls {
+  justify-self: end;
+}
+
+.workspace-shell.calendar-layout.has-detail .calendar-quick-create {
+  grid-column: 1 / -1;
+  justify-self: stretch;
 }
 
 .calendar-grid-scroll {
