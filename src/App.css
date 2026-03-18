@@ -780,8 +780,9 @@
 }
 
 .workspace-dialog {
-  width: min(560px, 100%);
+  width: min(500px, 100%);
   gap: 22px;
+  padding: 30px 32px 34px;
   background:
     radial-gradient(circle at top, rgba(31, 110, 102, 0.12), transparent 42%),
     linear-gradient(180deg, #fcfdfd, #f6f8fb);
@@ -789,6 +790,10 @@
 
 .workspace-dialog-head {
   align-items: center;
+}
+
+.workspace-dialog-head h3 {
+  font-size: clamp(1.65rem, 2.8vw, 1.9rem);
 }
 
 .workspace-dialog-form {
@@ -811,6 +816,10 @@
 .workspace-dialog-segmented {
   width: fit-content;
   margin: 0 auto;
+}
+
+.workspace-dialog-segmented button {
+  min-width: 138px;
 }
 
 .workspace-dialog-actions {
@@ -953,7 +962,7 @@
 .workspace-banner strong {
   display: block;
   color: #1f6e66;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   line-height: 1.4;
 }
 

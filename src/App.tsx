@@ -348,6 +348,14 @@ const demoEvents: EventRecord[] = [
   },
 ]
 
+function createGuestSessionData() {
+  return {
+    categories: demoCategories.map((category) => ({ ...category })),
+    todos: demoTodos.map((todo) => ({ ...todo })),
+    events: demoEvents.map((event) => ({ ...event })),
+  }
+}
+
 function App() {
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>('create')
   const [activeView, setActiveView] = useState<WorkspaceView>('todos')
@@ -400,10 +408,12 @@ function App() {
   const refreshRequestIdRef = useRef(0)
   const workspaceSettingsRequestIdRef = useRef(0)
 
-  const sourceCategories = runtimeMode === 'guest' ? demoCategories : categories
-  const sourceTodos = runtimeMode === 'guest' ? demoTodos : todos
-  const sourceEvents = runtimeMode === 'guest' ? demoEvents : events
-  const isReadOnly = runtimeMode !== 'workspace'
+  const sourceCategories = categories
+  const sourceTodos = todos
+  const sourceEvents = events
+  const isGuestMode = runtimeMode === 'guest'
+  const isReadOnly = runtimeMode === 'unattached'
+  const showWorkspaceControls = runtimeMode === 'workspace'
 
   const activeCategories = useMemo(
     () =>
@@ -793,6 +803,20 @@ function App() {
       updatedAt: new Date().toISOString(),
     }
 
+    if (isGuestMode) {
+      lastSavedDraftRef.current = serializeTodoDraft({
+        title: updated.title,
+        categoryId: updated.categoryId ?? '',
+        dueDate: updated.dueDate ?? '',
+        myDayDate: updated.myDayDate ?? '',
+        status: updated.status,
+        note: updated.note,
+        recurrenceType: updated.recurrenceType,
+      })
+      setTodos((current) => current.map((todo) => (todo.id === updated.id ? updated : todo)))
+      return
+    }
+
     await upsertTodo(updated)
     await enqueueRecordMutation('todos', 'upsert', toSyncTodo(updated))
     lastSavedDraftRef.current = serializeTodoDraft({
@@ -822,6 +846,18 @@ function App() {
       endAt: buildEventTimestamp(normalized.date, normalized.endTime),
       note: normalized.note,
       updatedAt: new Date().toISOString(),
+    }
+
+    if (isGuestMode) {
+      lastSavedEventDraftRef.current = serializeEventDraft({
+        title: updated.title,
+        date: updated.date,
+        startTime: toTimeInputValue(updated.startAt),
+        endTime: toTimeInputValue(updated.endAt),
+        note: updated.note,
+      })
+      setEvents((current) => current.map((event) => (event.id === updated.id ? updated : event)))
+      return
     }
 
     await upsertEvent(updated)
@@ -1137,6 +1173,16 @@ function App() {
 
     setBusy(true)
     try {
+      if (isGuestMode) {
+        setCategories((current) => [...current, record])
+        setSelectedCategoryId(record.id)
+        setActiveFilter('all')
+        setNewCategoryName('')
+        setNewCategoryColor(categoryPalette[(activeCategories.length + 1) % categoryPalette.length])
+        setMessage(`分类「${record.name}」已创建。`)
+        return
+      }
+
       await upsertCategory(record)
       await enqueueRecordMutation('categories', 'upsert', toSyncCategory(record))
       await refreshWorkspaceData(workspaceId)
@@ -1164,6 +1210,12 @@ function App() {
 
     setBusy(true)
     try {
+      if (isGuestMode) {
+        setCategories((current) => current.map((category) => (category.id === updated.id ? updated : category)))
+        setMessage(`分类「${updated.name}」已更新。`)
+        return
+      }
+
       await upsertCategory(updated)
       await enqueueRecordMutation('categories', 'upsert', toSyncCategory(updated))
       await refreshWorkspaceData(workspaceId)
@@ -1197,6 +1249,26 @@ function App() {
 
     setBusy(true)
     try {
+      if (isGuestMode) {
+        setTodos((current) =>
+          current.map((todo) =>
+            todo.categoryId === targetCategory.id
+              ? {
+                  ...todo,
+                  categoryId: null,
+                  updatedAt: timestamp,
+                }
+              : todo,
+          ),
+        )
+        setCategories((current) =>
+          current.map((category) => (category.id === deletedCategory.id ? deletedCategory : category)),
+        )
+        setSelectedCategoryId(null)
+        setMessage(`分类「${targetCategory.name}」已删除，关联任务已回到未分类。`)
+        return
+      }
+
       await Promise.all(affectedTodos.map((todo) => upsertTodo(todo)))
       await Promise.all(
         affectedTodos.map((todo) => enqueueRecordMutation('todos', 'upsert', toSyncTodo(todo))),
@@ -1228,6 +1300,15 @@ function App() {
 
     setBusy(true)
     try {
+      if (isGuestMode) {
+        setTodos((current) => [record, ...current])
+        setQuickTodoTitle('')
+        setSelectedTodoId(record.id)
+        setSelectedEventId(null)
+        setMessage(`任务「${record.title}」已创建。`)
+        return
+      }
+
       await upsertTodo(record)
       await enqueueRecordMutation('todos', 'upsert', toSyncTodo(record))
       setTodos((current) => [record, ...current])
@@ -1283,6 +1364,32 @@ function App() {
 
     setBusy(true)
     try {
+      if (isGuestMode) {
+        const nextDraft = {
+          title: updated.title,
+          categoryId: updated.categoryId ?? '',
+          dueDate: updated.dueDate ?? '',
+          myDayDate: updated.myDayDate ?? '',
+          status: updated.status,
+          note: updated.note,
+          recurrenceType: updated.recurrenceType,
+        }
+        lastSavedDraftRef.current = serializeTodoDraft(nextDraft)
+        if (selectedTodoId === todo.id) {
+          setDetailDraft(nextDraft)
+        }
+        setTodos((current) => {
+          const nextTodos = current.map((item) => (item.id === updated.id ? updated : item))
+          return recurringTodo ? [recurringTodo, ...nextTodos] : nextTodos
+        })
+        setMessage(
+          recurringTodo
+            ? `任务「${todo.title}」已完成，并已生成下一次：${formatMonthDay(recurringTodo.dueDate!)}。`
+            : `任务「${todo.title}」状态已切换为 ${todoStatusMeta[updated.status].label}。`,
+        )
+        return
+      }
+
       await upsertTodo(updated)
       await enqueueRecordMutation('todos', 'upsert', toSyncTodo(updated))
       if (recurringTodo) {
@@ -1330,6 +1437,15 @@ function App() {
 
     setBusy(true)
     try {
+      if (isGuestMode) {
+        setTodos((current) =>
+          current.map((todo) => (todo.id === deletedTodo.id ? deletedTodo : todo)),
+        )
+        setSelectedTodoId(null)
+        setMessage(`任务「${selectedTodo.title}」已删除。`)
+        return
+      }
+
       await upsertTodo(deletedTodo)
       await enqueueRecordMutation('todos', 'soft-delete', toSyncTodo(deletedTodo))
       await refreshWorkspaceData(workspaceId)
@@ -1350,6 +1466,15 @@ function App() {
 
     setBusy(true)
     try {
+      if (isGuestMode) {
+        setEvents((current) => [record, ...current])
+        setQuickEventTitle('')
+        setSelectedTodoId(null)
+        setSelectedEventId(record.id)
+        setMessage(`事件「${record.title}」已添加到 ${formatCalendarFullDate(record.date)}。`)
+        return
+      }
+
       await upsertEvent(record)
       await enqueueRecordMutation('events', 'upsert', toSyncEvent(record))
       await refreshWorkspaceData(workspaceId)
@@ -1375,6 +1500,15 @@ function App() {
 
     setBusy(true)
     try {
+      if (isGuestMode) {
+        setEvents((current) =>
+          current.map((event) => (event.id === deletedEvent.id ? deletedEvent : event)),
+        )
+        setSelectedEventId(null)
+        setMessage(`事件「${selectedEvent.title}」已删除。`)
+        return
+      }
+
       await upsertEvent(deletedEvent)
       await enqueueRecordMutation('events', 'soft-delete', toSyncEvent(deletedEvent))
       await refreshWorkspaceData(workspaceId)
@@ -1500,18 +1634,30 @@ function App() {
   }
 
   function enterGuestMode() {
+    const guestSession = createGuestSessionData()
+
     setRuntimeMode('guest')
-    setWorkspaceId('')
+    setWorkspaceId(demoWorkspaceId)
     setWorkspaceDialogOpen(false)
+    setWorkspaceSettingsOpen(false)
+    setWorkspaceSettingsInfo(null)
+    setWorkspaceSettingsMessage('')
+    applyWorkspaceSyncSnapshot(null)
+    setCategories(guestSession.categories)
+    setTodos(guestSession.todos)
+    setEvents(guestSession.events)
     setSelectedCategoryId(null)
     setSelectedUncategorized(false)
     setActiveFilter('all')
     setSelectedTodoId(null)
     setSelectedEventId(null)
     setActiveView('todos')
+    setCalendarMonth(startOfMonthIso(todayDate()))
+    setSelectedCalendarDate(todayDate())
     setQuickTodoTitle('')
     setQuickEventTitle('')
-    setMessage('当前为只读示例模式，不会写入本地或同步到云端。')
+    setSessionLabel('游客模式（本次会话）')
+    setMessage('当前改动仅保留在本次会话。')
   }
 
   const shellClassName = [
@@ -1544,6 +1690,7 @@ function App() {
   const sidebarProps = {
     workspaceId,
     sessionLabel,
+    workspaceLabel: isGuestMode ? '游客模式' : shortWorkspaceId(workspaceId),
     activeView,
     setActiveView,
     activeFilter,
@@ -1571,6 +1718,7 @@ function App() {
     openWorkspaceSettings,
     workspaceSyncSnapshot,
     handleManualSync,
+    showWorkspaceControls,
     busy,
   }
 
@@ -1580,7 +1728,6 @@ function App() {
         {isMobileViewport ? null : (
           <Sidebar
             {...sidebarProps}
-            sessionLabel={runtimeMode === 'guest' ? '示例工作台（只读）' : sessionLabel}
             readOnly={isReadOnly}
           />
         )}
@@ -1596,7 +1743,6 @@ function App() {
             <div className="mobile-sidebar-shell" role="dialog" aria-modal="true" aria-label="侧边导航">
               <Sidebar
                 {...sidebarProps}
-                sessionLabel={runtimeMode === 'guest' ? '示例工作台（只读）' : sessionLabel}
                 id="mobile-sidebar-drawer"
                 className="sidebar-pane sidebar-pane-drawer"
                 onNavigate={() => closeMobileSidebar()}
@@ -1630,7 +1776,7 @@ function App() {
             <div className="workspace-banner" role="status">
               <div>
                 <p className="eyebrow">游客模式</p>
-                <strong>当前展示的是示例数据，不会写入本地，也不会同步。</strong>
+                <strong>当前改动仅保留在本次会话。</strong>
               </div>
               <div className="workspace-banner-actions">
                 <button className="secondary-button" type="button" onClick={() => openWorkspaceDialog('create')}>
@@ -1792,7 +1938,7 @@ function App() {
               readOnly={isReadOnly}
             />
           ) : null
-        ) : activeView === 'board' || activeView === 'stats' ? null : (
+        ) : activeView === 'board' || activeView === 'stats' ? null : isGuestMode && !selectedTodo ? null : (
           <TodoDetailPane
             selectedTodo={selectedTodo}
             categories={activeCategories}
@@ -2272,6 +2418,7 @@ function WorkspacePrimaryNav({
 type SidebarProps = {
   workspaceId: string
   sessionLabel: string
+  workspaceLabel: string
   className?: string
   id?: string
 } & WorkspacePrimaryNavProps & {
@@ -2291,6 +2438,7 @@ type SidebarProps = {
   openWorkspaceSettings: () => void
   workspaceSyncSnapshot: WorkspaceSyncSnapshot | null
   handleManualSync: () => Promise<void>
+  showWorkspaceControls: boolean
   busy: boolean
   readOnly: boolean
 }
@@ -2306,8 +2454,8 @@ function Sidebar({ className, id, readOnly, ...props }: SidebarProps) {
 }
 
 function SidebarContent({
-  workspaceId,
   sessionLabel,
+  workspaceLabel,
   activeView,
   setActiveView,
   activeFilter,
@@ -2335,13 +2483,14 @@ function SidebarContent({
   openWorkspaceSettings,
   workspaceSyncSnapshot,
   handleManualSync,
+  showWorkspaceControls,
   busy,
   onNavigate,
   readOnly,
 }: Omit<SidebarProps, 'className' | 'id'>) {
   const [categoryDialogMode, setCategoryDialogMode] = useState<'create' | 'edit' | null>(null)
   const [pendingDeleteCategory, setPendingDeleteCategory] = useState<CategoryRecord | null>(null)
-  const sidebarTitle = readOnly ? '示例工作台' : shortWorkspaceId(workspaceId)
+  const sidebarTitle = workspaceLabel
 
   const dialogTitle = categoryDialogMode === 'edit' ? '编辑分类' : '新建分类'
 
@@ -2393,7 +2542,7 @@ function SidebarContent({
           <h2 title={sessionLabel}>{sidebarTitle}</h2>
         </div>
         <div className="sidebar-topbar-actions">
-          {!readOnly ? (
+          {showWorkspaceControls ? (
             <>
               <SyncActionButton
                 syncSnapshot={workspaceSyncSnapshot}
