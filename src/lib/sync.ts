@@ -43,6 +43,19 @@ function mapEntityName(entity: SyncEntityName) {
       : 'event'
 }
 
+function collapseEntityOperations(operations: OutboxOperation[]) {
+  const latestByRecordId = new Map<string, OutboxOperation>()
+
+  for (const operation of operations) {
+    const current = latestByRecordId.get(operation.recordId)
+    if (!current || current.createdAt <= operation.createdAt) {
+      latestByRecordId.set(operation.recordId, operation)
+    }
+  }
+
+  return Array.from(latestByRecordId.values()).sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+}
+
 export function createOutboxOperation(
   workspaceId: string,
   entity: SyncEntityName,
@@ -123,13 +136,14 @@ export async function pushPendingOperations(): Promise<PushResult> {
 
     for (const entity of ['categories', 'todos', 'events'] as const) {
       const entityOperations = operations.filter((item) => item.entity === entity)
+      const collapsedOperations = collapseEntityOperations(entityOperations)
 
-      if (!entityOperations.length) {
+      if (!collapsedOperations.length) {
         continue
       }
 
       const { error } = await client.from(entity).upsert(
-        entityOperations.map((item) => item.payload),
+        collapsedOperations.map((item) => item.payload),
         { onConflict: 'id' },
       )
 
