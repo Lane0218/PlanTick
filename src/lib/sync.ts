@@ -10,6 +10,7 @@ import {
   writeOutbox,
   writeSyncMeta,
 } from './db'
+import { getAuthenticatedSupabaseClient } from './supabase'
 import type {
   OutboxOperation,
   PullResult,
@@ -21,6 +22,10 @@ import type {
   SyncOperationKind,
   SyncRecord,
 } from './sync-types'
+
+type RemoteEntityRecord = SyncRecord & {
+  updated_at: string
+}
 
 function createDefaultCursor(): SyncCursor {
   return {
@@ -96,12 +101,62 @@ export async function pushPendingOperations(): Promise<PushResult> {
     },
   }
 
+  if (!operations.length) {
+    await writeSyncMeta({
+      ...meta,
+      status: 'idle',
+      lastPushAt: meta.lastPushAt,
+      lastError: null,
+    })
+
+    return result
+  }
+
   await writeSyncMeta({
     ...meta,
-    status: 'idle',
-    lastPushAt: new Date().toISOString(),
+    status: 'pushing',
     lastError: null,
   })
+
+  try {
+    const client = await getAuthenticatedSupabaseClient()
+
+    for (const entity of ['categories', 'todos', 'events'] as const) {
+      const entityOperations = operations.filter((item) => item.entity === entity)
+
+      if (!entityOperations.length) {
+        continue
+      }
+
+      const { error } = await client.from(entity).upsert(
+        entityOperations.map((item) => item.payload),
+        { onConflict: 'id' },
+      )
+
+      if (error) {
+        throw new Error(`${mapEntityName(entity)} 同步失败：${error.message}`)
+      }
+
+      await syncStoreAdapter.removeOutbox(entityOperations.map((item) => item.id))
+    }
+
+    await writeSyncMeta({
+      ...meta,
+      status: 'idle',
+      lastPushAt: new Date().toISOString(),
+      lastError: null,
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '未知同步错误'
+
+    await Promise.all(operations.map((item) => syncStoreAdapter.bumpOutboxRetry(item.id, message)))
+    await writeSyncMeta({
+      ...meta,
+      status: 'error',
+      lastError: message,
+    })
+    throw error
+  }
 
   return result
 }
@@ -127,13 +182,51 @@ export async function pullRemoteChanges(): Promise<PullResult> {
     lastError: null,
   })
 
-  return {
-    changes: {
+  try {
+    const client = await getAuthenticatedSupabaseClient()
+    const nextCursor = createDefaultCursor()
+    const changes: PullResult['changes'] = {
       categories: [],
       todos: [],
       events: [],
-    },
-    nextCursor: meta.cursor,
+    }
+
+    for (const entity of ['categories', 'todos', 'events'] as const) {
+      let query = client
+        .from(entity)
+        .select('*')
+        .eq('workspace_id', workspace.workspaceId)
+        .order('updated_at', { ascending: true })
+
+      const cursor = meta.cursor[entity].updatedAt
+      if (cursor) {
+        query = query.gt('updated_at', cursor)
+      }
+
+      const { data, error } = await query
+
+      if (error) {
+        throw new Error(`${mapEntityName(entity)} 拉取失败：${error.message}`)
+      }
+
+      const rows = (data ?? []) as RemoteEntityRecord[]
+      changes[entity] = rows
+      nextCursor[entity] = {
+        updatedAt: rows.at(-1)?.updated_at ?? meta.cursor[entity].updatedAt,
+      }
+    }
+
+    return {
+      changes,
+      nextCursor,
+    }
+  } catch (error) {
+    await writeSyncMeta({
+      ...meta,
+      status: 'error',
+      lastError: error instanceof Error ? error.message : '未知拉取错误',
+    })
+    throw error
   }
 }
 

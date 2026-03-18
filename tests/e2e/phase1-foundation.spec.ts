@@ -73,6 +73,7 @@ test('phase 2 首次进入直接展示工作台并支持游客模式', async ({ 
   await page.getByRole('button', { name: '日程概览' }).click()
   await expect(page.locator('.calendar-grid')).toBeVisible()
   await expect(page.locator('.calendar-grid').getByText('整理今天的优先事项')).toBeVisible()
+  await expect(page.locator('.calendar-grid').getByText('产品评审会')).toBeVisible()
 
   await page.getByRole('button', { name: '创建工作区' }).click()
   await expectWorkspaceAccessDialog(page)
@@ -375,7 +376,7 @@ test('phase 4 日程概览：月历展示截止事项并支持在日历中改期
   await page.getByRole('button', { name: '回到今天' }).click()
   await expect(monthTrigger).toContainText('2026年 3月')
 
-  const overflowButton = page.getByRole('button', { name: /查看 .*剩余 1 项任务/ })
+  const overflowButton = page.getByRole('button', { name: /查看 .*剩余 1 项安排/ })
   await expect(overflowButton).toBeVisible()
 
   const targetCell = page.locator('.calendar-cell').filter({ has: overflowButton })
@@ -404,7 +405,7 @@ test('phase 4 日程概览：月历展示截止事项并支持在日历中改期
 
   await overflowButton.click()
   await expect(dayPopover).toBeVisible()
-  await page.getByRole('button', { name: '关闭当天任务浮层' }).click()
+  await page.getByRole('button', { name: '关闭当天安排浮层' }).click()
   await expect(page.locator('.calendar-day-popover')).toHaveCount(0)
 
   await overflowButton.click()
@@ -423,6 +424,46 @@ test('phase 4 日程概览：月历展示截止事项并支持在日历中改期
 
   await expect(page.locator('.detail-pane.is-open')).toHaveCount(0)
   await expect(page.locator('.calendar-grid').getByText('月历任务一')).toBeVisible()
+})
+
+test('phase 4 日程概览：支持事件创建、编辑、刷新恢复与删除', async ({ page, baseURL }) => {
+  const passphrase = `phase4-events-${Date.now()}-pw`
+  const eventTitle = '评审会议'
+  const updatedTitle = '评审会议-调整'
+
+  await page.goto(baseURL!)
+  await page.setViewportSize({ width: 1440, height: 960 })
+
+  await createWorkspaceFromDialog(page, passphrase)
+  await page.getByRole('button', { name: '日程概览' }).click()
+
+  await page.getByLabel('快速新建事件').fill(eventTitle)
+  await page.getByLabel('快速新建事件').press('Enter')
+
+  await expect(page.getByLabel('事件标题')).toHaveValue(eventTitle)
+  await expect(page.locator('.calendar-grid').getByText(eventTitle)).toBeVisible()
+
+  await page.getByLabel('事件标题').fill(updatedTitle)
+  await page.getByLabel('开始时间').fill('14:00')
+  await page.getByLabel('结束时间').fill('15:30')
+  await page.getByLabel('事件备注').fill('同步本周发布计划')
+  await page.waitForTimeout(500)
+  await page.getByRole('button', { name: '关闭详情' }).click()
+
+  await page.reload()
+  await page.getByRole('button', { name: '日程概览' }).click()
+  await expect(page.locator('.calendar-grid').getByText(updatedTitle)).toBeVisible()
+
+  await page.locator('.calendar-grid').getByText(updatedTitle).click()
+  await expect(page.getByLabel('事件标题')).toHaveValue(updatedTitle)
+  await expect(page.getByLabel('开始时间')).toHaveValue('14:00')
+  await expect(page.getByLabel('结束时间')).toHaveValue('15:30')
+  await expect(page.getByLabel('事件备注')).toHaveValue('同步本周发布计划')
+
+  await page.getByRole('button', { name: '删除' }).click()
+  await page.locator('.detail-footer-actions').getByRole('button', { name: '删除' }).click()
+  await expect(page.locator('.detail-pane.is-open')).toHaveCount(0)
+  await expect(page.locator('.calendar-grid').getByText(updatedTitle)).toHaveCount(0)
 })
 
 test('phase 4 移动端壳层：抽屉、底部详情与纵向看板', async ({ page, baseURL }) => {

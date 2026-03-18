@@ -22,6 +22,16 @@ function requireClient() {
   return supabase
 }
 
+export function getSupabaseClient() {
+  return requireClient()
+}
+
+export async function getAuthenticatedSupabaseClient() {
+  const client = requireClient()
+  await ensureAnonymousSession()
+  return client
+}
+
 export async function ensureAnonymousSession() {
   const client = requireClient()
   const { data: currentSession, error: sessionError } =

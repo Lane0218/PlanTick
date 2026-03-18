@@ -11,6 +11,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Circle,
+  Clock3,
   Inbox,
   Menu,
   PauseCircle,
@@ -34,11 +35,12 @@ import {
   saveCurrentWorkspaceMeta,
   saveWorkspaceId,
   upsertCategory,
+  upsertEvent,
   upsertTodo,
 } from './lib/db'
 import { isSupabaseConfigured } from './lib/env'
 import type { CategoryRecord, EventRecord, TodoRecord, TodoRecurrenceType, TodoStatus } from './lib/types'
-import { enqueueRecordMutation, pullRemoteChanges, reconcileRemoteChanges } from './lib/sync'
+import { enqueueRecordMutation, pullRemoteChanges, pushPendingOperations, reconcileRemoteChanges } from './lib/sync'
 import { ensureAnonymousSession, invokeWorkspaceFunction } from './lib/supabase'
 
 type WorkspaceMode = 'create' | 'join'
@@ -56,6 +58,7 @@ type WorkspacePrimaryNavProps = {
   selectedUncategorized: boolean
   setSelectedUncategorized: (value: boolean) => void
   setSelectedTodoId: (value: string | null) => void
+  setSelectedEventId: (value: string | null) => void
   sidebarCounts: Record<TaskFilter, number>
   className?: string
   onNavigate?: () => void
@@ -107,6 +110,14 @@ type TodoDraft = {
   recurrenceType: TodoRecurrenceType
 }
 
+type EventDraft = {
+  title: string
+  date: string
+  startTime: string
+  endTime: string
+  note: string
+}
+
 type CategoryChipOption = {
   key: string
   categoryId: string
@@ -120,8 +131,22 @@ type CalendarCell = {
   inCurrentMonth: boolean
   isToday: boolean
   isSelected: boolean
-  todos: TodoRecord[]
+  entries: CalendarEntry[]
 }
+
+type CalendarEntry =
+  | {
+      id: string
+      kind: 'todo'
+      date: string
+      todo: TodoRecord
+    }
+  | {
+      id: string
+      kind: 'event'
+      date: string
+      event: EventRecord
+    }
 
 const categoryPalette = [
   '#2563EB',
@@ -317,15 +342,19 @@ function App() {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
   const [selectedUncategorized, setSelectedUncategorized] = useState(false)
   const [selectedTodoId, setSelectedTodoId] = useState<string | null>(null)
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null)
   const [calendarMonth, setCalendarMonth] = useState(() => startOfMonthIso(todayDate()))
   const [selectedCalendarDate, setSelectedCalendarDate] = useState(() => todayDate())
   const [quickTodoTitle, setQuickTodoTitle] = useState('')
+  const [quickEventTitle, setQuickEventTitle] = useState('')
   const [newCategoryName, setNewCategoryName] = useState('')
   const [newCategoryColor, setNewCategoryColor] = useState(categoryPalette[0])
   const [categoryEditorName, setCategoryEditorName] = useState('')
   const [categoryEditorColor, setCategoryEditorColor] = useState(categoryPalette[0])
   const [detailDraft, setDetailDraft] = useState<TodoDraft | null>(null)
+  const [eventDraft, setEventDraft] = useState<EventDraft | null>(null)
   const [confirmDeleteTodo, setConfirmDeleteTodo] = useState(false)
+  const [confirmDeleteEvent, setConfirmDeleteEvent] = useState(false)
   const [isMobileViewport, setIsMobileViewport] = useState(() =>
     typeof window !== 'undefined' ? window.matchMedia('(max-width: 980px)').matches : false,
   )
@@ -334,6 +363,8 @@ function App() {
   const mobileDetailTriggerRef = useRef<HTMLElement | null>(null)
   const mobileSidebarButtonRef = useRef<HTMLButtonElement | null>(null)
   const lastSavedDraftRef = useRef('')
+  const lastSavedEventDraftRef = useRef('')
+  const refreshRequestIdRef = useRef(0)
 
   const sourceCategories = runtimeMode === 'guest' ? demoCategories : categories
   const sourceTodos = runtimeMode === 'guest' ? demoTodos : todos
@@ -392,6 +423,7 @@ function App() {
   )
 
   const selectedTodo = activeTodos.find((todo) => todo.id === selectedTodoId) ?? null
+  const selectedEvent = activeEvents.find((event) => event.id === selectedEventId) ?? null
   const boardColumns = useMemo(
     () =>
       boardStatuses.map((status) => ({
@@ -401,7 +433,7 @@ function App() {
       })),
     [activeTodos],
   )
-  const calendarTodosByDate = useMemo(() => groupTodosByDueDate(activeTodos), [activeTodos])
+  const calendarEntriesByDate = useMemo(() => groupCalendarEntriesByDate(activeTodos, activeEvents), [activeEvents, activeTodos])
   const shouldShowTodoCategoryMeta = activeFilter === 'all' && !selectedCategoryId && !selectedUncategorized
   const sidebarCounts = useMemo(
     () => ({
@@ -535,16 +567,42 @@ function App() {
   }, [selectedTodo])
 
   useEffect(() => {
-    if (activeView !== 'calendar' || !selectedTodo?.dueDate) {
+    if (!selectedEvent) {
+      setEventDraft(null)
+      lastSavedEventDraftRef.current = ''
+      setConfirmDeleteEvent(false)
       return
     }
 
-    setSelectedCalendarDate(selectedTodo.dueDate)
+    const nextDraft = {
+      title: selectedEvent.title,
+      date: selectedEvent.date,
+      startTime: toTimeInputValue(selectedEvent.startAt),
+      endTime: toTimeInputValue(selectedEvent.endAt),
+      note: selectedEvent.note,
+    }
+
+    setEventDraft(nextDraft)
+    setConfirmDeleteEvent(false)
+    lastSavedEventDraftRef.current = serializeEventDraft(nextDraft)
+  }, [selectedEvent])
+
+  useEffect(() => {
+    if (activeView !== 'calendar') {
+      return
+    }
+
+    const targetDate = selectedTodo?.dueDate ?? selectedEvent?.date
+    if (!targetDate) {
+      return
+    }
+
+    setSelectedCalendarDate(targetDate)
     setCalendarMonth((current) => {
-      const nextMonth = startOfMonthIso(selectedTodo.dueDate!)
+      const nextMonth = startOfMonthIso(targetDate)
       return current === nextMonth ? current : nextMonth
     })
-  }, [activeView, selectedTodo?.dueDate])
+  }, [activeView, selectedEvent?.date, selectedTodo?.dueDate])
 
   const persistTodoDraft = useEffectEvent(async (draft: TodoDraft, baseTodo: TodoRecord) => {
     if (!workspaceId || !draft.title.trim()) {
@@ -578,6 +636,34 @@ function App() {
     setTodos((current) => current.map((todo) => (todo.id === updated.id ? updated : todo)))
   })
 
+  const persistEventDraft = useEffectEvent(async (draft: EventDraft, baseEvent: EventRecord) => {
+    if (!workspaceId || !draft.title.trim()) {
+      return
+    }
+
+    const normalized = normalizeEventDraft(draft)
+    const updated: EventRecord = {
+      ...baseEvent,
+      title: normalized.title.trim(),
+      date: normalized.date,
+      startAt: buildEventTimestamp(normalized.date, normalized.startTime),
+      endAt: buildEventTimestamp(normalized.date, normalized.endTime),
+      note: normalized.note,
+      updatedAt: new Date().toISOString(),
+    }
+
+    await upsertEvent(updated)
+    await enqueueRecordMutation('events', 'upsert', toSyncEvent(updated))
+    lastSavedEventDraftRef.current = serializeEventDraft({
+      title: updated.title,
+      date: updated.date,
+      startTime: toTimeInputValue(updated.startAt),
+      endTime: toTimeInputValue(updated.endAt),
+      note: updated.note,
+    })
+    setEvents((current) => current.map((event) => (event.id === updated.id ? updated : event)))
+  })
+
   useEffect(() => {
     if (!selectedTodo || !detailDraft) {
       return
@@ -595,9 +681,32 @@ function App() {
     return () => window.clearTimeout(timer)
   }, [detailDraft, selectedTodo])
 
+  useEffect(() => {
+    if (!selectedEvent || !eventDraft) {
+      return
+    }
+
+    const nextSignature = serializeEventDraft(eventDraft)
+    if (nextSignature === lastSavedEventDraftRef.current) {
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      void persistEventDraft(eventDraft, selectedEvent)
+    }, 220)
+
+    return () => window.clearTimeout(timer)
+  }, [eventDraft, selectedEvent])
+
   async function refreshWorkspaceData(nextWorkspaceId?: string) {
+    const requestId = refreshRequestIdRef.current + 1
+    refreshRequestIdRef.current = requestId
     const resolvedWorkspaceId = nextWorkspaceId ?? (await loadWorkspaceId())
     if (!resolvedWorkspaceId) {
+      if (requestId !== refreshRequestIdRef.current) {
+        return
+      }
+
       setWorkspaceId('')
       setRuntimeMode('unattached')
       setCategories([])
@@ -607,9 +716,16 @@ function App() {
       setSelectedUncategorized(false)
       setActiveFilter('all')
       setSelectedTodoId(null)
+      setSelectedEventId(null)
       setActiveView('todos')
       setSessionLabel('尚未建立匿名会话')
       return
+    }
+
+    try {
+      await pushPendingOperations()
+    } catch (error) {
+      console.warn('刷新工作区时推送本地变更失败', error)
     }
 
     try {
@@ -625,6 +741,10 @@ function App() {
       listTodos(resolvedWorkspaceId),
       listEvents(resolvedWorkspaceId),
     ])
+
+    if (requestId !== refreshRequestIdRef.current) {
+      return
+    }
 
     setWorkspaceId(resolvedWorkspaceId)
     setRuntimeMode('workspace')
@@ -645,6 +765,9 @@ function App() {
     )
     setSelectedTodoId((current) =>
       current && nextTodos.some((todo) => todo.id === current && !todo.deleted) ? current : null,
+    )
+    setSelectedEventId((current) =>
+      current && nextEvents.some((event) => event.id === current && !event.deleted) ? current : null,
     )
   }
 
@@ -793,10 +916,14 @@ function App() {
     try {
       await upsertTodo(record)
       await enqueueRecordMutation('todos', 'upsert', toSyncTodo(record))
-      await refreshWorkspaceData(workspaceId)
+      setTodos((current) => [record, ...current])
       setQuickTodoTitle('')
       setSelectedTodoId(record.id)
+      setSelectedEventId(null)
       setMessage(`任务「${record.title}」已创建。`)
+      void pushPendingOperations().catch((error) => {
+        console.warn('推送新建任务失败', error)
+      })
     } finally {
       setBusy(false)
     }
@@ -850,7 +977,7 @@ function App() {
         await upsertTodo(recurringTodo)
         await enqueueRecordMutation('todos', 'upsert', toSyncTodo(recurringTodo))
       }
-      lastSavedDraftRef.current = serializeTodoDraft({
+      const nextDraft = {
         title: updated.title,
         categoryId: updated.categoryId ?? '',
         dueDate: updated.dueDate ?? '',
@@ -858,13 +985,23 @@ function App() {
         status: updated.status,
         note: updated.note,
         recurrenceType: updated.recurrenceType,
+      }
+      lastSavedDraftRef.current = serializeTodoDraft(nextDraft)
+      if (selectedTodoId === todo.id) {
+        setDetailDraft(nextDraft)
+      }
+      setTodos((current) => {
+        const nextTodos = current.map((item) => (item.id === updated.id ? updated : item))
+        return recurringTodo ? [recurringTodo, ...nextTodos] : nextTodos
       })
-      await refreshWorkspaceData(workspaceId)
       setMessage(
         recurringTodo
           ? `任务「${todo.title}」已完成，并已生成下一次：${formatMonthDay(recurringTodo.dueDate!)}。`
           : `任务「${todo.title}」状态已切换为 ${todoStatusMeta[updated.status].label}。`,
       )
+      void pushPendingOperations().catch((error) => {
+        console.warn('推送任务状态变更失败', error)
+      })
     } finally {
       setBusy(false)
     }
@@ -893,6 +1030,51 @@ function App() {
     }
   }
 
+  async function handleQuickCreateEvent(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!workspaceId || !quickEventTitle.trim()) {
+      return
+    }
+
+    const record = createEventRecord(workspaceId, quickEventTitle.trim(), selectedCalendarDate)
+
+    setBusy(true)
+    try {
+      await upsertEvent(record)
+      await enqueueRecordMutation('events', 'upsert', toSyncEvent(record))
+      await refreshWorkspaceData(workspaceId)
+      setQuickEventTitle('')
+      setSelectedTodoId(null)
+      setSelectedEventId(record.id)
+      setMessage(`事件「${record.title}」已添加到 ${formatCalendarFullDate(record.date)}。`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleDeleteEvent() {
+    if (!workspaceId || !selectedEvent) {
+      return
+    }
+
+    const deletedEvent: EventRecord = {
+      ...selectedEvent,
+      deleted: true,
+      updatedAt: new Date().toISOString(),
+    }
+
+    setBusy(true)
+    try {
+      await upsertEvent(deletedEvent)
+      await enqueueRecordMutation('events', 'soft-delete', toSyncEvent(deletedEvent))
+      await refreshWorkspaceData(workspaceId)
+      setSelectedEventId(null)
+      setMessage(`事件「${selectedEvent.title}」已删除。`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const restoreMobileDetailFocus = () => {
     window.setTimeout(() => {
       mobileDetailTriggerRef.current?.focus()
@@ -910,6 +1092,7 @@ function App() {
 
   const closeDetail = (restoreFocus = isMobileViewport) => {
     setSelectedTodoId(null)
+    setSelectedEventId(null)
     setIsMobileDetailOpen(false)
     if (restoreFocus && isMobileViewport) {
       restoreMobileDetailFocus()
@@ -921,6 +1104,18 @@ function App() {
       mobileDetailTriggerRef.current = trigger
     }
     setSelectedTodoId(todoId)
+    setSelectedEventId(null)
+    if (isMobileViewport && activeView !== 'board' && activeView !== 'stats') {
+      setIsMobileDetailOpen(true)
+    }
+  }
+
+  const handleSelectEvent = (eventId: string, trigger?: HTMLElement | null) => {
+    if (trigger) {
+      mobileDetailTriggerRef.current = trigger
+    }
+    setSelectedEventId(eventId)
+    setSelectedTodoId(null)
     if (isMobileViewport && activeView !== 'board' && activeView !== 'stats') {
       setIsMobileDetailOpen(true)
     }
@@ -938,8 +1133,8 @@ function App() {
       return
     }
 
-    setIsMobileDetailOpen(Boolean(selectedTodoId))
-  }, [activeView, isMobileViewport, selectedTodoId])
+    setIsMobileDetailOpen(Boolean(selectedTodoId || selectedEventId))
+  }, [activeView, isMobileViewport, selectedEventId, selectedTodoId])
 
   useEffect(() => {
     if (!isMobileViewport || (!isMobileSidebarOpen && !isMobileDetailOpen)) {
@@ -957,7 +1152,10 @@ function App() {
       }
 
       if (isMobileDetailOpen) {
-        closeDetail(true)
+        setSelectedTodoId(null)
+        setSelectedEventId(null)
+        setIsMobileDetailOpen(false)
+        restoreMobileDetailFocus()
       }
     }
 
@@ -997,15 +1195,22 @@ function App() {
     setSelectedUncategorized(false)
     setActiveFilter('all')
     setSelectedTodoId(null)
+    setSelectedEventId(null)
     setActiveView('todos')
     setQuickTodoTitle('')
+    setQuickEventTitle('')
     setMessage('当前为只读示例模式，不会写入本地或同步到云端。')
   }
 
   const shellClassName = [
     'workspace-shell',
     activeView === 'calendar' ? 'calendar-layout' : '',
-    !isMobileViewport && activeView !== 'board' && activeView !== 'stats' && selectedTodoId ? 'has-detail' : '',
+    !isMobileViewport &&
+    activeView !== 'board' &&
+    activeView !== 'stats' &&
+    (selectedTodoId || selectedEventId)
+      ? 'has-detail'
+      : '',
     isMobileViewport ? 'mobile-workspace-shell' : '',
   ]
     .filter(Boolean)
@@ -1035,6 +1240,7 @@ function App() {
     selectedUncategorized,
     setSelectedUncategorized,
     setSelectedTodoId,
+    setSelectedEventId,
     sidebarCounts,
     categories: activeCategories,
     newCategoryName,
@@ -1132,6 +1338,7 @@ function App() {
             selectedUncategorized={selectedUncategorized}
             setSelectedUncategorized={setSelectedUncategorized}
             setSelectedTodoId={setSelectedTodoId}
+            setSelectedEventId={setSelectedEventId}
             sidebarCounts={sidebarCounts}
           />
 
@@ -1145,14 +1352,21 @@ function App() {
 
           {activeView === 'calendar' ? (
             <CalendarBoard
-              todosByDate={calendarTodosByDate}
+              entriesByDate={calendarEntriesByDate}
               selectedDate={selectedCalendarDate}
               selectedTodoId={selectedTodoId}
+              selectedEventId={selectedEventId}
               visibleMonth={calendarMonth}
               setVisibleMonth={setCalendarMonth}
               setSelectedDate={setSelectedCalendarDate}
               setSelectedTodoId={setSelectedTodoId}
+              setSelectedEventId={setSelectedEventId}
+              quickEventTitle={quickEventTitle}
+              setQuickEventTitle={setQuickEventTitle}
+              handleQuickCreateEvent={handleQuickCreateEvent}
               onSelectTodo={handleSelectTodo}
+              onSelectEvent={handleSelectEvent}
+              readOnly={isReadOnly}
             />
           ) : activeView === 'board' ? (
             <StatusBoard columns={boardColumns} categories={activeCategories} />
@@ -1182,7 +1396,7 @@ function App() {
         </section>
 
         {isMobileViewport ? (
-          activeView !== 'board' && activeView !== 'stats' && selectedTodo && isMobileDetailOpen ? (
+          activeView !== 'board' && activeView !== 'stats' && (selectedTodo || selectedEvent) && isMobileDetailOpen ? (
             <div className="mobile-detail-layer">
               <button
                 type="button"
@@ -1198,24 +1412,40 @@ function App() {
                     className="detail-close mobile-detail-close"
                     aria-label="关闭详情"
                     onClick={() => closeDetail(true)}
-                  >
-                    ×
-                  </button>
-                </div>
-                <TodoDetailPane
-                  selectedTodo={selectedTodo}
-                  categories={activeCategories}
-                  detailDraft={detailDraft}
-                  setDetailDraft={setDetailDraft}
-                  handleDeleteTodo={handleDeleteTodo}
-                  confirmDeleteTodo={confirmDeleteTodo}
-                  setConfirmDeleteTodo={setConfirmDeleteTodo}
-                  closeDetail={() => closeDetail(true)}
-                  busy={busy}
-                  className="detail-pane detail-pane-sheet"
-                  showCloseButton={false}
-                  readOnly={isReadOnly}
-                />
+                >
+                  ×
+                </button>
+              </div>
+                {selectedTodo ? (
+                  <TodoDetailPane
+                    selectedTodo={selectedTodo}
+                    categories={activeCategories}
+                    detailDraft={detailDraft}
+                    setDetailDraft={setDetailDraft}
+                    handleDeleteTodo={handleDeleteTodo}
+                    confirmDeleteTodo={confirmDeleteTodo}
+                    setConfirmDeleteTodo={setConfirmDeleteTodo}
+                    closeDetail={() => closeDetail(true)}
+                    busy={busy}
+                    className="detail-pane detail-pane-sheet"
+                    showCloseButton={false}
+                    readOnly={isReadOnly}
+                  />
+                ) : (
+                  <EventDetailPane
+                    selectedEvent={selectedEvent}
+                    eventDraft={eventDraft}
+                    setEventDraft={setEventDraft}
+                    handleDeleteEvent={handleDeleteEvent}
+                    confirmDeleteEvent={confirmDeleteEvent}
+                    setConfirmDeleteEvent={setConfirmDeleteEvent}
+                    closeDetail={() => closeDetail(true)}
+                    busy={busy}
+                    className="detail-pane detail-pane-sheet"
+                    showCloseButton={false}
+                    readOnly={isReadOnly}
+                  />
+                )}
               </div>
             </div>
           ) : null
@@ -1229,6 +1459,18 @@ function App() {
               handleDeleteTodo={handleDeleteTodo}
               confirmDeleteTodo={confirmDeleteTodo}
               setConfirmDeleteTodo={setConfirmDeleteTodo}
+              closeDetail={() => closeDetail(false)}
+              busy={busy}
+              readOnly={isReadOnly}
+            />
+          ) : selectedEvent ? (
+            <EventDetailPane
+              selectedEvent={selectedEvent}
+              eventDraft={eventDraft}
+              setEventDraft={setEventDraft}
+              handleDeleteEvent={handleDeleteEvent}
+              confirmDeleteEvent={confirmDeleteEvent}
+              setConfirmDeleteEvent={setConfirmDeleteEvent}
               closeDetail={() => closeDetail(false)}
               busy={busy}
               readOnly={isReadOnly}
@@ -1371,6 +1613,7 @@ function WorkspacePrimaryNav({
   selectedUncategorized,
   setSelectedUncategorized,
   setSelectedTodoId,
+  setSelectedEventId,
   sidebarCounts,
   className,
   onNavigate,
@@ -1398,6 +1641,7 @@ function WorkspacePrimaryNav({
             setSelectedUncategorized(false)
             setActiveFilter(item.id)
             setSelectedTodoId(null)
+            setSelectedEventId(null)
             onNavigate?.()
           }}
         >
@@ -1420,6 +1664,7 @@ function WorkspacePrimaryNav({
           setSelectedCategoryId(null)
           setSelectedUncategorized(false)
           setSelectedTodoId(null)
+          setSelectedEventId(null)
           onNavigate?.()
         }}
       >
@@ -1440,6 +1685,7 @@ function WorkspacePrimaryNav({
           setSelectedCategoryId(null)
           setSelectedUncategorized(false)
           setSelectedTodoId(null)
+          setSelectedEventId(null)
           onNavigate?.()
         }}
       >
@@ -1460,6 +1706,7 @@ function WorkspacePrimaryNav({
           setSelectedCategoryId(null)
           setSelectedUncategorized(false)
           setSelectedTodoId(null)
+          setSelectedEventId(null)
           onNavigate?.()
         }}
       >
@@ -1517,6 +1764,7 @@ function SidebarContent({
   selectedUncategorized,
   setSelectedUncategorized,
   setSelectedTodoId,
+  setSelectedEventId,
   sidebarCounts,
   categories,
   newCategoryName,
@@ -1602,6 +1850,7 @@ function SidebarContent({
         selectedUncategorized={selectedUncategorized}
         setSelectedUncategorized={setSelectedUncategorized}
         setSelectedTodoId={setSelectedTodoId}
+        setSelectedEventId={setSelectedEventId}
         sidebarCounts={sidebarCounts}
         onNavigate={onNavigate}
       />
@@ -1636,6 +1885,7 @@ function SidebarContent({
                 setSelectedUncategorized(true)
                 setActiveFilter('all')
                 setSelectedTodoId(null)
+                setSelectedEventId(null)
                 onNavigate?.()
               }}
             >
@@ -1659,6 +1909,7 @@ function SidebarContent({
                   setSelectedUncategorized(false)
                   setActiveFilter('all')
                   setSelectedTodoId(null)
+                  setSelectedEventId(null)
                   onNavigate?.()
                 }}
               >
@@ -3047,24 +3298,289 @@ function TodoDetailPane({
   )
 }
 
+function EventDetailPane({
+  selectedEvent,
+  eventDraft,
+  setEventDraft,
+  handleDeleteEvent,
+  confirmDeleteEvent,
+  setConfirmDeleteEvent,
+  closeDetail,
+  busy,
+  className,
+  showCloseButton = true,
+  readOnly,
+}: {
+  selectedEvent: EventRecord | null
+  eventDraft: EventDraft | null
+  setEventDraft: (draft: EventDraft | null) => void
+  handleDeleteEvent: () => Promise<void>
+  confirmDeleteEvent: boolean
+  setConfirmDeleteEvent: (value: boolean) => void
+  closeDetail: () => void
+  busy: boolean
+  className?: string
+  showCloseButton?: boolean
+  readOnly: boolean
+}) {
+  const detailPaneClassName = [
+    className ?? 'detail-pane',
+    selectedEvent ? 'is-open' : '',
+    readOnly ? 'is-readonly' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  if (readOnly) {
+    return (
+      <aside className={detailPaneClassName} aria-label="事件详情">
+        {selectedEvent ? (
+          <>
+            <div className="detail-head detail-head-compact">
+              <div className="detail-readonly-badge">只读详情</div>
+              {showCloseButton ? (
+                <button
+                  className="detail-close"
+                  onClick={closeDetail}
+                  aria-label="关闭详情"
+                  type="button"
+                >
+                  ×
+                </button>
+              ) : null}
+            </div>
+
+            <div className="detail-scroll">
+              <div className="detail-stack detail-stack-ordered">
+                <div className="detail-title-shell detail-title-shell-flat detail-static-shell">
+                  <h2 className="detail-static-title">{selectedEvent.title}</h2>
+                </div>
+
+                <section className="detail-section detail-section-tight" aria-label="日程日期">
+                  <div className="detail-card-head">
+                    <span>日期</span>
+                  </div>
+                  <p className="detail-readonly-value">{formatCalendarFullDate(selectedEvent.date)}</p>
+                </section>
+
+                <section className="detail-section detail-section-tight" aria-label="时间范围">
+                  <div className="detail-card-head">
+                    <span>时间</span>
+                  </div>
+                  <p className="detail-readonly-value">{formatEventTimeRange(selectedEvent.startAt, selectedEvent.endAt)}</p>
+                </section>
+
+                <section className="detail-section detail-section-tight" aria-label="备注">
+                  <div className="detail-card-head">
+                    <span>描述</span>
+                  </div>
+                  <p className={selectedEvent.note.trim() ? 'detail-readonly-note' : 'detail-readonly-note is-empty'}>
+                    {selectedEvent.note.trim() || '暂无备注'}
+                  </p>
+                </section>
+              </div>
+            </div>
+
+            <div className="detail-footer detail-footer-left">
+              <p className="detail-footer-hint">示例数据仅用于预览，不支持编辑、删除或同步。</p>
+            </div>
+          </>
+        ) : (
+          <div className="detail-empty">
+            <h2>点击一条事件，右侧会展示示例详情。</h2>
+            <p>游客模式下详情仅供阅读，不支持编辑与删除。</p>
+          </div>
+        )}
+      </aside>
+    )
+  }
+
+  return (
+    <aside className={detailPaneClassName} aria-label="事件详情">
+      {selectedEvent && eventDraft ? (
+        <>
+          <div className="detail-head detail-head-compact">
+            <div className="detail-myday-pill event-detail-pill" aria-label="日程类型">
+              <Clock3 size={15} strokeWidth={2.1} />
+              <span>事件</span>
+            </div>
+            {showCloseButton ? (
+              <button className="detail-close" onClick={closeDetail} aria-label="关闭详情" type="button">
+                ×
+              </button>
+            ) : null}
+          </div>
+
+          <div className="detail-scroll">
+            <div className="detail-stack detail-stack-ordered">
+              <div className="detail-title-shell detail-title-shell-flat">
+                <input
+                  className="detail-title-input"
+                  value={eventDraft.title}
+                  onChange={(event) =>
+                    setEventDraft({
+                      ...eventDraft,
+                      title: event.target.value,
+                    })
+                  }
+                  placeholder="事件标题…"
+                  aria-label="事件标题"
+                  name="eventTitle"
+                  autoComplete="off"
+                />
+              </div>
+
+              <label className="detail-field detail-section detail-section-tight" aria-label="事件日期">
+                <div className="detail-card-head">
+                  <span>日期</span>
+                </div>
+                <input
+                  className="detail-inline-input"
+                  type="date"
+                  value={eventDraft.date}
+                  onChange={(event) =>
+                    setEventDraft(
+                      normalizeEventDraft({
+                        ...eventDraft,
+                        date: event.target.value || todayDate(),
+                      }),
+                    )
+                  }
+                  aria-label="事件日期"
+                />
+              </label>
+
+              <section className="detail-section detail-section-tight" aria-label="事件时间">
+                <div className="detail-card-head">
+                  <span>时间</span>
+                </div>
+                <div className="detail-time-grid">
+                  <label className="detail-time-field">
+                    <span>开始</span>
+                    <input
+                      className="detail-inline-input"
+                      type="time"
+                      value={eventDraft.startTime}
+                      onChange={(event) =>
+                        setEventDraft(
+                          normalizeEventDraft({
+                            ...eventDraft,
+                            startTime: event.target.value,
+                          }),
+                        )
+                      }
+                      aria-label="开始时间"
+                    />
+                  </label>
+                  <label className="detail-time-field">
+                    <span>结束</span>
+                    <input
+                      className="detail-inline-input"
+                      type="time"
+                      value={eventDraft.endTime}
+                      onChange={(event) =>
+                        setEventDraft(
+                          normalizeEventDraft({
+                            ...eventDraft,
+                            endTime: event.target.value,
+                          }),
+                        )
+                      }
+                      aria-label="结束时间"
+                    />
+                  </label>
+                </div>
+              </section>
+
+              <label className="detail-field detail-description-field">
+                <div className="detail-card-head">
+                  <span>描述</span>
+                </div>
+                <textarea
+                  value={eventDraft.note}
+                  onChange={(event) =>
+                    setEventDraft({
+                      ...eventDraft,
+                      note: event.target.value,
+                    })
+                  }
+                  rows={5}
+                  placeholder="添加描述"
+                  aria-label="事件备注"
+                  name="eventNote"
+                  autoComplete="off"
+                />
+              </label>
+            </div>
+          </div>
+
+          <div className="detail-footer detail-footer-left">
+            {confirmDeleteEvent ? (
+              <div className="detail-footer-actions">
+                <button className="secondary-button" onClick={() => setConfirmDeleteEvent(false)} type="button">
+                  取消
+                </button>
+                <button className="danger-button" onClick={() => void handleDeleteEvent()} disabled={busy} type="button">
+                  删除
+                </button>
+              </div>
+            ) : (
+              <div className="detail-footer-actions">
+                <button
+                  className="detail-footer-link is-danger"
+                  onClick={() => setConfirmDeleteEvent(true)}
+                  disabled={busy}
+                  type="button"
+                >
+                  <Trash2 size={15} strokeWidth={2.1} />
+                  <span>删除</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </>
+      ) : (
+        <div className="detail-empty">
+          <h2>点击一条事件，右侧就会展开详情。</h2>
+          <p>这里会承接标题、日期、时间和描述编辑。</p>
+        </div>
+      )}
+    </aside>
+  )
+}
+
 function CalendarBoard({
-  todosByDate,
+  entriesByDate,
   selectedDate,
   selectedTodoId,
+  selectedEventId,
   visibleMonth,
   setVisibleMonth,
   setSelectedDate,
   setSelectedTodoId,
+  setSelectedEventId,
+  quickEventTitle,
+  setQuickEventTitle,
+  handleQuickCreateEvent,
   onSelectTodo,
+  onSelectEvent,
+  readOnly,
 }: {
-  todosByDate: Map<string, TodoRecord[]>
+  entriesByDate: Map<string, CalendarEntry[]>
   selectedDate: string
   selectedTodoId: string | null
+  selectedEventId: string | null
   visibleMonth: string
   setVisibleMonth: (value: string) => void
   setSelectedDate: (value: string) => void
   setSelectedTodoId: (value: string | null) => void
+  setSelectedEventId: (value: string | null) => void
+  quickEventTitle: string
+  setQuickEventTitle: (value: string) => void
+  handleQuickCreateEvent: (event: FormEvent<HTMLFormElement>) => Promise<void>
   onSelectTodo: (todoId: string, trigger?: HTMLElement | null) => void
+  onSelectEvent: (eventId: string, trigger?: HTMLElement | null) => void
+  readOnly: boolean
 }) {
   const [expandedDate, setExpandedDate] = useState<string | null>(null)
   const [showMonthPicker, setShowMonthPicker] = useState(false)
@@ -3072,8 +3588,8 @@ function CalendarBoard({
   const expandedPopoverRef = useRef<HTMLDivElement | null>(null)
   const monthPickerRef = useRef<HTMLDivElement | null>(null)
   const cells = useMemo(
-    () => buildCalendarCells(visibleMonth, selectedDate, todosByDate),
-    [visibleMonth, selectedDate, todosByDate],
+    () => buildCalendarCells(visibleMonth, selectedDate, entriesByDate),
+    [visibleMonth, selectedDate, entriesByDate],
   )
 
   useEffect(() => {
@@ -3115,6 +3631,7 @@ function CalendarBoard({
   const focusCalendarDate = (date: string, inCurrentMonth: boolean) => {
     setSelectedDate(date)
     setSelectedTodoId(null)
+    setSelectedEventId(null)
     setShowMonthPicker(false)
     if (!inCurrentMonth) {
       setVisibleMonth(startOfMonthIso(date))
@@ -3131,6 +3648,7 @@ function CalendarBoard({
     setVisibleMonth(startOfMonthIso(today))
     setSelectedDate(today)
     setSelectedTodoId(null)
+    setSelectedEventId(null)
     setExpandedDate(null)
     setShowMonthPicker(false)
     setPickerYear(getCalendarYear(today))
@@ -3140,6 +3658,7 @@ function CalendarBoard({
     const nextMonth = shiftMonth(visibleMonth, delta)
     setVisibleMonth(nextMonth)
     setSelectedTodoId(null)
+    setSelectedEventId(null)
     setExpandedDate(null)
     setShowMonthPicker(false)
   }
@@ -3151,6 +3670,7 @@ function CalendarBoard({
       selectedDate.slice(0, 7) === nextMonth.slice(0, 7) ? selectedDate : `${nextMonth.slice(0, 7)}-01`,
     )
     setSelectedTodoId(null)
+    setSelectedEventId(null)
     setExpandedDate(null)
     setShowMonthPicker(false)
   }
@@ -3168,87 +3688,108 @@ function CalendarBoard({
 
             <div className="calendar-toolbar-main" ref={monthPickerRef}>
               <div className="calendar-month-switcher" aria-label="年月切换">
-              <button
-                type="button"
-                className="calendar-nav-button"
-                aria-label="上一个月"
-                onClick={() => shiftVisibleMonth(-1)}
-              >
-                <ChevronLeft size={18} strokeWidth={2.2} />
-              </button>
+                <button
+                  type="button"
+                  className="calendar-nav-button"
+                  aria-label="上一个月"
+                  onClick={() => shiftVisibleMonth(-1)}
+                >
+                  <ChevronLeft size={18} strokeWidth={2.2} />
+                </button>
 
-              <button
-                type="button"
-                className={showMonthPicker ? 'calendar-month-trigger active' : 'calendar-month-trigger'}
-                aria-label={`选择年月，当前 ${formatCalendarMonthTitle(visibleMonth)}`}
-                aria-expanded={showMonthPicker}
-                onClick={() => {
-                  setExpandedDate(null)
-                  setPickerYear(getCalendarYear(visibleMonth))
-                  setShowMonthPicker((current) => !current)
-                }}
-              >
-                <CalendarDays size={18} strokeWidth={2.1} />
-                <span>{formatCalendarMonthTitle(visibleMonth)}</span>
-              </button>
+                <button
+                  type="button"
+                  className={showMonthPicker ? 'calendar-month-trigger active' : 'calendar-month-trigger'}
+                  aria-label={`选择年月，当前 ${formatCalendarMonthTitle(visibleMonth)}`}
+                  aria-expanded={showMonthPicker}
+                  onClick={() => {
+                    setExpandedDate(null)
+                    setPickerYear(getCalendarYear(visibleMonth))
+                    setShowMonthPicker((current) => !current)
+                  }}
+                >
+                  <CalendarDays size={18} strokeWidth={2.1} />
+                  <span>{formatCalendarMonthTitle(visibleMonth)}</span>
+                </button>
 
-              <button
-                type="button"
-                className="calendar-nav-button"
-                aria-label="下一个月"
-                onClick={() => shiftVisibleMonth(1)}
-              >
-                <ChevronRight size={18} strokeWidth={2.2} />
-              </button>
-            </div>
-
-            {showMonthPicker ? (
-              <div className="calendar-month-picker" role="dialog" aria-label="选择年月">
-                <div className="calendar-month-picker-head">
-                  <button
-                    type="button"
-                    className="calendar-year-nav"
-                    aria-label="上一年"
-                    onClick={() => setPickerYear((current) => current - 1)}
-                  >
-                    <ChevronLeft size={16} strokeWidth={2.2} />
-                    <ChevronLeft size={16} strokeWidth={2.2} />
-                  </button>
-                  <strong>{pickerYear}</strong>
-                  <button
-                    type="button"
-                    className="calendar-year-nav"
-                    aria-label="下一年"
-                    onClick={() => setPickerYear((current) => current + 1)}
-                  >
-                    <ChevronRight size={16} strokeWidth={2.2} />
-                    <ChevronRight size={16} strokeWidth={2.2} />
-                  </button>
-                </div>
-
-                <div className="calendar-month-grid" role="list">
-                  {Array.from({ length: 12 }, (_value, index) => {
-                    const monthValue = index + 1
-                    const isActive =
-                      pickerYear === getCalendarYear(visibleMonth) && monthValue === getCalendarMonthNumber(visibleMonth)
-
-                    return (
-                      <button
-                        key={monthValue}
-                        type="button"
-                        className={isActive ? 'calendar-month-option active' : 'calendar-month-option'}
-                        onClick={() => selectMonth(monthValue)}
-                      >
-                        {monthValue}月
-                      </button>
-                    )
-                  })}
-                </div>
+                <button
+                  type="button"
+                  className="calendar-nav-button"
+                  aria-label="下一个月"
+                  onClick={() => shiftVisibleMonth(1)}
+                >
+                  <ChevronRight size={18} strokeWidth={2.2} />
+                </button>
               </div>
-            ) : null}
-          </div>
+
+              {showMonthPicker ? (
+                <div className="calendar-month-picker" role="dialog" aria-label="选择年月">
+                  <div className="calendar-month-picker-head">
+                    <button
+                      type="button"
+                      className="calendar-year-nav"
+                      aria-label="上一年"
+                      onClick={() => setPickerYear((current) => current - 1)}
+                    >
+                      <ChevronLeft size={16} strokeWidth={2.2} />
+                      <ChevronLeft size={16} strokeWidth={2.2} />
+                    </button>
+                    <strong>{pickerYear}</strong>
+                    <button
+                      type="button"
+                      className="calendar-year-nav"
+                      aria-label="下一年"
+                      onClick={() => setPickerYear((current) => current + 1)}
+                    >
+                      <ChevronRight size={16} strokeWidth={2.2} />
+                      <ChevronRight size={16} strokeWidth={2.2} />
+                    </button>
+                  </div>
+
+                  <div className="calendar-month-grid" role="list">
+                    {Array.from({ length: 12 }, (_value, index) => {
+                      const monthValue = index + 1
+                      const isActive =
+                        pickerYear === getCalendarYear(visibleMonth) && monthValue === getCalendarMonthNumber(visibleMonth)
+
+                      return (
+                        <button
+                          key={monthValue}
+                          type="button"
+                          className={isActive ? 'calendar-month-option active' : 'calendar-month-option'}
+                          onClick={() => selectMonth(monthValue)}
+                        >
+                          {monthValue}月
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ) : null}
+            </div>
           </div>
         </header>
+
+        <div className="calendar-create-row">
+          <div className="calendar-create-copy">
+            <strong>{formatCalendarFullDate(selectedDate)}</strong>
+            <span>在选中日期里安排会议、专注时段或其他事件</span>
+          </div>
+          <form className="calendar-quick-create" onSubmit={(event) => void handleQuickCreateEvent(event)}>
+            <input
+              value={quickEventTitle}
+              onChange={(event) => setQuickEventTitle(event.target.value)}
+              placeholder={readOnly ? '游客模式下不可新建事件' : `在 ${formatMonthDay(selectedDate)} 添加事件`}
+              aria-label="快速新建事件"
+              name="quickEventTitle"
+              autoComplete="off"
+              disabled={readOnly}
+            />
+            <button type="submit" className="primary-button" disabled={readOnly || !quickEventTitle.trim()}>
+              新建事件
+            </button>
+          </form>
+        </div>
 
         <div className="calendar-grid-scroll">
           <div className="calendar-weekdays" aria-hidden="true">
@@ -3259,8 +3800,8 @@ function CalendarBoard({
 
           <div className="calendar-grid" role="grid" aria-label={formatCalendarMonthTitle(visibleMonth)}>
             {cells.map((cell, index) => {
-              const visibleTodos = cell.todos.slice(0, 3)
-              const overflowCount = Math.max(cell.todos.length - visibleTodos.length, 0)
+              const visibleEntries = cell.entries.slice(0, 3)
+              const overflowCount = Math.max(cell.entries.length - visibleEntries.length, 0)
               const isExpanded = expandedDate === cell.date
               const columnIndex = index % 7
               const rowIndex = Math.floor(index / 7)
@@ -3321,35 +3862,31 @@ function CalendarBoard({
                   </div>
 
                   <div className="calendar-cell-items">
-                    {visibleTodos.map((todo) => {
-                      return (
-                        <button
-                          key={todo.id}
-                          type="button"
-                          className={[
-                            'calendar-item',
-                            `status-${todo.status}`,
-                            selectedTodoId === todo.id ? 'active' : '',
-                          ]
-                            .filter(Boolean)
-                            .join(' ')}
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            setSelectedDate(cell.date)
-                            onSelectTodo(todo.id, event.currentTarget)
-                            setExpandedDate(null)
-                          }}
-                        >
-                          <span className="calendar-item-title">{todo.title}</span>
-                        </button>
-                      )
-                    })}
+                    {visibleEntries.map((entry) => (
+                      <CalendarEntryButton
+                        key={entry.id}
+                        entry={entry}
+                        selectedTodoId={selectedTodoId}
+                        selectedEventId={selectedEventId}
+                        onSelectTodo={(todoId, trigger) => {
+                          setSelectedDate(cell.date)
+                          onSelectTodo(todoId, trigger)
+                          setExpandedDate(null)
+                        }}
+                        onSelectEvent={(eventId, trigger) => {
+                          setSelectedDate(cell.date)
+                          onSelectEvent(eventId, trigger)
+                          setExpandedDate(null)
+                        }}
+                        onStopPropagation
+                      />
+                    ))}
 
                     {overflowCount ? (
                       <button
                         type="button"
                         className="calendar-item-overflow"
-                        aria-label={`查看 ${formatCalendarFullDate(cell.date)} 剩余 ${overflowCount} 项任务`}
+                        aria-label={`查看 ${formatCalendarFullDate(cell.date)} 剩余 ${overflowCount} 项安排`}
                         onClick={(event) => {
                           event.stopPropagation()
                           toggleExpandedDate(cell.date, cell.inCurrentMonth)
@@ -3365,12 +3902,18 @@ function CalendarBoard({
                       popoverRef={expandedPopoverRef}
                       className={popoverClassName}
                       date={cell.date}
-                      todos={cell.todos}
+                      entries={cell.entries}
                       selectedTodoId={selectedTodoId}
+                      selectedEventId={selectedEventId}
                       onClose={() => setExpandedDate(null)}
                       onSelectTodo={(todoId, trigger) => {
                         setSelectedDate(cell.date)
                         onSelectTodo(todoId, trigger)
+                        setExpandedDate(null)
+                      }}
+                      onSelectEvent={(eventId, trigger) => {
+                        setSelectedDate(cell.date)
+                        onSelectEvent(eventId, trigger)
                         setExpandedDate(null)
                       }}
                     />
@@ -3385,61 +3928,127 @@ function CalendarBoard({
   )
 }
 
+function CalendarEntryButton({
+  entry,
+  selectedTodoId,
+  selectedEventId,
+  onSelectTodo,
+  onSelectEvent,
+  onStopPropagation = false,
+  className,
+}: {
+  entry: CalendarEntry
+  selectedTodoId: string | null
+  selectedEventId: string | null
+  onSelectTodo: (todoId: string, trigger?: HTMLElement | null) => void
+  onSelectEvent: (eventId: string, trigger?: HTMLElement | null) => void
+  onStopPropagation?: boolean
+  className?: string
+}) {
+  if (entry.kind === 'todo') {
+    return (
+      <button
+        type="button"
+        className={[
+          'calendar-item',
+          className ?? '',
+          `status-${entry.todo.status}`,
+          selectedTodoId === entry.todo.id ? 'active' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+        onClick={(event) => {
+          if (onStopPropagation) {
+            event.stopPropagation()
+          }
+          onSelectTodo(entry.todo.id, event.currentTarget)
+        }}
+      >
+        <span className="calendar-item-title">{entry.todo.title}</span>
+      </button>
+    )
+  }
+
+  const timeLabel = formatEventTimeBadge(entry.event.startAt, entry.event.endAt)
+
+  return (
+    <button
+      type="button"
+      className={[
+        'calendar-item',
+        'calendar-item-event',
+        className ?? '',
+        selectedEventId === entry.event.id ? 'active' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+      onClick={(event) => {
+        if (onStopPropagation) {
+          event.stopPropagation()
+        }
+        onSelectEvent(entry.event.id, event.currentTarget)
+      }}
+    >
+      <span className="calendar-item-row">
+        {timeLabel ? <span className="calendar-item-time">{timeLabel}</span> : null}
+        <span className="calendar-item-title">{entry.event.title}</span>
+      </span>
+    </button>
+  )
+}
+
 function CalendarDayPopover({
   popoverRef,
   className,
   date,
-  todos,
+  entries,
   selectedTodoId,
+  selectedEventId,
   onClose,
   onSelectTodo,
+  onSelectEvent,
 }: {
   popoverRef: RefObject<HTMLDivElement | null>
   className: string
   date: string
-  todos: TodoRecord[]
+  entries: CalendarEntry[]
   selectedTodoId: string | null
+  selectedEventId: string | null
   onClose: () => void
   onSelectTodo: (todoId: string, trigger?: HTMLElement | null) => void
+  onSelectEvent: (eventId: string, trigger?: HTMLElement | null) => void
 }) {
   return (
     <div
       ref={popoverRef}
       className={className}
       role="dialog"
-      aria-label={`${formatCalendarFullDate(date)} 任务列表`}
+      aria-label={`${formatCalendarFullDate(date)} 安排列表`}
       onClick={(event) => event.stopPropagation()}
       onKeyDown={(event) => event.stopPropagation()}
     >
       <div className="calendar-day-popover-head">
         <div>
           <strong>{formatCalendarFullDate(date)}</strong>
+          <span>{entries.length} 项安排</span>
         </div>
-        <button type="button" className="calendar-day-popover-close" aria-label="关闭当天任务浮层" onClick={onClose}>
+        <button type="button" className="calendar-day-popover-close" aria-label="关闭当天安排浮层" onClick={onClose}>
           <X size={16} strokeWidth={2.2} />
         </button>
       </div>
 
       <div className="calendar-day-popover-list">
-        {todos.map((todo) => {
-          return (
-            <button
-              key={todo.id}
-              type="button"
-              className={[
-                'calendar-item',
-                'calendar-day-popover-item',
-                `status-${todo.status}`,
-                selectedTodoId === todo.id ? 'active' : '',
-              ]
-                .filter(Boolean)
-                .join(' ')}
-              onClick={(event) => onSelectTodo(todo.id, event.currentTarget)}
-            >
-              <span className="calendar-item-title">{todo.title}</span>
-            </button>
-          )
-        })}
+        {entries.map((entry) => (
+          <CalendarEntryButton
+            key={entry.id}
+            entry={entry}
+            selectedTodoId={selectedTodoId}
+            selectedEventId={selectedEventId}
+            className="calendar-day-popover-item"
+            onSelectTodo={onSelectTodo}
+            onSelectEvent={onSelectEvent}
+          />
+        ))}
       </div>
     </div>
   )
@@ -3449,8 +4058,19 @@ function todayDate() {
   return formatDateInputValue(new Date())
 }
 
-function groupTodosByDueDate(todos: TodoRecord[]) {
-  const grouped = new Map<string, TodoRecord[]>()
+function groupCalendarEntriesByDate(todos: TodoRecord[], events: EventRecord[]) {
+  const grouped = new Map<string, CalendarEntry[]>()
+
+  for (const event of events) {
+    const items = grouped.get(event.date) ?? []
+    items.push({
+      id: event.id,
+      kind: 'event',
+      date: event.date,
+      event,
+    })
+    grouped.set(event.date, items)
+  }
 
   for (const todo of todos) {
     if (!todo.dueDate) {
@@ -3458,12 +4078,17 @@ function groupTodosByDueDate(todos: TodoRecord[]) {
     }
 
     const items = grouped.get(todo.dueDate) ?? []
-    items.push(todo)
+    items.push({
+      id: todo.id,
+      kind: 'todo',
+      date: todo.dueDate,
+      todo,
+    })
     grouped.set(todo.dueDate, items)
   }
 
   for (const [key, value] of grouped.entries()) {
-    grouped.set(key, value.sort((left, right) => compareTodos(left, right)))
+    grouped.set(key, value.sort((left, right) => compareCalendarEntries(left, right)))
   }
 
   return grouped
@@ -3472,7 +4097,7 @@ function groupTodosByDueDate(todos: TodoRecord[]) {
 function buildCalendarCells(
   visibleMonth: string,
   selectedDate: string,
-  todosByDate: Map<string, TodoRecord[]>,
+  entriesByDate: Map<string, CalendarEntry[]>,
 ) {
   const firstOfMonth = new Date(`${visibleMonth}T00:00:00`)
   const gridStart = new Date(firstOfMonth)
@@ -3491,7 +4116,7 @@ function buildCalendarCells(
       inCurrentMonth: isoDate.slice(0, 7) === visibleMonth.slice(0, 7),
       isToday: isoDate === todayDate(),
       isSelected: isoDate === selectedDate,
-      todos: todosByDate.get(isoDate) ?? [],
+      entries: entriesByDate.get(isoDate) ?? [],
     })
   }
 
@@ -3544,6 +4169,38 @@ function compareTodos(left: TodoRecord, right: TodoRecord) {
   return right.updatedAt.localeCompare(left.updatedAt)
 }
 
+function compareEvents(left: EventRecord, right: EventRecord) {
+  if (left.startAt && right.startAt) {
+    return left.startAt.localeCompare(right.startAt) || left.updatedAt.localeCompare(right.updatedAt)
+  }
+
+  if (left.startAt) {
+    return -1
+  }
+
+  if (right.startAt) {
+    return 1
+  }
+
+  return left.updatedAt.localeCompare(right.updatedAt) || left.title.localeCompare(right.title, 'zh-CN')
+}
+
+function compareCalendarEntries(left: CalendarEntry, right: CalendarEntry) {
+  if (left.kind === 'event' && right.kind === 'event') {
+    return compareEvents(left.event, right.event)
+  }
+
+  if (left.kind === 'event') {
+    return -1
+  }
+
+  if (right.kind === 'event') {
+    return 1
+  }
+
+  return compareTodos(left.todo, right.todo)
+}
+
 function createTodoRecord(
   workspaceId: string,
   title: string,
@@ -3562,6 +4219,21 @@ function createTodoRecord(
     completed: false,
     note: '',
     recurrenceType: 'none',
+    updatedAt: now,
+    deleted: false,
+  }
+}
+
+function createEventRecord(workspaceId: string, title: string, date: string): EventRecord {
+  const now = new Date().toISOString()
+  return {
+    id: crypto.randomUUID(),
+    workspaceId,
+    title,
+    date,
+    startAt: null,
+    endAt: null,
+    note: '',
     updatedAt: now,
     deleted: false,
   }
@@ -3654,6 +4326,59 @@ function formatCalendarFullDate(value: string) {
 
 function formatDayOfMonth(value: string) {
   return String(new Date(`${value}T00:00:00`).getDate())
+}
+
+function formatTimeValue(value: string | null) {
+  if (!value) {
+    return ''
+  }
+
+  const date = new Date(value)
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+}
+
+function formatEventTimeBadge(startAt: string | null, endAt: string | null) {
+  if (startAt && endAt) {
+    return `${formatTimeValue(startAt)}-${formatTimeValue(endAt)}`
+  }
+
+  if (startAt) {
+    return formatTimeValue(startAt)
+  }
+
+  if (endAt) {
+    return formatTimeValue(endAt)
+  }
+
+  return ''
+}
+
+function formatEventTimeRange(startAt: string | null, endAt: string | null) {
+  const badge = formatEventTimeBadge(startAt, endAt)
+  return badge || '未设置时间'
+}
+
+function toTimeInputValue(value: string | null) {
+  return formatTimeValue(value)
+}
+
+function buildEventTimestamp(date: string, time: string) {
+  if (!time) {
+    return null
+  }
+
+  return new Date(`${date}T${time}:00`).toISOString()
+}
+
+function normalizeEventDraft(draft: EventDraft): EventDraft {
+  if (draft.startTime && draft.endTime && draft.endTime < draft.startTime) {
+    return {
+      ...draft,
+      endTime: draft.startTime,
+    }
+  }
+
+  return draft
 }
 
 function toggleTodoStatus(status: TodoStatus): TodoStatus {
@@ -4026,6 +4751,16 @@ function serializeTodoDraft(draft: TodoDraft) {
   ])
 }
 
+function serializeEventDraft(draft: EventDraft) {
+  return JSON.stringify([
+    draft.title.trim(),
+    draft.date,
+    draft.startTime,
+    draft.endTime,
+    draft.note,
+  ])
+}
+
 function toSyncCategory(record: CategoryRecord) {
   return {
     id: record.id,
@@ -4049,6 +4784,20 @@ function toSyncTodo(record: TodoRecord) {
     completed: record.completed,
     note: record.note,
     recurrence_type: record.recurrenceType === 'none' ? null : record.recurrenceType,
+    updated_at: record.updatedAt,
+    deleted: record.deleted,
+  }
+}
+
+function toSyncEvent(record: EventRecord) {
+  return {
+    id: record.id,
+    workspace_id: record.workspaceId,
+    title: record.title,
+    date: record.date,
+    start_at: record.startAt,
+    end_at: record.endAt,
+    note: record.note,
     updated_at: record.updatedAt,
     deleted: record.deleted,
   }
