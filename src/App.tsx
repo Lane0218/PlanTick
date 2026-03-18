@@ -1688,7 +1688,7 @@ function App() {
   const sidebarProps = {
     workspaceId,
     sessionLabel,
-    workspaceLabel: isGuestMode ? '游客模式' : 'PlanTick',
+    workspaceLabel: 'PlanTick',
     activeView,
     setActiveView,
     activeFilter,
@@ -2171,7 +2171,6 @@ function WorkspaceSettingsDialog({
         <div className="category-dialog-head workspace-settings-head">
           <div className="workspace-settings-headcopy">
             <h3 id="workspace-settings-title">工作区设置</h3>
-            <p>管理当前工作区口令与连接状态。</p>
           </div>
           <button type="button" className="detail-close" aria-label="关闭工作区设置" onClick={closeDialog}>
             ×
@@ -2182,7 +2181,6 @@ function WorkspaceSettingsDialog({
           <div className="workspace-settings-section-head">
             <div className="workspace-settings-section-copy">
               <strong className="workspace-settings-label">当前工作区</strong>
-              <p>当前设备已连接的工作区。</p>
             </div>
             {hasSyncRisk && syncRiskText ? (
               <span className="workspace-settings-badge workspace-settings-badge-warning">{syncRiskText}</span>
@@ -2256,7 +2254,6 @@ function WorkspaceSettingsDialog({
           <div className="workspace-settings-section-head">
             <div className="workspace-settings-section-copy">
               <strong className="workspace-settings-label">退出工作区</strong>
-              <p>仅退出当前设备，不删除数据。</p>
             </div>
           </div>
 
