@@ -12,7 +12,6 @@ import {
   ChevronRight,
   Circle,
   Clock3,
-  Copy,
   Inbox,
   LogOut,
   Menu,
@@ -1138,20 +1137,6 @@ function App() {
       })
   }
 
-  async function handleCopyWorkspaceField(label: string, value: string) {
-    if (!navigator.clipboard) {
-      showErrorToast(`${label}当前无法自动复制，请手动复制。`)
-      return
-    }
-
-    try {
-      await navigator.clipboard.writeText(value)
-      setWorkspaceSettingsMessage(`${label}已复制。`)
-    } catch {
-      showErrorToast(`${label}复制失败，请检查浏览器权限。`)
-    }
-  }
-
   async function handleUpdateWorkspacePassphrase(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
@@ -2025,7 +2010,6 @@ function App() {
         confirmLeaveWorkspace={confirmLeaveWorkspace}
         setConfirmLeaveWorkspace={setConfirmLeaveWorkspace}
         hasSyncRisk={hasWorkspaceSettingsSyncRisk}
-        handleCopyField={handleCopyWorkspaceField}
         handleUpdatePassphrase={handleUpdateWorkspacePassphrase}
         handleLeaveWorkspace={handleLeaveWorkspace}
         closeDialog={closeWorkspaceSettings}
@@ -2217,7 +2201,6 @@ function WorkspaceSettingsDialog({
   confirmLeaveWorkspace,
   setConfirmLeaveWorkspace,
   hasSyncRisk,
-  handleCopyField,
   handleUpdatePassphrase,
   handleLeaveWorkspace,
   closeDialog,
@@ -2233,7 +2216,6 @@ function WorkspaceSettingsDialog({
   confirmLeaveWorkspace: boolean
   setConfirmLeaveWorkspace: (value: boolean) => void
   hasSyncRisk: boolean
-  handleCopyField: (label: string, value: string) => Promise<void>
   handleUpdatePassphrase: (event: FormEvent<HTMLFormElement>) => Promise<void>
   handleLeaveWorkspace: () => Promise<void>
   closeDialog: () => void
@@ -2336,16 +2318,7 @@ function WorkspaceSettingsDialog({
                     >
                       取消
                     </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="ghost-button workspace-copy-button"
-                      onClick={() => void handleCopyField('工作区 ID', info.workspaceId)}
-                    >
-                      <Copy size={15} strokeWidth={2.15} aria-hidden="true" />
-                      <span>复制</span>
-                    </button>
-                  )}
+                  ) : null}
 
                   <button
                     className="danger-button"

@@ -245,11 +245,23 @@
 .danger-button,
 .ghost-button,
 .quick-date-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   min-height: 40px;
   padding: 0 14px;
   border: 1px solid transparent;
   border-radius: 12px;
   font-weight: 600;
+}
+
+.primary-button svg,
+.secondary-button svg,
+.danger-button svg,
+.ghost-button svg {
+  display: block;
+  flex-shrink: 0;
 }
 
 .primary-button {
@@ -629,7 +641,7 @@
   width: min(530px, 100%);
   padding: 34px 40px 40px;
   border: 1px solid #e2e6eb;
-  border-radius: 22px;
+  border-radius: 16px;
   background: #fbfbfb;
   box-shadow: 0 24px 48px rgba(31, 42, 55, 0.18);
   display: grid;
@@ -639,7 +651,7 @@
 .category-confirm-dialog {
   width: min(620px, 100%);
   border: 1px solid #e2e6eb;
-  border-radius: 20px;
+  border-radius: 16px;
   background: #ffffff;
   box-shadow: 0 24px 48px rgba(31, 42, 55, 0.18);
   overflow: hidden;
@@ -837,7 +849,7 @@
   max-height: min(calc(100vh - 40px), 920px);
   gap: 16px;
   padding: 30px 32px 28px;
-  border-radius: 24px;
+  border-radius: 16px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 250, 252, 0.98)),
     #ffffff;
@@ -868,7 +880,7 @@
   gap: 18px;
   padding: 20px 20px 18px;
   border: 1px solid #e2e9f0;
-  border-radius: 18px;
+  border-radius: 14px;
   background:
     linear-gradient(180deg, rgba(247, 250, 252, 0.96), rgba(242, 246, 249, 0.96)),
     #f6f9fb;
@@ -883,14 +895,13 @@
 .workspace-settings-value-shell,
 .workspace-settings-config-actions,
 .workspace-settings-config-buttons,
-.workspace-settings-form-actions,
-.workspace-copy-button {
+.workspace-settings-form-actions {
   display: flex;
   align-items: center;
 }
 
 .workspace-settings-section-head,
-  .workspace-settings-form-actions {
+.workspace-settings-form-actions {
   justify-content: space-between;
   gap: 16px;
 }
@@ -928,7 +939,7 @@
   min-height: 56px;
   padding: 0 16px;
   border: 1px solid #dee6ed;
-  border-radius: 16px;
+  border-radius: 12px;
   background: #ffffff;
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.82);
 }
@@ -959,17 +970,10 @@
 }
 
 .workspace-settings-config-buttons .secondary-button,
-.workspace-settings-config-buttons .danger-button,
-.workspace-copy-button {
+.workspace-settings-config-buttons .danger-button {
   min-height: 46px;
   padding: 0 18px;
-  border-radius: 14px;
-}
-
-.workspace-copy-button {
-  gap: 8px;
-  justify-content: center;
-  background: #ffffff;
+  border-radius: 12px;
 }
 
 .workspace-settings-label {
@@ -1002,7 +1006,7 @@
 .workspace-settings-form input {
   min-height: 54px;
   padding: 0 16px;
-  border-radius: 14px;
+  border-radius: 12px;
   border-color: #dde5ec;
   background: #ffffff;
 }
@@ -1015,7 +1019,7 @@
   min-width: 124px;
   min-height: 50px;
   padding: 0 22px;
-  border-radius: 14px;
+  border-radius: 12px;
   box-shadow: 0 12px 24px rgba(31, 110, 102, 0.16);
 }
 
@@ -1044,7 +1048,18 @@
 .workspace-settings-confirm {
   flex: 1;
   max-width: 280px;
+  font-size: 0.88rem;
   color: #6b7f95;
+}
+
+.workspace-settings-config-buttons .danger-button {
+  line-height: 1;
+}
+
+.workspace-settings-config-buttons .danger-button span {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
 }
 
 .workspace-settings-confirm,
@@ -1140,7 +1155,6 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .workspace-copy-button,
   .workspace-settings-form-actions .primary-button,
   .workspace-settings-config-buttons,
   .workspace-settings-config-buttons .secondary-button,
@@ -4060,15 +4074,6 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .workspace-settings-keyline,
-  .workspace-copy-button {
-    width: 100%;
-  }
-
-  .workspace-settings-keyline {
-    flex-wrap: wrap;
-    align-items: flex-start;
-  }
 }
 
 @media (hover: hover) {
@@ -4171,7 +4176,7 @@
   .category-dialog {
     width: min(100%, 100%);
     padding: 24px 20px;
-    border-radius: 20px;
+    border-radius: 16px;
   }
 
   .sidebar-pane-drawer {
@@ -4343,15 +4348,4 @@
     text-align: left;
   }
 
-  .workspace-settings-actions {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .workspace-settings-actions .primary-button,
-  .workspace-settings-actions .secondary-button,
-  .workspace-settings-actions .danger-button,
-  .workspace-copy-button {
-    width: 100%;
-  }
 }
