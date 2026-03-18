@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent, RefObject } from 'react'
 import { DayPicker } from 'react-day-picker'
 import 'react-day-picker/dist/style.css'
@@ -2403,7 +2403,6 @@ function StatsDistributionCard({
                       {
                         '--stats-bar-width': `${Math.max(ratio * 100, item.value ? 10 : 0)}%`,
                         '--stats-bar-accent': item.accent,
-                        '--stats-bar-soft': mixHexColor(item.accent, 0.84),
                       } as CSSProperties
                     }
                   />
@@ -2429,37 +2428,21 @@ function StatsLineChartCard({
   description: string
   points: StatsHistoricalCompletionPoint[]
 }) {
-  const gradientId = useId().replace(/:/g, '')
   const hasData = points.some((point) => point.totalCount > 0)
   const totalDueCount = points.reduce((sum, point) => sum + point.totalCount, 0)
   const totalCompletedCount = points.reduce((sum, point) => sum + point.completedCount, 0)
-  const chartPaddingX = 4
-  const chartPaddingY = 8
-  const chartBottomY = 100 - chartPaddingY
-  const chartHeight = 100 - chartPaddingY * 2
-  const stepX = points.length > 1 ? (100 - chartPaddingX * 2) / (points.length - 1) : 0
-  const plottedPoints = points.map((point, index) => ({
-    ...point,
-    x: chartPaddingX + stepX * index,
-    y: point.completionRate === null ? null : chartBottomY - point.completionRate * chartHeight,
-  }))
-  const visiblePoints = plottedPoints.filter((point) => point.y !== null)
-  const latestPoint = visiblePoints.at(-1) ?? null
+  const barPoints = points.map((point) => {
+    const hasValue = point.totalCount > 0
+    const completionRate = point.completionRate ?? 0
+    const barHeight = hasValue ? Math.max(completionRate * 100, point.completedCount > 0 ? 12 : 4) : 0
 
-  let linePath = ''
-  for (const point of plottedPoints) {
-    if (point.y === null) {
-      continue
+    return {
+      ...point,
+      hasValue,
+      completionRate,
+      barHeight,
     }
-
-    linePath += `${linePath ? ' L ' : 'M '}${point.x.toFixed(2)} ${point.y.toFixed(2)}`
-  }
-  const areaPath =
-    visiblePoints.length > 1
-      ? `M ${visiblePoints[0].x.toFixed(2)} ${chartBottomY.toFixed(2)} L ${visiblePoints
-          .map((point) => `${point.x.toFixed(2)} ${point.y!.toFixed(2)}`)
-          .join(' L ')} L ${visiblePoints.at(-1)!.x.toFixed(2)} ${chartBottomY.toFixed(2)} Z`
-      : ''
+  })
 
   return (
     <article className="stats-panel stats-card">
@@ -2468,68 +2451,55 @@ function StatsLineChartCard({
           <h2>{title}</h2>
           <p className="stats-card-description">{description}</p>
         </div>
-        {latestPoint ? (
-          <div className="stats-line-chart-badge" aria-label={`最近有到期任务的一天完成率 ${formatPercentage(latestPoint.completionRate ?? 0)}`}>
-            <span>最近一天</span>
-            <strong>{formatPercentage(latestPoint.completionRate ?? 0)}</strong>
-            <small>
-              {latestPoint.completedCount}/{latestPoint.totalCount}
-            </small>
-          </div>
-        ) : null}
       </div>
       {hasData ? (
         <>
-          <div className="stats-line-chart-shell">
-            <div className="stats-line-chart-frame">
-              <div className="stats-line-chart-yaxis" aria-hidden="true">
+          <div className="stats-history-chart-shell">
+            <div className="stats-history-chart-frame">
+              <div className="stats-history-chart-yaxis" aria-hidden="true">
                 <span>100%</span>
                 <span>50%</span>
                 <span>0%</span>
               </div>
-              <div className="stats-line-chart-body">
-                <svg
-                  className="stats-line-chart"
-                  viewBox="0 0 100 100"
-                  preserveAspectRatio="none"
-                  role="img"
-                  aria-label="过去 14 天到期任务完成率趋势图"
-                >
-                  <defs>
-                    <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#3b5dc9" stopOpacity="0.28" />
-                      <stop offset="100%" stopColor="#3b5dc9" stopOpacity="0.02" />
-                    </linearGradient>
-                  </defs>
-                  <line x1="0" y1={chartPaddingY} x2="100" y2={chartPaddingY} className="stats-line-chart-guide" />
-                  <line x1="0" y1="50" x2="100" y2="50" className="stats-line-chart-guide" />
-                  <line x1="0" y1={chartBottomY} x2="100" y2={chartBottomY} className="stats-line-chart-guide" />
-                  {latestPoint ? (
-                    <line
-                      x1={latestPoint.x}
-                      y1={chartPaddingY}
-                      x2={latestPoint.x}
-                      y2={chartBottomY}
-                      className="stats-line-chart-focus-line"
-                    />
-                  ) : null}
-                  {areaPath ? <path d={areaPath} fill={`url(#${gradientId})`} className="stats-line-chart-area" /> : null}
-                  {linePath ? <path d={linePath} className="stats-line-chart-path" /> : null}
-                  {plottedPoints.map((point) =>
-                    point.y === null ? null : (
-                      <g key={point.date} className={point.date === latestPoint?.date ? 'is-highlighted' : undefined}>
-                        <circle cx={point.x} cy={point.y} r={point.date === latestPoint?.date ? '3.4' : '2.7'} className="stats-line-chart-node" />
-                        <title>{`${point.date}：${formatPercentage(point.completionRate ?? 0)} · ${point.completedCount}/${point.totalCount}`}</title>
-                      </g>
-                    ),
-                  )}
-                </svg>
-                <div className="stats-line-chart-labels" aria-hidden="true">
-                  {points.map((point) => (
-                    <span key={point.date} className="stats-line-chart-label">
-                      {point.label}
-                    </span>
-                  ))}
+              <div className="stats-history-chart-body">
+                <div className="stats-history-chart-guides" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                </div>
+                <div className="stats-history-chart-bars" role="list" aria-label="过去 14 天到期任务完成率柱状图">
+                  {barPoints.map((point) => {
+                    const className = [
+                      'stats-history-day',
+                      point.hasValue ? 'has-value' : 'is-empty',
+                      point.hasValue && point.completedCount === 0 ? 'is-zero' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')
+
+                    return (
+                      <div
+                        key={point.date}
+                        className={className}
+                        role="listitem"
+                        aria-label={
+                          point.hasValue
+                            ? `${point.date} 完成率 ${formatPercentage(point.completionRate)}，完成 ${point.completedCount} / ${point.totalCount}`
+                            : `${point.date} 无到期任务`
+                        }
+                      >
+                        <div className="stats-history-bar-shell" aria-hidden="true">
+                          {point.hasValue ? (
+                            <span className="stats-history-bar" style={{ height: `${point.barHeight}%` }} />
+                          ) : (
+                            <span className="stats-history-bar-placeholder" />
+                          )}
+                        </div>
+                        <strong>{point.label}</strong>
+                        <span>{point.hasValue ? `${point.completedCount}/${point.totalCount}` : '—'}</span>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             </div>
@@ -4611,26 +4581,6 @@ function buildHistoricalCompletionSeries(todos: TodoRecord[]): StatsHistoricalCo
 
 function formatPercentage(value: number) {
   return `${Math.round(value * 100)}%`
-}
-
-function mixHexColor(color: string, whiteRatio: number) {
-  const normalized = color.trim().replace('#', '')
-  const parsed =
-    normalized.length === 3
-      ? normalized
-          .split('')
-          .map((char) => char + char)
-          .join('')
-      : normalized
-
-  if (!/^[0-9a-fA-F]{6}$/.test(parsed)) {
-    return color
-  }
-
-  const channels = [0, 2, 4].map((index) => Number.parseInt(parsed.slice(index, index + 2), 16))
-  const mixed = channels.map((channel) => Math.round(channel + (255 - channel) * whiteRatio))
-
-  return `rgb(${mixed.join(', ')})`
 }
 
 function createNextRecurringTodo(baseTodo: TodoRecord, updatedAt: string): TodoRecord | null {
