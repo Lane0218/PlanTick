@@ -14,16 +14,9 @@ export type WorkspaceMeta = {
 
 export type WorkspaceSettingsInfo = {
   workspaceId: string
-  anonymousUserId: string | null
-  joinedAt: IsoDatetime
-  lastSeenAt: IsoDatetime
-  createdAt: IsoDatetime | null
   syncStatus: {
     status: 'idle' | 'pushing' | 'pulling' | 'error'
-    lastPushAt: IsoDatetime | null
-    lastPullAt: IsoDatetime | null
     pendingOutboxCount: number
-    lastError: string | null
   }
 }
 
