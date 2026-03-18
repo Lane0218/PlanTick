@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent, RefObject } from 'react'
 import { DayPicker } from 'react-day-picker'
 import 'react-day-picker/dist/style.css'
@@ -79,6 +79,7 @@ type StatsDistributionItem = {
   value: number
   accent: string
   helper?: string
+  tone?: 'primary' | 'danger' | 'category' | 'neutral'
 }
 
 type StatsDayLoad = {
@@ -441,21 +442,21 @@ function App() {
   )
   const statusDistribution = useMemo<StatsDistributionItem[]>(
     () => [
-      { id: 'not_started', label: '未开始', value: statsSummary.statusCounts.not_started, accent: todoStatusMeta.not_started.tone },
-      { id: 'in_progress', label: '进行中', value: statsSummary.statusCounts.in_progress, accent: todoStatusMeta.in_progress.tone },
-      { id: 'completed', label: '已完成', value: statsSummary.statusCounts.completed, accent: todoStatusMeta.completed.tone },
-      { id: 'blocked', label: '阻塞', value: statsSummary.statusCounts.blocked, accent: todoStatusMeta.blocked.tone },
-      { id: 'canceled', label: '取消', value: statsSummary.statusCounts.canceled, accent: todoStatusMeta.canceled.tone },
+      { id: 'not_started', label: '未开始', value: statsSummary.statusCounts.not_started, accent: '#5b74c9', tone: 'primary' },
+      { id: 'in_progress', label: '进行中', value: statsSummary.statusCounts.in_progress, accent: '#5b74c9', tone: 'primary' },
+      { id: 'completed', label: '已完成', value: statsSummary.statusCounts.completed, accent: '#5b74c9', tone: 'primary' },
+      { id: 'blocked', label: '阻塞', value: statsSummary.statusCounts.blocked, accent: '#5b74c9', tone: 'primary' },
+      { id: 'canceled', label: '取消', value: statsSummary.statusCounts.canceled, accent: '#8c99ab', tone: 'neutral' },
     ],
     [statsSummary],
   )
   const dueDistribution = useMemo<StatsDistributionItem[]>(
     () => [
-      { id: 'overdue', label: '已逾期', value: statsSummary.dueBuckets.overdue, accent: '#ef5350' },
-      { id: 'today', label: '今天', value: statsSummary.dueBuckets.today, accent: '#0f766e' },
-      { id: 'next-seven', label: '7 天内', value: statsSummary.dueBuckets.nextSevenDays, accent: '#2563eb' },
-      { id: 'later', label: '更晚', value: statsSummary.dueBuckets.later, accent: '#7c3aed' },
-      { id: 'none', label: '无日期', value: statsSummary.dueBuckets.noDate, accent: '#94a3b8' },
+      { id: 'overdue', label: '已逾期', value: statsSummary.dueBuckets.overdue, accent: '#d4515f', tone: 'danger' },
+      { id: 'today', label: '今天', value: statsSummary.dueBuckets.today, accent: '#5b74c9', tone: 'primary' },
+      { id: 'next-seven', label: '7 天内', value: statsSummary.dueBuckets.nextSevenDays, accent: '#5b74c9', tone: 'primary' },
+      { id: 'later', label: '更晚', value: statsSummary.dueBuckets.later, accent: '#5b74c9', tone: 'primary' },
+      { id: 'none', label: '无日期', value: statsSummary.dueBuckets.noDate, accent: '#8c99ab', tone: 'neutral' },
     ],
     [statsSummary],
   )
@@ -2137,8 +2138,9 @@ function StatsDistributionCard({
         <div className="stats-bar-list" role="list">
           {visibleItems.map((item) => {
             const ratio = maxValue ? item.value / maxValue : 0
+            const rowClassName = ['stats-bar-row', `tone-${item.tone ?? 'primary'}`].join(' ')
             return (
-              <div key={item.id} className="stats-bar-row" role="listitem">
+              <div key={item.id} className={rowClassName} role="listitem">
                 <div className="stats-bar-copy">
                   <strong>{item.label}</strong>
                   <span>{item.helper ?? `${item.value} 项`}</span>
@@ -2146,7 +2148,13 @@ function StatsDistributionCard({
                 <div className="stats-bar-track" aria-hidden="true">
                   <span
                     className="stats-bar-fill"
-                    style={{ '--stats-bar-width': `${Math.max(ratio * 100, item.value ? 10 : 0)}%`, '--stats-bar-accent': item.accent } as CSSProperties}
+                    style={
+                      {
+                        '--stats-bar-width': `${Math.max(ratio * 100, item.value ? 10 : 0)}%`,
+                        '--stats-bar-accent': item.accent,
+                        '--stats-bar-soft': mixHexColor(item.accent, 0.84),
+                      } as CSSProperties
+                    }
                   />
                 </div>
                 <b>{item.value}</b>
@@ -2170,15 +2178,22 @@ function StatsLineChartCard({
   description: string
   points: StatsHistoricalCompletionPoint[]
 }) {
+  const gradientId = useId().replace(/:/g, '')
   const hasData = points.some((point) => point.totalCount > 0)
   const totalDueCount = points.reduce((sum, point) => sum + point.totalCount, 0)
   const totalCompletedCount = points.reduce((sum, point) => sum + point.completedCount, 0)
-  const stepX = points.length > 1 ? 100 / (points.length - 1) : 0
+  const chartPaddingX = 4
+  const chartPaddingY = 8
+  const chartBottomY = 100 - chartPaddingY
+  const chartHeight = 100 - chartPaddingY * 2
+  const stepX = points.length > 1 ? (100 - chartPaddingX * 2) / (points.length - 1) : 0
   const plottedPoints = points.map((point, index) => ({
     ...point,
-    x: stepX * index,
-    y: point.completionRate === null ? null : 100 - point.completionRate * 100,
+    x: chartPaddingX + stepX * index,
+    y: point.completionRate === null ? null : chartBottomY - point.completionRate * chartHeight,
   }))
+  const visiblePoints = plottedPoints.filter((point) => point.y !== null)
+  const latestPoint = visiblePoints.at(-1) ?? null
 
   let linePath = ''
   for (const point of plottedPoints) {
@@ -2188,6 +2203,12 @@ function StatsLineChartCard({
 
     linePath += `${linePath ? ' L ' : 'M '}${point.x.toFixed(2)} ${point.y.toFixed(2)}`
   }
+  const areaPath =
+    visiblePoints.length > 1
+      ? `M ${visiblePoints[0].x.toFixed(2)} ${chartBottomY.toFixed(2)} L ${visiblePoints
+          .map((point) => `${point.x.toFixed(2)} ${point.y!.toFixed(2)}`)
+          .join(' L ')} L ${visiblePoints.at(-1)!.x.toFixed(2)} ${chartBottomY.toFixed(2)} Z`
+      : ''
 
   return (
     <article className="stats-panel stats-card">
@@ -2196,6 +2217,15 @@ function StatsLineChartCard({
           <h2>{title}</h2>
           <p className="stats-card-description">{description}</p>
         </div>
+        {latestPoint ? (
+          <div className="stats-line-chart-badge" aria-label={`最近有到期任务的一天完成率 ${formatPercentage(latestPoint.completionRate ?? 0)}`}>
+            <span>最近一天</span>
+            <strong>{formatPercentage(latestPoint.completionRate ?? 0)}</strong>
+            <small>
+              {latestPoint.completedCount}/{latestPoint.totalCount}
+            </small>
+          </div>
+        ) : null}
       </div>
       {hasData ? (
         <>
@@ -2214,14 +2244,30 @@ function StatsLineChartCard({
                   role="img"
                   aria-label="过去 14 天到期任务完成率趋势图"
                 >
-                  <line x1="0" y1="0" x2="100" y2="0" className="stats-line-chart-guide" />
+                  <defs>
+                    <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#3b5dc9" stopOpacity="0.28" />
+                      <stop offset="100%" stopColor="#3b5dc9" stopOpacity="0.02" />
+                    </linearGradient>
+                  </defs>
+                  <line x1="0" y1={chartPaddingY} x2="100" y2={chartPaddingY} className="stats-line-chart-guide" />
                   <line x1="0" y1="50" x2="100" y2="50" className="stats-line-chart-guide" />
-                  <line x1="0" y1="100" x2="100" y2="100" className="stats-line-chart-guide" />
+                  <line x1="0" y1={chartBottomY} x2="100" y2={chartBottomY} className="stats-line-chart-guide" />
+                  {latestPoint ? (
+                    <line
+                      x1={latestPoint.x}
+                      y1={chartPaddingY}
+                      x2={latestPoint.x}
+                      y2={chartBottomY}
+                      className="stats-line-chart-focus-line"
+                    />
+                  ) : null}
+                  {areaPath ? <path d={areaPath} fill={`url(#${gradientId})`} className="stats-line-chart-area" /> : null}
                   {linePath ? <path d={linePath} className="stats-line-chart-path" /> : null}
                   {plottedPoints.map((point) =>
                     point.y === null ? null : (
-                      <g key={point.date}>
-                        <circle cx={point.x} cy={point.y} r="2.5" className="stats-line-chart-node" />
+                      <g key={point.date} className={point.date === latestPoint?.date ? 'is-highlighted' : undefined}>
+                        <circle cx={point.x} cy={point.y} r={point.date === latestPoint?.date ? '3.4' : '2.7'} className="stats-line-chart-node" />
                         <title>{`${point.date}：${formatPercentage(point.completionRate ?? 0)} · ${point.completedCount}/${point.totalCount}`}</title>
                       </g>
                     ),
@@ -3759,6 +3805,7 @@ function buildCategoryDistribution(todos: TodoRecord[], categories: CategoryReco
       label: category?.name ?? '未分类',
       value: 1,
       accent: category?.color ?? '#94a3b8',
+      tone: category ? 'category' : 'neutral',
     })
   }
 
@@ -3839,6 +3886,26 @@ function buildHistoricalCompletionSeries(todos: TodoRecord[]): StatsHistoricalCo
 
 function formatPercentage(value: number) {
   return `${Math.round(value * 100)}%`
+}
+
+function mixHexColor(color: string, whiteRatio: number) {
+  const normalized = color.trim().replace('#', '')
+  const parsed =
+    normalized.length === 3
+      ? normalized
+          .split('')
+          .map((char) => char + char)
+          .join('')
+      : normalized
+
+  if (!/^[0-9a-fA-F]{6}$/.test(parsed)) {
+    return color
+  }
+
+  const channels = [0, 2, 4].map((index) => Number.parseInt(parsed.slice(index, index + 2), 16))
+  const mixed = channels.map((channel) => Math.round(channel + (255 - channel) * whiteRatio))
+
+  return `rgb(${mixed.join(', ')})`
 }
 
 function createNextRecurringTodo(baseTodo: TodoRecord, updatedAt: string): TodoRecord | null {
