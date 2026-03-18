@@ -504,21 +504,21 @@ function App() {
   )
   const statusDistribution = useMemo<StatsDistributionItem[]>(
     () => [
-      { id: 'not_started', label: '未开始', value: statsSummary.statusCounts.not_started, accent: '#5b74c9', tone: 'primary' },
-      { id: 'in_progress', label: '进行中', value: statsSummary.statusCounts.in_progress, accent: '#5b74c9', tone: 'primary' },
-      { id: 'completed', label: '已完成', value: statsSummary.statusCounts.completed, accent: '#5b74c9', tone: 'primary' },
-      { id: 'blocked', label: '阻塞', value: statsSummary.statusCounts.blocked, accent: '#5b74c9', tone: 'primary' },
-      { id: 'canceled', label: '取消', value: statsSummary.statusCounts.canceled, accent: '#8c99ab', tone: 'neutral' },
+      { id: 'not_started', label: '未开始', value: statsSummary.statusCounts.not_started, accent: '#1f6e66', tone: 'primary' },
+      { id: 'in_progress', label: '进行中', value: statsSummary.statusCounts.in_progress, accent: '#1f6e66', tone: 'primary' },
+      { id: 'completed', label: '已完成', value: statsSummary.statusCounts.completed, accent: '#1f6e66', tone: 'primary' },
+      { id: 'blocked', label: '阻塞', value: statsSummary.statusCounts.blocked, accent: '#1f6e66', tone: 'primary' },
+      { id: 'canceled', label: '取消', value: statsSummary.statusCounts.canceled, accent: '#1f6e66', tone: 'primary' },
     ],
     [statsSummary],
   )
   const dueDistribution = useMemo<StatsDistributionItem[]>(
     () => [
-      { id: 'overdue', label: '已逾期', value: statsSummary.dueBuckets.overdue, accent: '#d4515f', tone: 'danger' },
-      { id: 'today', label: '今天', value: statsSummary.dueBuckets.today, accent: '#5b74c9', tone: 'primary' },
-      { id: 'next-seven', label: '7 天内', value: statsSummary.dueBuckets.nextSevenDays, accent: '#5b74c9', tone: 'primary' },
-      { id: 'later', label: '更晚', value: statsSummary.dueBuckets.later, accent: '#5b74c9', tone: 'primary' },
-      { id: 'none', label: '无日期', value: statsSummary.dueBuckets.noDate, accent: '#8c99ab', tone: 'neutral' },
+      { id: 'overdue', label: '已逾期', value: statsSummary.dueBuckets.overdue, accent: '#1f6e66', tone: 'primary' },
+      { id: 'today', label: '今天', value: statsSummary.dueBuckets.today, accent: '#1f6e66', tone: 'primary' },
+      { id: 'next-seven', label: '7 天内', value: statsSummary.dueBuckets.nextSevenDays, accent: '#1f6e66', tone: 'primary' },
+      { id: 'later', label: '更晚', value: statsSummary.dueBuckets.later, accent: '#1f6e66', tone: 'primary' },
+      { id: 'none', label: '无日期', value: statsSummary.dueBuckets.noDate, accent: '#1f6e66', tone: 'primary' },
     ],
     [statsSummary],
   )
@@ -3103,6 +3103,8 @@ function StatsTrendCard({
   dayLoad: StatsDayLoad[]
 }) {
   const maxCount = Math.max(...dayLoad.flatMap((day) => [day.taskCount, day.eventCount]), 0)
+  const scaleMax = Math.max(maxCount, 1)
+  const scaleMiddle = scaleMax > 1 ? Math.ceil(scaleMax / 2) : ''
 
   return (
     <article className="stats-panel stats-card">
@@ -3121,21 +3123,35 @@ function StatsTrendCard({
           事件
         </span>
       </div>
-      <div className="stats-trend-grid" role="list">
-        {dayLoad.map((day) => {
-          const taskHeight = maxCount ? Math.max((day.taskCount / maxCount) * 100, day.taskCount ? 12 : 0) : 0
-          const eventHeight = maxCount ? Math.max((day.eventCount / maxCount) * 100, day.eventCount ? 12 : 0) : 0
+      <div className="stats-trend-chart-frame">
+        <div className="stats-trend-yaxis" aria-hidden="true">
+          <span>{scaleMax}</span>
+          <span>{scaleMiddle}</span>
+          <span>0</span>
+        </div>
+        <div className="stats-trend-chart-body">
+          <div className="stats-trend-guides" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </div>
+          <div className="stats-trend-grid" role="list">
+            {dayLoad.map((day) => {
+              const taskHeight = maxCount ? Math.max((day.taskCount / maxCount) * 100, day.taskCount ? 12 : 0) : 0
+              const eventHeight = maxCount ? Math.max((day.eventCount / maxCount) * 100, day.eventCount ? 12 : 0) : 0
 
-          return (
-            <div key={day.date} className="stats-trend-day" role="listitem">
-              <div className="stats-trend-bars" aria-hidden="true">
-                <span className="stats-trend-bar stats-trend-bar-tasks" style={{ height: `${taskHeight}%` }} />
-                <span className="stats-trend-bar stats-trend-bar-events" style={{ height: `${eventHeight}%` }} />
-              </div>
-              <strong>{day.label}</strong>
-            </div>
-          )
-        })}
+              return (
+                <div key={day.date} className="stats-trend-day" role="listitem">
+                  <div className="stats-trend-bars" aria-hidden="true">
+                    <span className="stats-trend-bar stats-trend-bar-tasks" style={{ height: `${taskHeight}%` }} />
+                    <span className="stats-trend-bar stats-trend-bar-events" style={{ height: `${eventHeight}%` }} />
+                  </div>
+                  <strong>{day.label}</strong>
+                </div>
+              )
+            })}
+          </div>
+        </div>
       </div>
     </article>
   )
@@ -5074,8 +5090,8 @@ function buildCategoryDistribution(todos: TodoRecord[], categories: CategoryReco
       id: key,
       label: category?.name ?? '未分类',
       value: 1,
-      accent: category ? '#5b74c9' : '#8c99ab',
-      tone: category ? 'primary' : 'neutral',
+      accent: '#1f6e66',
+      tone: 'primary',
     })
   }
 
