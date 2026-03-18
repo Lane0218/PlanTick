@@ -20,13 +20,16 @@ async function expectWorkspaceAccessDialog(page: Page) {
   await expect(dialog.getByRole('button', { name: '创建工作区' })).toBeVisible()
   await expect(dialog.getByRole('button', { name: '加入工作区' })).toBeVisible()
   await expect(dialog.getByRole('button', { name: '游客模式' })).toBeVisible()
-  await expect(dialog.getByLabel('工作区口令')).toBeVisible()
+  await expect(dialog.getByLabel('工作区口令')).toHaveCount(0)
   await expect(dialog.getByText('接入工作区')).toHaveCount(0)
   await expect(dialog.getByRole('heading', { name: 'PWA 安装' })).toHaveCount(0)
 }
 
 async function createWorkspaceFromDialog(page: Page, passphrase: string) {
   await expectWorkspaceAccessDialog(page)
+  await page.getByRole('dialog', { name: '创建或加入你的任务工作台' }).getByRole('button', { name: '创建工作区' }).click()
+  await expect(page.getByRole('button', { name: '返回' })).toBeVisible()
+  await expect(page.getByLabel('工作区口令')).toBeVisible()
   await page.getByPlaceholder('至少 6 个字符…').fill(passphrase)
   await page.getByRole('button', { name: '创建并进入工作台' }).click()
   await expect(page.getByRole('dialog', { name: '创建或加入你的任务工作台' })).toHaveCount(0)
@@ -38,6 +41,10 @@ test('phase 2 首次进入直接展示工作台并支持游客模式', async ({ 
   await page.setViewportSize({ width: 1440, height: 960 })
 
   await expect(page.getByRole('heading', { name: '待办箱' })).toBeVisible()
+  await expectWorkspaceAccessDialog(page)
+  await page.getByRole('dialog', { name: '创建或加入你的任务工作台' }).getByRole('button', { name: '创建工作区' }).click()
+  await expect(page.getByLabel('工作区口令')).toBeVisible()
+  await page.getByRole('button', { name: '返回' }).click()
   await expectWorkspaceAccessDialog(page)
   await page.getByRole('dialog', { name: '创建或加入你的任务工作台' }).getByRole('button', { name: '游客模式' }).click()
   await expect(page.getByRole('dialog', { name: '创建或加入你的任务工作台' })).toHaveCount(0)
@@ -76,7 +83,8 @@ test('phase 2 首次进入直接展示工作台并支持游客模式', async ({ 
   await expect(page.locator('.calendar-grid').getByText('产品评审会')).toBeVisible()
 
   await page.getByRole('button', { name: '创建工作区' }).click()
-  await expectWorkspaceAccessDialog(page)
+  await expect(page.getByRole('dialog', { name: '创建工作区' })).toBeVisible()
+  await expect(page.getByLabel('工作区口令')).toBeVisible()
 })
 
 test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情并刷新恢复', async ({
@@ -345,11 +353,9 @@ test('phase 3 工作区设置：支持修改口令并退出当前工作区', asy
   await expect(settingsDialog.getByText('再次确认后会回到工作区接入页。')).toBeVisible()
   await settingsDialog.getByRole('button', { name: '确认退出当前工作区' }).click()
 
-  const accessDialog = page.getByRole('dialog', { name: '创建或加入你的任务工作台' })
+  const accessDialog = page.getByRole('dialog', { name: '加入工作区' })
   await expect(accessDialog).toBeVisible()
   await expect(accessDialog.getByText('已退出当前工作区，你可以重新创建或加入其他工作区。')).toBeVisible()
-
-  await accessDialog.getByRole('button', { name: '加入工作区' }).click()
   await accessDialog.getByLabel('工作区口令').fill(oldPassphrase)
   await accessDialog.getByRole('button', { name: '加入并进入工作台' }).click()
   await expect(accessDialog.getByText('Invalid passphrase.')).toBeVisible()
@@ -519,6 +525,7 @@ test('phase 4 移动端壳层：抽屉、底部详情与纵向看板', async ({ 
   const mobileDetailSheet = page.locator('.mobile-detail-sheet')
 
   await expectWorkspaceAccessDialog(page)
+  await page.getByRole('dialog', { name: '创建或加入你的任务工作台' }).getByRole('button', { name: '创建工作区' }).click()
   await page.getByPlaceholder('至少 6 个字符…').fill(passphrase)
   await page.getByRole('button', { name: '创建并进入工作台' }).click()
   await expect(page.getByRole('dialog', { name: '创建或加入你的任务工作台' })).toHaveCount(0)
