@@ -199,6 +199,13 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   await page.getByLabel('快速新建任务').focus()
   await expect(page.getByLabel('快速新建任务')).toHaveCSS('outline-style', 'none')
 
+  await page.getByRole('button', { name: '新建分类' }).click()
+  const categoryNameInput = page.getByPlaceholder('分类名称')
+  await categoryNameInput.focus()
+  await expect(categoryNameInput).toHaveCSS('outline-style', 'none')
+  await expect(categoryNameInput).toHaveCSS('box-shadow', 'none')
+  await page.getByLabel('关闭分类对话框').click()
+
   await createCategory('产品设计')
   await expect(page.getByRole('heading', { name: '暂无任务' })).toBeVisible()
   await expect(page.getByText('从上方输入框开始添加第一条任务。')).toHaveCount(0)
