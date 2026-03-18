@@ -8,6 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "deploy:preview": "npx vercel",
+    "deploy:prod": "npx vercel --prod",
     "test:e2e": "npm run build && start-server-and-test \"npm run preview -- --host 127.0.0.1 --port 4173\" http://127.0.0.1:4173 \"playwright test\""
   },
   "dependencies": {

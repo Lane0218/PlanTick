@@ -77,3 +77,18 @@ Supabase 本地 Spike：
 - `workspace-create` 与 `workspace-join` 已部署
 - 已完成匿名登录、工作区创建/加入、PWA 注册与安装验证
 - `categories`、`todos`、`events` 已作为 Phase 1 远端 schema 基线创建
+
+## Vercel 部署
+
+当前仓库已关闭 Git 自动部署。
+
+- `git push` 只同步代码，不会自动触发 Vercel 部署
+- 需要发布预览环境时，执行 `npm run deploy:preview`
+- 需要发布生产环境时，执行 `npm run deploy:prod`
+
+首次在新环境手动部署前，需先确保当前目录已关联正确的 Vercel 项目：
+
+- `npx vercel whoami`
+- `npx vercel link`
+
+如果本地已经存在 `.vercel/project.json`，通常说明当前目录已经完成关联。
