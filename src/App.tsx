@@ -2169,17 +2169,34 @@ function WorkspaceSettingsDialog({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="category-dialog-head workspace-settings-head">
-          <h3 id="workspace-settings-title">工作区设置</h3>
+          <div className="workspace-settings-headcopy">
+            <h3 id="workspace-settings-title">工作区设置</h3>
+            <p>管理当前工作区口令与连接状态。</p>
+          </div>
           <button type="button" className="detail-close" aria-label="关闭工作区设置" onClick={closeDialog}>
             ×
           </button>
         </div>
 
         <section className="workspace-settings-section" aria-label="当前工作区">
+          <div className="workspace-settings-section-head">
+            <div className="workspace-settings-section-copy">
+              <strong className="workspace-settings-label">当前工作区</strong>
+              <p>当前设备已连接的工作区。</p>
+            </div>
+            {hasSyncRisk && syncRiskText ? (
+              <span className="workspace-settings-badge workspace-settings-badge-warning">{syncRiskText}</span>
+            ) : (
+              <span className="workspace-settings-badge">已连接</span>
+            )}
+          </div>
+
           {info ? (
-            <div className="workspace-settings-keyline">
-              <span>工作区 ID</span>
-              <strong title={info.workspaceId}>{info.workspaceId}</strong>
+            <div className="workspace-settings-value-shell">
+              <div className="workspace-settings-keyline">
+                <span>工作区 ID</span>
+                <strong title={info.workspaceId}>{info.workspaceId}</strong>
+              </div>
               <button
                 type="button"
                 className="ghost-button workspace-copy-button"
@@ -2192,39 +2209,41 @@ function WorkspaceSettingsDialog({
           ) : (
             <p className="workspace-settings-empty">{loading ? '正在读取工作区信息…' : '暂时无法读取工作区信息。'}</p>
           )}
-
-          {hasSyncRisk && syncRiskText ? (
-            <p className="workspace-settings-warning" role="status">
-              {syncRiskText}
-            </p>
-          ) : null}
         </section>
 
         <form className="workspace-settings-section workspace-settings-form" onSubmit={(event) => void handleUpdatePassphrase(event)}>
-          <strong className="workspace-settings-label">修改口令</strong>
-          <label>
-            <span>新口令</span>
-            <input
-              value={passphraseDraft}
-              onChange={(event) => setPassphraseDraft(event.target.value)}
-              placeholder="至少 6 个字符…"
-              minLength={6}
-              autoComplete="off"
-              name="workspaceSettingsNewPassphrase"
-            />
-          </label>
+          <div className="workspace-settings-section-head">
+            <div className="workspace-settings-section-copy">
+              <strong className="workspace-settings-label">修改口令</strong>
+              <p>更新后，新设备需使用新口令加入。</p>
+            </div>
+          </div>
 
-          <label>
-            <span>确认新口令</span>
-            <input
-              value={passphraseConfirm}
-              onChange={(event) => setPassphraseConfirm(event.target.value)}
-              placeholder="再次输入新口令…"
-              minLength={6}
-              autoComplete="off"
-              name="workspaceSettingsConfirmPassphrase"
-            />
-          </label>
+          <div className="workspace-settings-form-grid">
+            <label>
+              <span>新口令</span>
+              <input
+                value={passphraseDraft}
+                onChange={(event) => setPassphraseDraft(event.target.value)}
+                placeholder="至少 6 个字符…"
+                minLength={6}
+                autoComplete="off"
+                name="workspaceSettingsNewPassphrase"
+              />
+            </label>
+
+            <label>
+              <span>确认新口令</span>
+              <input
+                value={passphraseConfirm}
+                onChange={(event) => setPassphraseConfirm(event.target.value)}
+                placeholder="再次输入新口令…"
+                minLength={6}
+                autoComplete="off"
+                name="workspaceSettingsConfirmPassphrase"
+              />
+            </label>
+          </div>
 
           <div className="workspace-settings-actions">
             <button className="primary-button" type="submit" disabled={updating || leaving || loading || !info}>
@@ -2234,15 +2253,24 @@ function WorkspaceSettingsDialog({
         </form>
 
         <section className="workspace-settings-section workspace-settings-exit" aria-label="退出当前工作区">
-          <strong className="workspace-settings-label">退出工作区</strong>
-          {confirmLeaveWorkspace ? (
-            <p className="workspace-settings-confirm" role="status">
-              退出后将返回工作区入口。
-            </p>
-          ) : null}
+          <div className="workspace-settings-section-head">
+            <div className="workspace-settings-section-copy">
+              <strong className="workspace-settings-label">退出工作区</strong>
+              <p>仅退出当前设备，不删除数据。</p>
+            </div>
+          </div>
 
           <div className="workspace-settings-actions workspace-settings-leave-actions">
             {confirmLeaveWorkspace ? (
+              <p className="workspace-settings-confirm" role="status">
+                退出后将返回工作区入口。
+              </p>
+            ) : (
+              <div className="workspace-settings-spacer" aria-hidden="true" />
+            )}
+
+            <div className="workspace-settings-leave-buttons">
+              {confirmLeaveWorkspace ? (
               <button
                 className="secondary-button"
                 type="button"
@@ -2251,24 +2279,25 @@ function WorkspaceSettingsDialog({
               >
                 取消
               </button>
-            ) : null}
+              ) : null}
 
-            <button
-              className="danger-button"
-              type="button"
-              onClick={() => {
-                if (!confirmLeaveWorkspace) {
-                  setConfirmLeaveWorkspace(true)
-                  return
-                }
+              <button
+                className="danger-button"
+                type="button"
+                onClick={() => {
+                  if (!confirmLeaveWorkspace) {
+                    setConfirmLeaveWorkspace(true)
+                    return
+                  }
 
-                void handleLeaveWorkspace()
-              }}
-              disabled={leaving || loading}
-            >
-              <LogOut size={16} strokeWidth={2.1} aria-hidden="true" />
-              <span>{leaving ? '退出中...' : confirmLeaveWorkspace ? '确认退出' : '退出工作区'}</span>
-            </button>
+                  void handleLeaveWorkspace()
+                }}
+                disabled={leaving || loading}
+              >
+                <LogOut size={16} strokeWidth={2.1} aria-hidden="true" />
+                <span>{leaving ? '退出中...' : confirmLeaveWorkspace ? '确认退出' : '退出工作区'}</span>
+              </button>
+            </div>
           </div>
         </section>
 

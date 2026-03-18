@@ -833,34 +833,49 @@
 }
 
 .workspace-settings-dialog {
-  width: min(560px, 100%);
+  width: min(640px, 100%);
   max-height: min(calc(100vh - 40px), 920px);
-  gap: 0;
+  gap: 18px;
   overflow-y: auto;
 }
 
 .workspace-settings-head {
-  align-items: center;
-  padding-bottom: 16px;
+  align-items: flex-start;
+  padding-bottom: 18px;
   border-bottom: 1px solid #eef2f5;
+}
+
+.workspace-settings-headcopy {
+  display: grid;
+  gap: 8px;
 }
 
 .workspace-settings-head h3 {
   margin: 0;
 }
 
+.workspace-settings-headcopy p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+
 .workspace-settings-section {
   display: grid;
-  gap: 14px;
-  padding: 16px 0;
-  border-bottom: 1px solid #eef2f5;
+  gap: 16px;
+  padding: 18px 20px;
+  border: 1px solid #e7edf3;
+  border-radius: 16px;
+  background: #f7f9fb;
 }
 
 .workspace-settings-section:last-of-type {
-  border-bottom: 0;
-  padding-bottom: 0;
+  margin-bottom: 2px;
 }
 
+.workspace-settings-section-head,
+.workspace-settings-value-shell,
 .workspace-settings-keyline,
 .workspace-settings-actions,
 .workspace-copy-button,
@@ -869,9 +884,33 @@
   align-items: center;
 }
 
+.workspace-settings-section-head,
+.workspace-settings-value-shell,
+.workspace-settings-actions {
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.workspace-settings-section-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.workspace-settings-section-copy p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+
 .workspace-settings-keyline {
-  gap: 12px;
-  min-height: 40px;
+  flex: 1;
+  gap: 14px;
+  min-height: 48px;
+  padding: 0 16px;
+  border: 1px solid #e1e7ec;
+  border-radius: 14px;
+  background: #ffffff;
 }
 
 .workspace-settings-keyline span {
@@ -885,15 +924,43 @@
   min-width: 0;
   flex: 1;
   color: var(--text-strong);
-  font-size: 0.94rem;
+  font-size: 0.96rem;
   font-weight: 600;
   word-break: break-all;
+}
+
+.workspace-settings-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid #e2e8ee;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.workspace-settings-badge-warning {
+  border-color: #f2d8dc;
+  background: #fff6f7;
+  color: var(--danger);
 }
 
 .workspace-copy-button,
 .workspace-settings-leave-actions .danger-button {
   gap: 8px;
   justify-content: center;
+}
+
+.workspace-copy-button {
+  min-height: 48px;
+  min-width: 112px;
+  padding: 0 18px;
+  border-radius: 14px;
+  background: #ffffff;
 }
 
 .workspace-settings-label {
@@ -908,9 +975,22 @@
   gap: 14px;
 }
 
+.workspace-settings-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
 .workspace-settings-actions {
-  justify-content: flex-end;
-  gap: 12px;
+  align-items: flex-end;
+}
+
+.workspace-settings-actions .primary-button {
+  min-width: 124px;
+}
+
+.workspace-settings-exit {
+  background: linear-gradient(180deg, #f8f9fb, #f6f8fb);
 }
 
 .workspace-settings-warning,
@@ -924,6 +1004,30 @@
 .workspace-settings-warning {
   color: var(--danger);
   font-size: 0.9rem;
+}
+
+.workspace-settings-leave-actions {
+  align-items: center;
+}
+
+.workspace-settings-confirm,
+.workspace-settings-spacer {
+  flex: 1;
+}
+
+.workspace-settings-confirm {
+  max-width: 280px;
+}
+
+.workspace-settings-spacer {
+  min-height: 1px;
+}
+
+.workspace-settings-leave-buttons {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .workspace-settings-confirm,
@@ -973,6 +1077,7 @@
   color: var(--text-soft);
   font-size: 0.82rem;
 }
+
 @media (max-width: 640px) {
   .workspace-dialog {
     padding: 28px 22px 24px;
@@ -988,6 +1093,45 @@
 
   .workspace-dialog-segmented button {
     flex: 1;
+  }
+
+  .workspace-settings-dialog {
+    gap: 14px;
+  }
+
+  .workspace-settings-section {
+    padding: 16px;
+    gap: 14px;
+  }
+
+  .workspace-settings-section-head,
+  .workspace-settings-value-shell,
+  .workspace-settings-actions,
+  .workspace-settings-leave-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .workspace-settings-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .workspace-copy-button,
+  .workspace-settings-actions .primary-button,
+  .workspace-settings-leave-buttons,
+  .workspace-settings-leave-buttons .secondary-button,
+  .workspace-settings-leave-buttons .danger-button {
+    width: 100%;
+  }
+
+  .workspace-settings-keyline {
+    padding: 12px 14px;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .workspace-settings-confirm {
+    max-width: none;
   }
 }
 
