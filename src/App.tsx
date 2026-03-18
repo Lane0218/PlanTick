@@ -2267,9 +2267,7 @@ function WorkspaceSettingsDialog({
 
         <form className="workspace-settings-section workspace-settings-form" onSubmit={(event) => void handleUpdatePassphrase(event)}>
           <div className="workspace-settings-section-head">
-            <div className="workspace-settings-section-copy">
-              <strong className="workspace-settings-label">修改口令</strong>
-            </div>
+            <strong className="workspace-settings-label">修改口令</strong>
           </div>
 
           <div className="workspace-settings-form-grid">
@@ -2298,7 +2296,7 @@ function WorkspaceSettingsDialog({
             </label>
           </div>
 
-          <div className="workspace-settings-actions">
+          <div className="workspace-settings-form-actions">
             <button className="primary-button" type="submit" disabled={updating || leaving || loading || !info}>
               {updating ? '更新中...' : '更新口令'}
             </button>
@@ -2307,76 +2305,70 @@ function WorkspaceSettingsDialog({
 
         <section className="workspace-settings-section workspace-settings-exit" aria-label="配置工作区">
           <div className="workspace-settings-section-head">
-            <div className="workspace-settings-section-copy">
-              <strong className="workspace-settings-label">配置工作区</strong>
-            </div>
+            <strong className="workspace-settings-label">配置工作区</strong>
           </div>
 
           {info ? (
-            <div className="workspace-settings-value-shell">
-              <div className="workspace-settings-keyline">
-                <span>工作区 ID</span>
+            <div className="workspace-settings-config-grid">
+              <div className="workspace-settings-value-shell">
+                <span className="workspace-settings-field-label">工作区 ID</span>
                 <strong title={info.workspaceId}>{info.workspaceId}</strong>
               </div>
-              <div className="workspace-settings-meta-actions">
-                {hasSyncRisk && syncRiskText ? (
+
+              <div className="workspace-settings-config-actions">
+                {confirmLeaveWorkspace ? (
+                  <p className="workspace-settings-confirm" role="status">
+                    退出后将返回工作区入口。
+                  </p>
+                ) : hasSyncRisk && syncRiskText ? (
                   <span className="workspace-settings-badge workspace-settings-badge-warning">{syncRiskText}</span>
                 ) : (
                   <span className="workspace-settings-badge">已连接</span>
                 )}
-                <button
-                  type="button"
-                  className="ghost-button workspace-copy-button"
-                  onClick={() => void handleCopyField('工作区 ID', info.workspaceId)}
-                >
-                  <Copy size={15} strokeWidth={2.15} aria-hidden="true" />
-                  <span>复制</span>
-                </button>
+
+                <div className="workspace-settings-config-buttons">
+                  {confirmLeaveWorkspace ? (
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={() => setConfirmLeaveWorkspace(false)}
+                      disabled={leaving}
+                    >
+                      取消
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="ghost-button workspace-copy-button"
+                      onClick={() => void handleCopyField('工作区 ID', info.workspaceId)}
+                    >
+                      <Copy size={15} strokeWidth={2.15} aria-hidden="true" />
+                      <span>复制</span>
+                    </button>
+                  )}
+
+                  <button
+                    className="danger-button"
+                    type="button"
+                    onClick={() => {
+                      if (!confirmLeaveWorkspace) {
+                        setConfirmLeaveWorkspace(true)
+                        return
+                      }
+
+                      void handleLeaveWorkspace()
+                    }}
+                    disabled={leaving || loading}
+                  >
+                    <LogOut size={16} strokeWidth={2.1} aria-hidden="true" />
+                    <span>{leaving ? '退出中...' : confirmLeaveWorkspace ? '确认退出' : '退出工作区'}</span>
+                  </button>
+                </div>
               </div>
             </div>
           ) : (
             <p className="workspace-settings-empty">{loading ? '正在读取工作区信息…' : '暂时无法读取工作区信息。'}</p>
           )}
-
-          <div className="workspace-settings-actions workspace-settings-leave-actions">
-            {confirmLeaveWorkspace ? (
-              <p className="workspace-settings-confirm" role="status">
-                退出后将返回工作区入口。
-              </p>
-            ) : (
-              <div className="workspace-settings-spacer" aria-hidden="true" />
-            )}
-
-            <div className="workspace-settings-leave-buttons">
-              {confirmLeaveWorkspace ? (
-              <button
-                className="secondary-button"
-                type="button"
-                onClick={() => setConfirmLeaveWorkspace(false)}
-                disabled={leaving}
-              >
-                取消
-              </button>
-              ) : null}
-
-              <button
-                className="danger-button"
-                type="button"
-                onClick={() => {
-                  if (!confirmLeaveWorkspace) {
-                    setConfirmLeaveWorkspace(true)
-                    return
-                  }
-
-                  void handleLeaveWorkspace()
-                }}
-                disabled={leaving || loading}
-              >
-                <LogOut size={16} strokeWidth={2.1} aria-hidden="true" />
-                <span>{leaving ? '退出中...' : confirmLeaveWorkspace ? '确认退出' : '退出工作区'}</span>
-              </button>
-            </div>
-          </div>
         </section>
 
         <p className="workspace-settings-message" role="status" aria-live="polite">
