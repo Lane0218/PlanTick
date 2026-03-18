@@ -36,6 +36,17 @@ async function createWorkspaceFromDialog(page: Page, passphrase: string) {
   await expect(page.getByRole('button', { name: '新建分类' })).toBeVisible()
 }
 
+async function joinWorkspaceFromDialog(page: Page, passphrase: string) {
+  await expectWorkspaceAccessDialog(page)
+  await page.getByRole('dialog', { name: '创建或加入你的任务工作台' }).getByRole('button', { name: '加入工作区' }).click()
+  await expect(page.getByRole('button', { name: '返回' })).toBeVisible()
+  await expect(page.getByLabel('工作区口令')).toBeVisible()
+  await page.getByPlaceholder('至少 6 个字符…').fill(passphrase)
+  await page.getByRole('button', { name: '加入并进入工作台' }).click()
+  await expect(page.getByRole('dialog', { name: '创建或加入你的任务工作台' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '新建分类' })).toBeVisible()
+}
+
 test('phase 2 首次进入直接展示工作台并支持游客模式', async ({ page, baseURL }) => {
   await page.goto(baseURL!)
   await page.setViewportSize({ width: 1440, height: 960 })
@@ -510,6 +521,74 @@ test('phase 4 日程概览：支持事件创建、编辑、刷新恢复与删除
   await page.locator('.detail-footer-actions').getByRole('button', { name: '删除' }).click()
   await expect(page.locator('.detail-pane.is-open')).toHaveCount(0)
   await expect(page.locator('.calendar-grid').getByText(updatedTitle)).toHaveCount(0)
+})
+
+test('phase 4 双设备同步：事件创建、编辑、删除可跨设备补拉可见', async ({ browser, baseURL }) => {
+  test.setTimeout(60_000)
+
+  const passphrase = `phase4-cross-device-${Date.now()}-pw`
+  const eventTitle = '跨设备评审'
+  const updatedTitle = '跨设备评审-调整'
+  const viewport = { width: 1440, height: 960 }
+
+  const deviceA = await browser.newContext()
+  const deviceB = await browser.newContext()
+  const pageA = await deviceA.newPage()
+  const pageB = await deviceB.newPage()
+
+  const openCalendar = async (page: Page) => {
+    await page.getByRole('button', { name: '日程概览' }).click()
+    await expect(page.locator('.calendar-grid')).toBeVisible()
+  }
+
+  try {
+    await pageA.goto(baseURL!)
+    await pageA.setViewportSize(viewport)
+    await createWorkspaceFromDialog(pageA, passphrase)
+    await openCalendar(pageA)
+
+    await pageB.goto(baseURL!)
+    await pageB.setViewportSize(viewport)
+    await joinWorkspaceFromDialog(pageB, passphrase)
+    await openCalendar(pageB)
+
+    await pageA.getByLabel('快速新建事件').fill(eventTitle)
+    await pageA.getByLabel('快速新建事件').press('Enter')
+    await expect(pageA.getByLabel('事件标题')).toHaveValue(eventTitle)
+
+    await pageB.reload()
+    await openCalendar(pageB)
+    await expect(pageB.locator('.calendar-grid').getByText(eventTitle)).toBeVisible()
+
+    await pageA.locator('.calendar-grid').getByText(eventTitle).click()
+    await pageA.getByLabel('事件标题').fill(updatedTitle)
+    await pageA.getByLabel('开始时间').fill('10:00')
+    await pageA.getByLabel('结束时间').fill('11:30')
+    await pageA.getByLabel('事件备注').fill('双设备编辑验证')
+    await pageA.waitForTimeout(1200)
+
+    await pageB.reload()
+    await openCalendar(pageB)
+    await pageB.locator('.calendar-grid').getByText(updatedTitle).click()
+    await expect(pageB.getByLabel('事件标题')).toHaveValue(updatedTitle)
+    await expect(pageB.getByLabel('开始时间')).toHaveValue('10:00')
+    await expect(pageB.getByLabel('结束时间')).toHaveValue('11:30')
+    await expect(pageB.getByLabel('事件备注')).toHaveValue('双设备编辑验证')
+    await pageB.getByRole('button', { name: '关闭详情' }).click()
+
+    await pageA.getByRole('button', { name: '删除' }).click()
+    await pageA.locator('.detail-footer-actions').getByRole('button', { name: '删除' }).click()
+    await expect(pageA.locator('.detail-pane.is-open')).toHaveCount(0)
+
+    await pageB.reload()
+    await openCalendar(pageB)
+    await expect(pageB.locator('.calendar-grid').getByText(updatedTitle)).toHaveCount(0)
+  } finally {
+    await pageA.close()
+    await pageB.close()
+    await deviceA.close()
+    await deviceB.close()
+  }
 })
 
 test('phase 4 移动端壳层：抽屉、底部详情与纵向看板', async ({ page, baseURL }) => {

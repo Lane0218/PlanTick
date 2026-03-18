@@ -754,6 +754,9 @@ function App() {
       recurrenceType: updated.recurrenceType,
     })
     setTodos((current) => current.map((todo) => (todo.id === updated.id ? updated : todo)))
+    void pushPendingOperations().catch((error) => {
+      console.warn('推送任务详情自动保存失败', error)
+    })
   })
 
   const persistEventDraft = useEffectEvent(async (draft: EventDraft, baseEvent: EventRecord) => {
@@ -782,6 +785,9 @@ function App() {
       note: updated.note,
     })
     setEvents((current) => current.map((event) => (event.id === updated.id ? updated : event)))
+    void pushPendingOperations().catch((error) => {
+      console.warn('推送事件详情自动保存失败', error)
+    })
   })
 
   useEffect(() => {
