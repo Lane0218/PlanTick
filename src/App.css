@@ -1437,8 +1437,10 @@
 
 .stats-metric-card {
   display: grid;
-  gap: 8px;
-  min-height: 118px;
+  align-content: center;
+  gap: 14px;
+  min-height: 126px;
+  padding: 24px 22px;
 }
 
 .stats-metric-card span {
@@ -1454,12 +1456,6 @@
   font-size: clamp(1.9rem, 3vw, 2.4rem);
   line-height: 1;
   letter-spacing: -0.06em;
-}
-
-.stats-metric-card p {
-  margin: 0;
-  color: var(--text-soft);
-  font-size: 0.88rem;
 }
 
 .stats-bar-list {
@@ -1482,19 +1478,13 @@
 }
 
 .stats-bar-copy {
-  display: grid;
-  gap: 2px;
+  min-width: 0;
 }
 
 .stats-bar-copy strong,
 .stats-bar-row b {
   color: var(--text-strong);
   font-size: 0.9rem;
-}
-
-.stats-bar-copy span {
-  color: var(--text-soft);
-  font-size: 0.76rem;
 }
 
 .stats-bar-track {
@@ -1616,19 +1606,6 @@
   font-weight: 600;
 }
 
-.stats-history-day span:last-child {
-  color: var(--text-soft);
-  font-size: 0.72rem;
-}
-
-.stats-line-chart-foot {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  color: var(--text-soft);
-  font-size: 0.8rem;
-}
-
 .stats-trend-legend {
   display: inline-flex;
   flex-wrap: wrap;
@@ -1672,13 +1649,6 @@
   justify-items: center;
 }
 
-.stats-trend-total {
-  color: var(--text-muted);
-  font-size: 0.78rem;
-  font-weight: 700;
-  text-align: center;
-}
-
 .stats-trend-bars {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1707,13 +1677,6 @@
 .stats-trend-day strong {
   color: var(--text-strong);
   font-size: 0.86rem;
-}
-
-.stats-trend-day span:last-child {
-  color: var(--text-soft);
-  font-size: 0.74rem;
-  text-align: center;
-  line-height: 1.45;
 }
 
 .status-board-grid {

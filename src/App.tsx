@@ -93,7 +93,6 @@ type StatusBoardColumn = {
 type StatsMetricCard = {
   label: string
   value: string
-  helper: string
 }
 
 type StatsDistributionItem = {
@@ -481,22 +480,18 @@ function App() {
       {
         label: '完成任务',
         value: String(statsSummary.completedTodos),
-        helper: `总任务 ${statsSummary.totalTodos}`,
       },
       {
         label: '完成率',
         value: formatPercentage(statsSummary.completionRate),
-        helper: `未完成 ${statsSummary.openTodos}`,
       },
       {
         label: '今日聚焦',
         value: String(statsSummary.todayFocusTodos),
-        helper: `逾期 ${statsSummary.overdueTodos}`,
       },
       {
         label: '未来 7 天安排',
         value: String(statsSummary.upcomingScheduledItems),
-        helper: `事件 ${statsSummary.totalEvents}`,
       },
     ],
     [statsSummary],
@@ -2938,7 +2933,6 @@ function StatsBoard({
           <article key={metric.label} className="stats-panel stats-metric-card">
             <span>{metric.label}</span>
             <strong>{metric.value}</strong>
-            <p>{metric.helper}</p>
           </article>
         ))}
       </div>
@@ -2950,11 +2944,7 @@ function StatsBoard({
       </div>
 
       <div className="stats-grid stats-secondary-grid">
-        <StatsLineChartCard
-          title="过去 14 天到期任务完成情况"
-          description="按任务截止日回看，不代表真实完成发生时间"
-          points={historicalCompletionSeries}
-        />
+        <StatsLineChartCard title="过去 14 天到期任务完成情况" points={historicalCompletionSeries} />
         <StatsTrendCard title="未来 7 天安排密度" dayLoad={dayLoad} />
       </div>
     </section>
@@ -2987,7 +2977,6 @@ function StatsDistributionCard({
               <div key={item.id} className={rowClassName} role="listitem">
                 <div className="stats-bar-copy">
                   <strong>{item.label}</strong>
-                  <span>{item.helper ?? `${item.value} 项`}</span>
                 </div>
                 <div className="stats-bar-track" aria-hidden="true">
                   <span
@@ -3014,16 +3003,12 @@ function StatsDistributionCard({
 
 function StatsLineChartCard({
   title,
-  description,
   points,
 }: {
   title: string
-  description: string
   points: StatsHistoricalCompletionPoint[]
 }) {
   const hasData = points.some((point) => point.totalCount > 0)
-  const totalDueCount = points.reduce((sum, point) => sum + point.totalCount, 0)
-  const totalCompletedCount = points.reduce((sum, point) => sum + point.completedCount, 0)
   const barPoints = points.map((point) => {
     const hasValue = point.totalCount > 0
     const completionRate = point.completionRate ?? 0
@@ -3042,7 +3027,6 @@ function StatsLineChartCard({
       <div className="stats-card-head stats-card-head-stack">
         <div>
           <h2>{title}</h2>
-          <p className="stats-card-description">{description}</p>
         </div>
       </div>
       {hasData ? (
@@ -3089,17 +3073,12 @@ function StatsLineChartCard({
                           )}
                         </div>
                         <strong>{point.label}</strong>
-                        <span>{point.hasValue ? `${point.completedCount}/${point.totalCount}` : '—'}</span>
                       </div>
                     )
                   })}
                 </div>
               </div>
             </div>
-          </div>
-          <div className="stats-line-chart-foot">
-            <span>14 天内到期 {totalDueCount} 项</span>
-            <span>当前已完成 {totalCompletedCount} 项</span>
           </div>
         </>
       ) : (
@@ -3123,7 +3102,6 @@ function StatsTrendCard({
       <div className="stats-card-head stats-card-head-stack">
         <div>
           <h2>{title}</h2>
-          <p className="stats-card-description">任务：当天到期的待办 · 事件：当天日程里的安排</p>
         </div>
       </div>
       <div className="stats-trend-legend" aria-label="安排密度图例">
@@ -3138,19 +3116,16 @@ function StatsTrendCard({
       </div>
       <div className="stats-trend-grid" role="list">
         {dayLoad.map((day) => {
-          const total = day.taskCount + day.eventCount
           const taskHeight = maxCount ? Math.max((day.taskCount / maxCount) * 100, day.taskCount ? 12 : 0) : 0
           const eventHeight = maxCount ? Math.max((day.eventCount / maxCount) * 100, day.eventCount ? 12 : 0) : 0
 
           return (
             <div key={day.date} className="stats-trend-day" role="listitem">
-              <span className="stats-trend-total">{total}</span>
               <div className="stats-trend-bars" aria-hidden="true">
                 <span className="stats-trend-bar stats-trend-bar-tasks" style={{ height: `${taskHeight}%` }} />
                 <span className="stats-trend-bar stats-trend-bar-events" style={{ height: `${eventHeight}%` }} />
               </div>
               <strong>{day.label}</strong>
-              <span>{day.taskCount} 任务 · {day.eventCount} 事件</span>
             </div>
           )
         })}
@@ -5092,8 +5067,8 @@ function buildCategoryDistribution(todos: TodoRecord[], categories: CategoryReco
       id: key,
       label: category?.name ?? '未分类',
       value: 1,
-      accent: category?.color ?? '#94a3b8',
-      tone: category ? 'category' : 'neutral',
+      accent: category ? '#5b74c9' : '#8c99ab',
+      tone: category ? 'primary' : 'neutral',
     })
   }
 
