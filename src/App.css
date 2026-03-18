@@ -2717,6 +2717,19 @@
   gap: 12px;
 }
 
+.detail-time-option-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.detail-time-option-label {
+  color: #6b7c93;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
 .detail-time-field {
   display: grid;
   gap: 8px;
@@ -3375,7 +3388,7 @@
 
 .calendar-toolbar-copy {
   display: grid;
-  gap: 4px;
+  gap: 0;
   min-width: 0;
 }
 
@@ -3384,16 +3397,6 @@
   font-size: clamp(1.45rem, 1.8vw, 1.84rem);
   line-height: 1;
   letter-spacing: -0.05em;
-}
-
-.calendar-toolbar-copy span {
-  min-width: 0;
-  color: #6b7c93;
-  font-size: 0.82rem;
-  line-height: 1.45;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .calendar-toolbar-controls {
@@ -3563,34 +3566,11 @@
 
 .calendar-quick-create {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
   min-width: 0;
   justify-self: end;
-}
-
-.calendar-selected-date {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  min-height: 40px;
-  padding: 0 12px;
-  border: 1px solid #dce4ea;
-  border-radius: 12px;
-  background: #f5faf8;
-  color: #1f6e66;
-  white-space: nowrap;
-}
-
-.calendar-selected-date strong {
-  font-size: 0.82rem;
-  font-weight: 700;
-}
-
-.calendar-selected-date svg {
-  flex-shrink: 0;
 }
 
 .calendar-quick-create input {
@@ -4293,23 +4273,12 @@
     min-height: 126px;
   }
 
-  .calendar-toolbar-copy h1 {
+  .calendar-toolbar-copy {
     display: none;
-  }
-
-  .calendar-toolbar-copy span {
-    white-space: normal;
-    overflow: visible;
-    text-overflow: initial;
   }
 
   .calendar-quick-create {
     grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .calendar-selected-date {
-    grid-column: 1 / -1;
-    width: fit-content;
   }
 
   .quick-create-shell {

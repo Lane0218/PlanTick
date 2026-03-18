@@ -4278,31 +4278,28 @@ function EventDetailPane({
                 </div>
               </section>
 
-              <section className="detail-section detail-section-tight" aria-label="事件时间类型">
-                <div className="detail-card-head">
-                  <span>时间类型</span>
-                </div>
-                <button
-                  type="button"
-                  className={eventDraft.allDay ? 'detail-myday-pill is-active' : 'detail-myday-pill'}
-                  onClick={() =>
-                    setEventDraft(
-                      normalizeEventDraft({
-                        ...eventDraft,
-                        allDay: !eventDraft.allDay,
-                      }),
-                    )
-                  }
-                  aria-pressed={eventDraft.allDay}
-                >
-                  <Clock3 size={15} strokeWidth={2.1} />
-                  <span>全天</span>
-                </button>
-              </section>
-
               <section className="detail-section detail-section-tight" aria-label="事件时间">
                 <div className="detail-card-head">
                   <span>时间</span>
+                </div>
+                <div className="detail-time-option-row">
+                  <span className="detail-time-option-label">时间类型</span>
+                  <button
+                    type="button"
+                    className={eventDraft.allDay ? 'detail-myday-pill is-active' : 'detail-myday-pill'}
+                    onClick={() =>
+                      setEventDraft(
+                        normalizeEventDraft({
+                          ...eventDraft,
+                          allDay: !eventDraft.allDay,
+                        }),
+                      )
+                    }
+                    aria-pressed={eventDraft.allDay}
+                  >
+                    <Clock3 size={15} strokeWidth={2.1} />
+                    <span>全天</span>
+                  </button>
                 </div>
                 <div className="detail-time-grid">
                   <label className="detail-time-field">
@@ -4342,7 +4339,6 @@ function EventDetailPane({
                     />
                   </label>
                 </div>
-                {eventDraft.allDay ? <p className="detail-readonly-subtle">全天事件不需要填写开始和结束时间。</p> : null}
               </section>
 
               <label className="detail-field detail-description-field">
@@ -4534,7 +4530,6 @@ function CalendarBoard({
         <header className="calendar-toolbar">
           <div className="calendar-toolbar-copy">
             <h1>日程概览</h1>
-            <span>当前选中 {formatCalendarFullDate(selectedDate)}，点击日期即可切换添加目标</span>
           </div>
 
           <div className="calendar-toolbar-controls">
@@ -4628,10 +4623,6 @@ function CalendarBoard({
           </div>
 
           <form className="calendar-quick-create" onSubmit={(event) => void handleQuickCreateEvent(event)}>
-            <div className="calendar-selected-date" aria-hidden="true">
-              <CalendarDays size={16} strokeWidth={2.1} />
-              <strong>{formatMonthDay(selectedDate)}</strong>
-            </div>
             <input
               value={quickEventTitle}
               onChange={(event) => setQuickEventTitle(event.target.value)}
