@@ -31,6 +31,7 @@ export type CategoryRecord = {
   workspaceId: string
   name: string
   color: string
+  sortOrder: number
   updatedAt: IsoDatetime
   deleted: boolean
 }

@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, FormEvent, RefObject } from 'react'
+import type { CSSProperties, FormEvent, PointerEvent as ReactPointerEvent, RefObject } from 'react'
 import { DayPicker } from 'react-day-picker'
 import 'react-day-picker/dist/style.css'
 import {
@@ -25,6 +25,7 @@ import {
   Sun,
   Trash2,
   X,
+  GripVertical,
 } from 'lucide-react'
 import { zhCN } from 'date-fns/locale'
 import './App.css'
@@ -250,6 +251,7 @@ const demoCategories: CategoryRecord[] = [
     workspaceId: demoWorkspaceId,
     name: '工作',
     color: '#2563EB',
+    sortOrder: 0,
     updatedAt: '2026-03-16T08:00:00.000Z',
     deleted: false,
   },
@@ -258,6 +260,7 @@ const demoCategories: CategoryRecord[] = [
     workspaceId: demoWorkspaceId,
     name: '生活',
     color: '#16A34A',
+    sortOrder: 1,
     updatedAt: '2026-03-16T08:05:00.000Z',
     deleted: false,
   },
@@ -266,6 +269,7 @@ const demoCategories: CategoryRecord[] = [
     workspaceId: demoWorkspaceId,
     name: '学习',
     color: '#F97316',
+    sortOrder: 2,
     updatedAt: '2026-03-16T08:10:00.000Z',
     deleted: false,
   },
@@ -458,7 +462,7 @@ function App() {
     () =>
       sourceCategories
         .filter((category) => !category.deleted)
-        .sort((left, right) => left.name.localeCompare(right.name, 'zh-CN')),
+        .sort((left, right) => compareCategories(left, right)),
     [sourceCategories],
   )
 
@@ -1213,6 +1217,7 @@ function App() {
       workspaceId,
       name: newCategoryName.trim(),
       color: newCategoryColor,
+      sortOrder: getNextCategorySortOrder(activeCategories),
       updatedAt: new Date().toISOString(),
       deleted: false,
     }
@@ -1266,6 +1271,52 @@ function App() {
       await enqueueRecordMutation('categories', 'upsert', toSyncCategory(updated))
       await refreshWorkspaceData(workspaceId)
       setMessage(`分类「${updated.name}」已更新。`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleReorderCategories(orderedIds: string[]) {
+    if (!orderedIds.length || areCategoryOrdersEqual(orderedIds, activeCategories.map((category) => category.id))) {
+      return
+    }
+
+    const timestamp = new Date().toISOString()
+    const currentCategoryMap = new Map(activeCategories.map((category) => [category.id, category]))
+    const reorderedCategories = buildReorderedCategories(activeCategories, orderedIds).map((category) => {
+      const previousCategory = currentCategoryMap.get(category.id)
+      return {
+        ...category,
+        updatedAt: previousCategory?.sortOrder === category.sortOrder ? category.updatedAt : timestamp,
+      }
+    })
+    const changedCategories = reorderedCategories.filter(
+      (category) => currentCategoryMap.get(category.id)?.sortOrder !== category.sortOrder,
+    )
+
+    if (!changedCategories.length) {
+      return
+    }
+
+    const nextCategoryMap = new Map(reorderedCategories.map((category) => [category.id, category]))
+    setCategories((current) => current.map((category) => nextCategoryMap.get(category.id) ?? category))
+
+    if (isGuestMode) {
+      setMessage('分类顺序已更新。')
+      return
+    }
+
+    setBusy(true)
+    try {
+      await Promise.all(changedCategories.map((category) => upsertCategory(category)))
+      await Promise.all(
+        changedCategories.map((category) => enqueueRecordMutation('categories', 'upsert', toSyncCategory(category))),
+      )
+      await refreshWorkspaceData(workspaceId)
+      setMessage('分类顺序已更新。')
+    } catch (error) {
+      showErrorToast(error instanceof Error ? error.message : '更新分类顺序失败。')
+      await refreshWorkspaceData(workspaceId)
     } finally {
       setBusy(false)
     }
@@ -1758,6 +1809,7 @@ function App() {
     categoryEditorColor,
     setCategoryEditorColor,
     handleSaveCategory,
+    handleReorderCategories,
     handleDeleteCategory,
     openWorkspaceSettings,
     workspaceSyncSnapshot,
@@ -2489,6 +2541,7 @@ type SidebarProps = {
   categoryEditorColor: string
   setCategoryEditorColor: (value: string) => void
   handleSaveCategory: () => Promise<void>
+  handleReorderCategories: (orderedIds: string[]) => Promise<void>
   handleDeleteCategory: (category?: CategoryRecord) => Promise<void>
   openWorkspaceSettings: () => void
   workspaceSyncSnapshot: WorkspaceSyncSnapshot | null
@@ -2536,6 +2589,7 @@ function SidebarContent({
   categoryEditorColor,
   setCategoryEditorColor,
   handleSaveCategory,
+  handleReorderCategories,
   handleDeleteCategory,
   openWorkspaceSettings,
   workspaceSyncSnapshot,
@@ -2549,8 +2603,111 @@ function SidebarContent({
 }: Omit<SidebarProps, 'className' | 'id'>) {
   const [categoryDialogMode, setCategoryDialogMode] = useState<'create' | 'edit' | null>(null)
   const [pendingDeleteCategory, setPendingDeleteCategory] = useState<CategoryRecord | null>(null)
+  const [draggingCategoryId, setDraggingCategoryId] = useState<string | null>(null)
+  const [dragOrderIds, setDragOrderIds] = useState<string[] | null>(null)
+  const categoryRowRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const dragOrderIdsRef = useRef<string[] | null>(null)
+  const draggingCategoryIdRef = useRef<string | null>(null)
+  const releaseCategoryDragRef = useRef<(() => void) | null>(null)
 
   const dialogTitle = categoryDialogMode === 'edit' ? '编辑分类' : '新建分类'
+  const renderedCategoryOrder = dragOrderIds ?? categories.map((category) => category.id)
+  const renderedCategories = renderedCategoryOrder
+    .map((categoryId) => categories.find((category) => category.id === categoryId) ?? null)
+    .filter((category): category is CategoryRecord => Boolean(category))
+
+  useEffect(() => () => {
+    releaseCategoryDragRef.current?.()
+  }, [])
+
+  const finishCategoryDrag = (commit: boolean) => {
+    const draggedCategoryId = draggingCategoryIdRef.current
+    const nextOrder = dragOrderIdsRef.current
+
+    releaseCategoryDragRef.current?.()
+    releaseCategoryDragRef.current = null
+    draggingCategoryIdRef.current = null
+    dragOrderIdsRef.current = null
+    setDraggingCategoryId(null)
+    setDragOrderIds(null)
+
+    if (!commit || !draggedCategoryId || !nextOrder) {
+      return
+    }
+
+    const currentOrder = categories.map((category) => category.id)
+    if (areCategoryOrdersEqual(currentOrder, nextOrder)) {
+      return
+    }
+
+    void handleReorderCategories(nextOrder)
+  }
+
+  const handleCategoryDragPointerDown = (event: ReactPointerEvent<HTMLButtonElement>, categoryId: string) => {
+    if (busy || readOnly || draggingCategoryIdRef.current) {
+      return
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+
+    const initialOrder = categories.map((category) => category.id)
+    draggingCategoryIdRef.current = categoryId
+    dragOrderIdsRef.current = initialOrder
+    setDraggingCategoryId(categoryId)
+    setDragOrderIds(initialOrder)
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const currentDraggedCategoryId = draggingCategoryIdRef.current
+      const currentOrder = dragOrderIdsRef.current
+      if (!currentDraggedCategoryId || !currentOrder) {
+        return
+      }
+
+      const siblingIds = currentOrder.filter((id) => id !== currentDraggedCategoryId)
+      let insertionIndex = siblingIds.length
+
+      for (let index = 0; index < siblingIds.length; index += 1) {
+        const rect = categoryRowRefs.current[siblingIds[index]]?.getBoundingClientRect()
+        if (!rect) {
+          continue
+        }
+
+        if (moveEvent.clientY < rect.top + rect.height / 2) {
+          insertionIndex = index
+          break
+        }
+      }
+
+      const nextOrder = [...siblingIds]
+      nextOrder.splice(insertionIndex, 0, currentDraggedCategoryId)
+
+      if (!areCategoryOrdersEqual(currentOrder, nextOrder)) {
+        dragOrderIdsRef.current = nextOrder
+        setDragOrderIds(nextOrder)
+      }
+    }
+
+    const handlePointerUp = () => {
+      finishCategoryDrag(true)
+    }
+
+    const handlePointerCancel = () => {
+      finishCategoryDrag(false)
+    }
+
+    document.body.style.userSelect = 'none'
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp, { once: true })
+    window.addEventListener('pointercancel', handlePointerCancel, { once: true })
+
+    releaseCategoryDragRef.current = () => {
+      document.body.style.userSelect = ''
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+      window.removeEventListener('pointercancel', handlePointerCancel)
+    }
+  }
 
   const openCreateDialog = () => {
     if (readOnly) {
@@ -2677,10 +2834,14 @@ function SidebarContent({
             </button>
           </div>
 
-          {categories.map((category) => (
+          {renderedCategories.map((category) => (
             <div
               key={category.id}
+              ref={(node) => {
+                categoryRowRefs.current[category.id] = node
+              }}
               className={selectedCategoryId === category.id ? 'category-row active' : 'category-row'}
+              data-dragging={draggingCategoryId === category.id ? 'true' : undefined}
             >
               <button
                 type="button"
@@ -2701,14 +2862,26 @@ function SidebarContent({
               </button>
 
               {!readOnly ? (
-                <button
-                  type="button"
-                  className="category-edit-button"
-                  aria-label={`编辑分类 ${category.name}`}
-                  onClick={() => openEditDialog(category)}
-                >
-                  <Pencil size={15} strokeWidth={2.2} aria-hidden="true" />
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className="category-drag-handle"
+                    aria-label={`拖动排序 ${category.name}`}
+                    aria-grabbed={draggingCategoryId === category.id}
+                    disabled={busy}
+                    onPointerDown={(event) => handleCategoryDragPointerDown(event, category.id)}
+                  >
+                    <GripVertical size={15} strokeWidth={2.2} aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    className="category-edit-button"
+                    aria-label={`编辑分类 ${category.name}`}
+                    onClick={() => openEditDialog(category)}
+                  >
+                    <Pencil size={15} strokeWidth={2.2} aria-hidden="true" />
+                  </button>
+                </>
               ) : null}
             </div>
           ))}
@@ -5699,12 +5872,42 @@ function serializeEventDraft(draft: EventDraft) {
   ])
 }
 
+function compareCategories(left: CategoryRecord, right: CategoryRecord) {
+  return (
+    left.sortOrder - right.sortOrder ||
+    left.name.localeCompare(right.name, 'zh-CN') ||
+    left.updatedAt.localeCompare(right.updatedAt) ||
+    left.id.localeCompare(right.id)
+  )
+}
+
+function getNextCategorySortOrder(categories: CategoryRecord[]) {
+  return categories.reduce((maxSortOrder, category) => Math.max(maxSortOrder, category.sortOrder), -1) + 1
+}
+
+function buildReorderedCategories(categories: CategoryRecord[], orderedIds: string[]) {
+  const orderMap = new Map(orderedIds.map((id, index) => [id, index]))
+  return categories.map((category) =>
+    orderMap.has(category.id)
+      ? {
+          ...category,
+          sortOrder: orderMap.get(category.id) ?? category.sortOrder,
+        }
+      : category,
+  )
+}
+
+function areCategoryOrdersEqual(left: string[], right: string[]) {
+  return left.length === right.length && left.every((id, index) => id === right[index])
+}
+
 function toSyncCategory(record: CategoryRecord) {
   return {
     id: record.id,
     workspace_id: record.workspaceId,
     name: record.name,
     color: record.color,
+    sort_order: record.sortOrder,
     updated_at: record.updatedAt,
     deleted: record.deleted,
   }

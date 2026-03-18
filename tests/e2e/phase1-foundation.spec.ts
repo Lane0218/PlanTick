@@ -54,6 +54,69 @@ async function joinWorkspaceFromDialog(page: Page, passphrase: string) {
   await expect(page.getByRole('button', { name: '新建分类' })).toBeVisible()
 }
 
+async function createCategory(page: Page, name: string) {
+  await page.getByRole('button', { name: '新建分类' }).click()
+  await page.getByPlaceholder('分类名称').fill(name)
+  await page.getByRole('button', { name: '添加分类' }).click()
+  await expect(page.getByRole('button', { name, exact: true })).toBeVisible()
+}
+
+async function expectCategoryOrder(
+  page: Page,
+  expectedNames: string[],
+  containerSelector = '.sidebar-category-section',
+) {
+  await expect(page.locator(`${containerSelector} .category-list .category-name`)).toHaveText(expectedNames)
+}
+
+async function dragCategoryBefore(
+  page: Page,
+  sourceName: string,
+  targetName: string,
+  containerSelector = '.sidebar-category-section',
+) {
+  const container = page.locator(containerSelector)
+  const handle = container.getByLabel(`拖动排序 ${sourceName}`)
+  const targetRow = container.locator('.category-row', {
+    has: page.getByRole('button', { name: targetName, exact: true }),
+  })
+
+  const handleBox = await handle.boundingBox()
+  const targetBox = await targetRow.boundingBox()
+
+  if (!handleBox || !targetBox) {
+    throw new Error(`无法定位分类拖拽坐标：${sourceName} -> ${targetName}`)
+  }
+
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height * 0.25, { steps: 10 })
+  await page.mouse.up()
+}
+
+async function readPersistedCategoryOrder(page: Page) {
+  return page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('plantick-app')
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => resolve(request.result)
+    })
+
+    const rows = await new Promise<Array<{ name: string; sortOrder?: number }>>((resolve, reject) => {
+      const tx = db.transaction(['categories'], 'readonly')
+      const request = tx.objectStore('categories').getAll()
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => resolve(request.result as Array<{ name: string; sortOrder?: number }>)
+    })
+
+    db.close()
+
+    return rows
+      .sort((left, right) => (left.sortOrder ?? Number.MAX_SAFE_INTEGER) - (right.sortOrder ?? Number.MAX_SAFE_INTEGER))
+      .map((row) => row.name)
+  })
+}
+
 async function seedWorkspaceSyncError(page: Page, lastError: string) {
   await page.evaluate(async (message) => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -419,6 +482,26 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   await expect(page.getByRole('button', { name: '明天' })).toHaveClass(/active/)
   await expect(restoredTask.getByRole('button', { name: /切换任务状态，当前/ })).toBeVisible()
   await expect(restoredTask.getByText('明天')).toBeVisible()
+})
+
+test('phase 3 分类支持桌面拖拽排序并在刷新后保持顺序', async ({ page, baseURL }) => {
+  const passphrase = `phase3-category-sort-${Date.now()}-pw`
+
+  await page.goto(baseURL!)
+  await page.setViewportSize({ width: 1440, height: 960 })
+  await createWorkspaceFromDialog(page, passphrase)
+
+  await createCategory(page, '甲')
+  await createCategory(page, '乙')
+  await createCategory(page, '丙')
+
+  await expectCategoryOrder(page, ['未分类', '甲', '乙', '丙'])
+  await dragCategoryBefore(page, '丙', '甲')
+  await expectCategoryOrder(page, ['未分类', '丙', '甲', '乙'])
+  await expect.poll(async () => readPersistedCategoryOrder(page)).toEqual(['丙', '甲', '乙'])
+
+  await page.reload()
+  await expectCategoryOrder(page, ['未分类', '丙', '甲', '乙'])
 })
 
 test('phase 3 工作区设置：支持修改口令并退出当前工作区', async ({ page, baseURL }) => {
@@ -1128,4 +1211,37 @@ test('phase 4 移动端壳层：抽屉、底部详情与纵向看板', async ({ 
   expect((secondColumnBox?.y ?? 0) - (firstColumnBox?.y ?? 0)).toBeGreaterThan(40)
 
   await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1)
+})
+
+test('phase 4 移动端抽屉内支持拖拽分类排序', async ({ page, baseURL }) => {
+  const passphrase = `phase4-mobile-sort-${Date.now()}-pw`
+  const mobileViewport = { width: 390, height: 844 }
+
+  await page.goto(baseURL!)
+  await page.setViewportSize(mobileViewport)
+  await expectWorkspaceAccessDialog(page)
+  await page.getByRole('dialog', { name: '创建或加入你的任务工作台' }).getByRole('button', { name: '创建工作区' }).click()
+  await page.getByPlaceholder('至少 6 个字符…').fill(passphrase)
+  await page.getByRole('button', { name: '创建并进入工作台' }).click()
+  await expect(page.getByRole('dialog', { name: '创建或加入你的任务工作台' })).toHaveCount(0)
+  await expect(page.locator('.mobile-board-toolbar')).toBeVisible()
+
+  const drawerToggle = page.locator('.mobile-toolbar-button')
+  await drawerToggle.click()
+  await expect(page.locator('.mobile-sidebar-shell')).toBeVisible()
+
+  await createCategory(page, '甲')
+  await createCategory(page, '乙')
+  await createCategory(page, '丙')
+
+  await expectCategoryOrder(page, ['未分类', '甲', '乙', '丙'], '.mobile-sidebar-shell .sidebar-category-section')
+  await dragCategoryBefore(page, '丙', '甲', '.mobile-sidebar-shell .sidebar-category-section')
+  await expectCategoryOrder(page, ['未分类', '丙', '甲', '乙'], '.mobile-sidebar-shell .sidebar-category-section')
+
+  await page.getByRole('button', { name: '丙', exact: true }).click()
+  await expect(page.locator('.mobile-sidebar-shell')).toHaveCount(0)
+
+  await drawerToggle.click()
+  await expect(page.locator('.mobile-sidebar-shell')).toBeVisible()
+  await expectCategoryOrder(page, ['未分类', '丙', '甲', '乙'], '.mobile-sidebar-shell .sidebar-category-section')
 })

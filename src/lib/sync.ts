@@ -315,6 +315,7 @@ export function createCategorySeed(workspaceId: string): CategoryRecord {
     workspaceId,
     name: '默认分类',
     color: '#7c8f77',
+    sortOrder: 0,
     updatedAt: now,
     deleted: false,
   }

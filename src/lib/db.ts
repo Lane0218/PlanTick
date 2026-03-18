@@ -76,6 +76,76 @@ function createDefaultCursor() {
   }
 }
 
+function readCategorySortOrder(record: Record<string, unknown>) {
+  const candidate =
+    typeof record.sortOrder === 'number' && Number.isFinite(record.sortOrder)
+      ? record.sortOrder
+      : typeof record.sort_order === 'number' && Number.isFinite(record.sort_order)
+        ? record.sort_order
+        : null
+
+  return candidate
+}
+
+function compareCategoryFallback(
+  left: Record<string, unknown>,
+  right: Record<string, unknown>,
+) {
+  const leftName = String(left.name ?? '')
+  const rightName = String(right.name ?? '')
+  const nameCompare = leftName.localeCompare(rightName, 'zh-CN')
+  if (nameCompare !== 0) {
+    return nameCompare
+  }
+
+  const leftUpdatedAt = String(left.updatedAt ?? left.updated_at ?? '')
+  const rightUpdatedAt = String(right.updatedAt ?? right.updated_at ?? '')
+  const updatedAtCompare = leftUpdatedAt.localeCompare(rightUpdatedAt)
+  if (updatedAtCompare !== 0) {
+    return updatedAtCompare
+  }
+
+  return String(left.id ?? '').localeCompare(String(right.id ?? ''))
+}
+
+function normalizeCategoryRecord(
+  record: Record<string, unknown>,
+  fallbackSortOrder: number,
+): CategoryRecord {
+  return {
+    id: String(record.id ?? ''),
+    workspaceId: String(record.workspaceId ?? record.workspace_id ?? ''),
+    name: String(record.name ?? ''),
+    color: String(record.color ?? '#7c8f77'),
+    sortOrder: readCategorySortOrder(record) ?? fallbackSortOrder,
+    updatedAt: String(record.updatedAt ?? record.updated_at ?? new Date().toISOString()),
+    deleted: Boolean(record.deleted),
+  }
+}
+
+function normalizeCategoryRecords(records: Array<Record<string, unknown>>) {
+  return [...records]
+    .sort((left, right) => {
+      const leftSortOrder = readCategorySortOrder(left)
+      const rightSortOrder = readCategorySortOrder(right)
+
+      if (leftSortOrder !== null && rightSortOrder !== null) {
+        return leftSortOrder - rightSortOrder || compareCategoryFallback(left, right)
+      }
+
+      if (leftSortOrder !== null) {
+        return -1
+      }
+
+      if (rightSortOrder !== null) {
+        return 1
+      }
+
+      return compareCategoryFallback(left, right)
+    })
+    .map((record, index) => normalizeCategoryRecord(record, index))
+}
+
 function normalizeTodoStatus(
   record: Record<string, unknown> & { status?: unknown; completed?: unknown },
 ): TodoRecord['status'] {
@@ -329,7 +399,19 @@ export async function upsertCategory(record: CategoryRecord) {
 
 export async function listCategories(workspaceId: string) {
   const database = await getDatabase()
-  return database.getAllFromIndex('categories', 'by-workspace', workspaceId)
+  const records = (await database.getAllFromIndex('categories', 'by-workspace', workspaceId)) as Array<Record<string, unknown>>
+  const normalized = normalizeCategoryRecords(records)
+
+  if (
+    normalized.some((record) => {
+      const current = records.find((item) => String(item.id ?? '') === record.id)
+      return !current || readCategorySortOrder(current) !== record.sortOrder
+    })
+  ) {
+    await Promise.all(normalized.map((record) => database.put('categories', record)))
+  }
+
+  return normalized
 }
 
 export async function upsertTodo(record: TodoRecord) {
@@ -413,18 +495,28 @@ export async function bumpOutboxRetry(operationId: string, lastError: string) {
 export async function applyRemoteChanges(changes: RemoteChangeSet) {
   const database = await getDatabase()
   const transaction = database.transaction(['categories', 'todos', 'events'], 'readwrite')
+  const categoryStore = transaction.objectStore('categories')
+  const mergedCategoryChanges = await Promise.all(
+    changes.categories.map(async (record) => {
+      if (readCategorySortOrder(record) !== null) {
+        return record
+      }
+
+      const existingRecord = (await categoryStore.get(String(record.id))) as Record<string, unknown> | undefined
+      if (existingRecord && readCategorySortOrder(existingRecord) !== null) {
+        return {
+          ...record,
+          sort_order: readCategorySortOrder(existingRecord),
+        }
+      }
+
+      return record
+    }),
+  )
+  const normalizedCategories = normalizeCategoryRecords(mergedCategoryChanges)
 
   await Promise.all([
-    ...changes.categories.map((record) =>
-      transaction.objectStore('categories').put({
-        id: record.id,
-        workspaceId: record.workspace_id,
-        name: String(record.name ?? ''),
-        color: String(record.color ?? '#7c8f77'),
-        updatedAt: record.updated_at,
-        deleted: record.deleted,
-      }),
-    ),
+    ...normalizedCategories.map((record) => categoryStore.put(record)),
     ...changes.todos.map((record) =>
       transaction.objectStore('todos').put({
         id: record.id,
@@ -466,7 +558,7 @@ export async function applyRemoteChanges(changes: RemoteChangeSet) {
 
   await transaction.done
 
-  return changes.categories.length + changes.todos.length + changes.events.length
+  return normalizedCategories.length + changes.todos.length + changes.events.length
 }
 
 export const syncStoreAdapter: SyncStoreAdapter = {
