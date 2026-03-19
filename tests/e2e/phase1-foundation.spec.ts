@@ -329,6 +329,16 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
     has: page.getByRole('button', { name: '查看任务 123' }),
   })
   await expect(myDayTask.locator('.todo-category.is-neutral')).toHaveText('未分类')
+  await myDayTask.getByRole('button', { name: '切换任务状态，当前未开始' }).click()
+  await myDayTask.getByRole('button', { name: '切换任务状态，当前进行中' }).click()
+  await expect(myDayTask.getByRole('button', { name: '切换任务状态，当前已完成' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '我的一天' })).toBeVisible()
+  await expect(myDayButton).toContainText('0')
+  await page.getByRole('button', { name: '数据统计' }).click()
+  await expect(
+    page.locator('.stats-metric-card', { has: page.getByText('今日聚焦', { exact: true }) }).getByText('1', { exact: true }),
+  ).toBeVisible()
+  await myDayButton.click()
   await page.getByRole('button', { name: '查看任务 123' }).click()
   await page.locator('.detail-pane.is-open').getByRole('button', { name: '我的一天', exact: true }).click()
   await expect(myDayButton).toContainText('0')
@@ -340,7 +350,7 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   await noNoteTask.getByRole('button', { name: '查看任务 123' }).click()
   const sidebarPaneBox = await page.locator('.sidebar-pane').boundingBox()
   const noNoteTaskBox = await noNoteTask.boundingBox()
-  const noNoteStatusBox = await noNoteTask.getByRole('button', { name: '切换任务状态，当前未开始' }).boundingBox()
+  const noNoteStatusBox = await noNoteTask.getByRole('button', { name: '切换任务状态，当前已完成' }).boundingBox()
   const noNoteTitleBox = await noNoteTask.locator('.todo-main strong').boundingBox()
   const noNoteAccentBox = await noNoteTask.locator('.todo-list-accent').boundingBox()
   expect(

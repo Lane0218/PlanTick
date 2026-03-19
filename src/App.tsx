@@ -526,7 +526,7 @@ function App() {
   const sidebarCounts = useMemo(
     () => ({
       all: activeTodos.length,
-      today: activeTodos.filter((todo) => isTodoInMyDay(todo)).length,
+      today: activeTodos.filter((todo) => isIncompleteTodoInMyDay(todo)).length,
       overdue: activeTodos.filter(
         (todo) => todo.status !== 'completed' && Boolean(todo.dueDate) && todo.dueDate! < todayDate(),
       ).length,
@@ -5312,10 +5312,17 @@ function getMyDayMembership(
 }
 
 function isTodoInMyDay(
+  todo: Pick<TodoRecord, 'dueDate' | 'myDayDate'>,
+  targetDate = todayDate(),
+) {
+  return getMyDayMembership(todo, targetDate) !== 'none'
+}
+
+function isIncompleteTodoInMyDay(
   todo: Pick<TodoRecord, 'dueDate' | 'myDayDate' | 'status'>,
   targetDate = todayDate(),
 ) {
-  return todo.status !== 'completed' && getMyDayMembership(todo, targetDate) !== 'none'
+  return todo.status !== 'completed' && isTodoInMyDay(todo, targetDate)
 }
 
 function compareTodos(left: TodoRecord, right: TodoRecord) {
