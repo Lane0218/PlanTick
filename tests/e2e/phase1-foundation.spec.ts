@@ -94,6 +94,29 @@ async function dragCategoryBefore(
   await page.mouse.up()
 }
 
+function getStatusColumn(page: Page, statusLabel: string) {
+  return page.locator('.status-column', {
+    has: page.getByRole('heading', { name: statusLabel, exact: true }),
+  })
+}
+
+async function dragStatusCardToColumn(page: Page, taskTitle: string, targetStatusLabel: string) {
+  const card = page.getByRole('button', { name: `查看任务 ${taskTitle}` }).first()
+  const targetColumn = getStatusColumn(page, targetStatusLabel)
+  const cardBox = await card.boundingBox()
+  const targetBox = await targetColumn.boundingBox()
+
+  if (!cardBox || !targetBox) {
+    throw new Error(`无法定位看板拖拽坐标：${taskTitle} -> ${targetStatusLabel}`)
+  }
+
+  await page.mouse.move(cardBox.x + cardBox.width / 2, cardBox.y + cardBox.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(cardBox.x + cardBox.width / 2 + 12, cardBox.y + cardBox.height / 2 + 12, { steps: 4 })
+  await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, { steps: 12 })
+  await page.mouse.up()
+}
+
 async function readPersistedCategoryOrder(page: Page) {
   return page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -210,8 +233,8 @@ test('phase 2 首次进入直接展示工作台并支持游客模式', async ({ 
   await guestTask.getByRole('button', { name: '切换任务状态，当前未开始' }).click()
   await expect(guestTask.getByRole('button', { name: '切换任务状态，当前进行中' })).toBeVisible()
 
-  await page.getByRole('button', { name: '看板' }).click()
-  await expect(page.getByLabel('状态看板')).toBeVisible()
+  await page.getByRole('button', { name: '看板', exact: true }).click()
+  await expect(page.getByRole('region', { name: '状态看板', exact: true })).toBeVisible()
   await expect(page.getByText('补完上周遗留的发布检查')).toBeVisible()
   await expect(page.getByText('游客模式新任务')).toBeVisible()
 
@@ -486,6 +509,39 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   await expect(page.getByRole('button', { name: '明天' })).toHaveClass(/active/)
   await expect(restoredTask.getByRole('button', { name: /切换任务状态，当前/ })).toBeVisible()
   await expect(restoredTask.getByText('明天')).toBeVisible()
+})
+
+test('phase 3 看板支持拖动任务切换状态', async ({ page, baseURL }) => {
+  const passphrase = `phase3-board-${Date.now()}-pw`
+  const taskTitle = '拖拽状态看板任务'
+
+  await page.goto(baseURL!)
+  await page.setViewportSize({ width: 1440, height: 960 })
+  await createWorkspaceFromDialog(page, passphrase)
+
+  await page.getByLabel('快速新建任务').fill(taskTitle)
+  await page.getByLabel('快速新建任务').press('Enter')
+  await expect(page.getByLabel('任务标题')).toHaveValue(taskTitle)
+
+  await page.getByRole('button', { name: '看板', exact: true }).click()
+  await expect(page.getByRole('region', { name: '状态看板', exact: true })).toBeVisible()
+  await expect(getStatusColumn(page, '未开始').getByRole('button', { name: `查看任务 ${taskTitle}` })).toBeVisible()
+
+  await dragStatusCardToColumn(page, taskTitle, '进行中')
+  await expect(getStatusColumn(page, '进行中').getByRole('button', { name: `查看任务 ${taskTitle}` })).toBeVisible()
+  await expect(getStatusColumn(page, '未开始').getByRole('button', { name: `查看任务 ${taskTitle}` })).toHaveCount(0)
+
+  await page.getByRole('button', { name: `查看任务 ${taskTitle}` }).click()
+  await expect(page.getByLabel('任务详情')).toBeVisible()
+  await expect(page.getByLabel('任务详情').getByRole('button', { name: '进行中', exact: true })).toHaveClass(/active/)
+
+  await dragStatusCardToColumn(page, taskTitle, '阻塞')
+  await expect(getStatusColumn(page, '阻塞').getByRole('button', { name: `查看任务 ${taskTitle}` })).toBeVisible()
+  await expect(page.getByLabel('任务详情').getByRole('button', { name: '阻塞', exact: true })).toHaveClass(/active/)
+
+  await dragStatusCardToColumn(page, taskTitle, '阻塞')
+  await expect(getStatusColumn(page, '阻塞').getByRole('button', { name: `查看任务 ${taskTitle}` })).toBeVisible()
+  await expect(page.getByLabel('任务详情').getByRole('button', { name: '阻塞', exact: true })).toHaveClass(/active/)
 })
 
 test('phase 3 分类支持桌面拖拽排序并在刷新后保持顺序', async ({ page, baseURL }) => {
@@ -1204,7 +1260,7 @@ test('phase 4 移动端壳层：抽屉、底部详情与纵向看板', async ({ 
   await expect(mobileDetailSheet).toHaveCount(0)
 
   await drawerToggle.click()
-  await page.getByRole('button', { name: '看板' }).click()
+  await page.getByRole('button', { name: '看板', exact: true }).click()
   await expect(page.locator('.mobile-sidebar-shell')).toHaveCount(0)
   await expect(page.locator('.mobile-detail-sheet')).toHaveCount(0)
   await expect(page.locator('.status-column')).toHaveCount(3)
@@ -1213,6 +1269,16 @@ test('phase 4 移动端壳层：抽屉、底部详情与纵向看板', async ({ 
   const secondColumnBox = await page.locator('.status-column').nth(1).boundingBox()
   expect(secondColumnBox).not.toBeNull()
   expect((secondColumnBox?.y ?? 0) - (firstColumnBox?.y ?? 0)).toBeGreaterThan(40)
+
+  await page.getByRole('button', { name: `查看任务 ${taskTitle}` }).click()
+  await expect(mobileDetailSheet).toBeVisible()
+  await expect(mobileDetailSheet.getByLabel('任务标题')).toHaveValue(taskTitle)
+  await page.locator('.mobile-detail-close').click()
+  await expect(mobileDetailSheet).toHaveCount(0)
+
+  await dragStatusCardToColumn(page, taskTitle, '进行中')
+  await expect(getStatusColumn(page, '进行中').getByRole('button', { name: `查看任务 ${taskTitle}` })).toBeVisible()
+  await expect(getStatusColumn(page, '未开始').getByRole('button', { name: `查看任务 ${taskTitle}` })).toHaveCount(0)
 
   await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1)
 })

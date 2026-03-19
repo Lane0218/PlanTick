@@ -803,15 +803,7 @@ function App() {
       return
     }
 
-    const nextDraft = {
-      title: selectedTodo.title,
-      categoryId: selectedTodo.categoryId ?? '',
-      dueDate: selectedTodo.dueDate ?? '',
-      myDayDate: selectedTodo.myDayDate ?? '',
-      status: selectedTodo.status,
-      note: selectedTodo.note,
-      recurrenceType: selectedTodo.recurrenceType,
-    }
+    const nextDraft = toTodoDraft(selectedTodo)
 
     setDetailDraft(nextDraft)
     setConfirmDeleteTodo(false)
@@ -1420,30 +1412,32 @@ function App() {
     }
   }
 
-  async function handleToggleTodo(todo: TodoRecord) {
-    if (!workspaceId) {
-      return
-    }
-
+  function getMutableTodoBase(todo: TodoRecord) {
     const hasUnsavedSelectedDraft =
       selectedTodoId === todo.id &&
       detailDraft &&
       serializeTodoDraft(detailDraft) !== lastSavedDraftRef.current
 
-    const baseTodo: TodoRecord =
-      hasUnsavedSelectedDraft && detailDraft
-        ? {
-            ...todo,
-            title: detailDraft.title.trim() || todo.title,
-            categoryId: detailDraft.categoryId || null,
-            dueDate: detailDraft.dueDate || null,
-            myDayDate: detailDraft.myDayDate || null,
-            note: detailDraft.note,
-            recurrenceType: detailDraft.recurrenceType,
-          }
-        : todo
+    if (!hasUnsavedSelectedDraft || !detailDraft) {
+      return todo
+    }
 
-    const nextStatus = toggleTodoStatus(baseTodo.status)
+    return {
+      ...todo,
+      title: detailDraft.title.trim() || todo.title,
+      categoryId: detailDraft.categoryId || null,
+      dueDate: detailDraft.dueDate || null,
+      myDayDate: detailDraft.myDayDate || null,
+      note: detailDraft.note,
+      recurrenceType: detailDraft.recurrenceType,
+    }
+  }
+
+  async function handleSetTodoStatus(todo: TodoRecord, nextStatus: TodoStatus, baseTodo = getMutableTodoBase(todo)) {
+    if (!workspaceId || baseTodo.status === nextStatus) {
+      return
+    }
+
     const updatedAt = new Date().toISOString()
     const updated: TodoRecord = {
       ...baseTodo,
@@ -1463,15 +1457,7 @@ function App() {
     setBusy(true)
     try {
       if (isGuestMode) {
-        const nextDraft = {
-          title: updated.title,
-          categoryId: updated.categoryId ?? '',
-          dueDate: updated.dueDate ?? '',
-          myDayDate: updated.myDayDate ?? '',
-          status: updated.status,
-          note: updated.note,
-          recurrenceType: updated.recurrenceType,
-        }
+        const nextDraft = toTodoDraft(updated)
         lastSavedDraftRef.current = serializeTodoDraft(nextDraft)
         if (selectedTodoId === todo.id) {
           setDetailDraft(nextDraft)
@@ -1494,15 +1480,7 @@ function App() {
         await upsertTodo(recurringTodo)
         await enqueueRecordMutation('todos', 'upsert', toSyncTodo(recurringTodo))
       }
-      const nextDraft = {
-        title: updated.title,
-        categoryId: updated.categoryId ?? '',
-        dueDate: updated.dueDate ?? '',
-        myDayDate: updated.myDayDate ?? '',
-        status: updated.status,
-        note: updated.note,
-        recurrenceType: updated.recurrenceType,
-      }
+      const nextDraft = toTodoDraft(updated)
       lastSavedDraftRef.current = serializeTodoDraft(nextDraft)
       if (selectedTodoId === todo.id) {
         setDetailDraft(nextDraft)
@@ -1520,6 +1498,11 @@ function App() {
     } finally {
       setBusy(false)
     }
+  }
+
+  async function handleToggleTodo(todo: TodoRecord) {
+    const baseTodo = getMutableTodoBase(todo)
+    await handleSetTodoStatus(todo, toggleTodoStatus(baseTodo.status), baseTodo)
   }
 
   async function handleDeleteTodo() {
@@ -1647,7 +1630,7 @@ function App() {
     }
     setSelectedTodoId(todoId)
     setSelectedEventId(null)
-    if (isMobileViewport && activeView !== 'board' && activeView !== 'stats') {
+    if (isMobileViewport && activeView !== 'stats') {
       setIsMobileDetailOpen(true)
     }
   }
@@ -1670,7 +1653,7 @@ function App() {
       return
     }
 
-    if (activeView === 'board' || activeView === 'stats') {
+    if (activeView === 'stats') {
       setIsMobileDetailOpen(false)
       return
     }
@@ -1759,7 +1742,7 @@ function App() {
   }
 
   const shouldShowDesktopCalendarDetail = !isMobileViewport && activeView === 'calendar' && Boolean(selectedTodoId || selectedEventId)
-  const shouldShowDesktopTodoDetail = !isMobileViewport && activeView !== 'board' && activeView !== 'stats' && activeView !== 'calendar' && Boolean(selectedTodoId)
+  const shouldShowDesktopTodoDetail = !isMobileViewport && activeView !== 'stats' && activeView !== 'calendar' && Boolean(selectedTodoId)
 
   const shellClassName = [
     'workspace-shell',
@@ -1913,7 +1896,15 @@ function App() {
               readOnly={isReadOnly}
             />
           ) : activeView === 'board' ? (
-            <StatusBoard columns={boardColumns} categories={activeCategories} />
+            <StatusBoard
+              columns={boardColumns}
+              categories={activeCategories}
+              selectedTodoId={selectedTodoId}
+              onSelectTodo={handleSelectTodo}
+              onUpdateTodoStatus={handleSetTodoStatus}
+              busy={busy}
+              readOnly={isReadOnly}
+            />
           ) : activeView === 'stats' ? (
             <StatsBoard
               metricCards={statsMetricCards}
@@ -1940,7 +1931,7 @@ function App() {
         </section>
 
         {isMobileViewport ? (
-          activeView !== 'board' && activeView !== 'stats' && (selectedTodo || selectedEvent) && isMobileDetailOpen ? (
+          activeView !== 'stats' && (selectedTodo || selectedEvent) && isMobileDetailOpen ? (
             <div className="mobile-detail-layer">
               <button
                 type="button"
@@ -2020,7 +2011,7 @@ function App() {
               readOnly={isReadOnly}
             />
           ) : null
-        ) : activeView === 'board' || activeView === 'stats' ? null : !shouldShowDesktopTodoDetail ? null : (
+        ) : activeView === 'stats' ? null : !shouldShowDesktopTodoDetail ? null : (
           <TodoDetailPane
             selectedTodo={selectedTodo}
             categories={activeCategories}
@@ -3233,11 +3224,140 @@ function TodoBoard({
 function StatusBoard({
   columns,
   categories,
+  selectedTodoId,
+  onSelectTodo,
+  onUpdateTodoStatus,
+  busy,
+  readOnly,
 }: {
   columns: StatusBoardColumn[]
   categories: CategoryRecord[]
+  selectedTodoId: string | null
+  onSelectTodo: (todoId: string, trigger?: HTMLElement | null) => void
+  onUpdateTodoStatus: (todo: TodoRecord, nextStatus: TodoStatus) => Promise<void>
+  busy: boolean
+  readOnly: boolean
 }) {
   const categoryMap = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories])
+  const [draggingTodoId, setDraggingTodoId] = useState<string | null>(null)
+  const [dragOverStatus, setDragOverStatus] = useState<BoardStatusColumn | null>(null)
+  const columnRefs = useRef<Record<BoardStatusColumn, HTMLElement | null>>({
+    not_started: null,
+    in_progress: null,
+    blocked: null,
+  })
+  const draggingTodoIdRef = useRef<string | null>(null)
+  const dragSourceStatusRef = useRef<BoardStatusColumn | null>(null)
+  const dragOverStatusRef = useRef<BoardStatusColumn | null>(null)
+  const dragMovedRef = useRef(false)
+  const releaseTodoDragRef = useRef<(() => void) | null>(null)
+  const suppressClickTodoIdRef = useRef<string | null>(null)
+
+  useEffect(() => () => {
+    releaseTodoDragRef.current?.()
+  }, [])
+
+  const finishTodoDrag = (todo: TodoRecord, commit: boolean) => {
+    const sourceStatus = dragSourceStatusRef.current
+    const targetStatus = dragOverStatusRef.current
+    const didMove = dragMovedRef.current
+
+    releaseTodoDragRef.current?.()
+    releaseTodoDragRef.current = null
+    draggingTodoIdRef.current = null
+    dragSourceStatusRef.current = null
+    dragOverStatusRef.current = null
+    dragMovedRef.current = false
+    setDraggingTodoId(null)
+    setDragOverStatus(null)
+
+    if (!didMove) {
+      return
+    }
+
+    suppressClickTodoIdRef.current = todo.id
+    window.setTimeout(() => {
+      if (suppressClickTodoIdRef.current === todo.id) {
+        suppressClickTodoIdRef.current = null
+      }
+    }, 0)
+
+    if (!commit || !sourceStatus || !targetStatus || sourceStatus === targetStatus) {
+      return
+    }
+
+    void onUpdateTodoStatus(todo, targetStatus)
+  }
+
+  const handleTodoDragPointerDown = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+    todo: TodoRecord,
+    sourceStatus: BoardStatusColumn,
+  ) => {
+    if (busy || readOnly || event.button !== 0 || draggingTodoIdRef.current) {
+      return
+    }
+
+    event.preventDefault()
+
+    const startX = event.clientX
+    const startY = event.clientY
+    draggingTodoIdRef.current = todo.id
+    dragSourceStatusRef.current = sourceStatus
+    dragOverStatusRef.current = sourceStatus
+    dragMovedRef.current = false
+    setDraggingTodoId(todo.id)
+    setDragOverStatus(sourceStatus)
+
+    const resolveTargetStatus = (clientX: number, clientY: number) => {
+      for (const status of boardStatuses) {
+        const rect = columnRefs.current[status]?.getBoundingClientRect()
+        if (!rect) {
+          continue
+        }
+
+        if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
+          return status
+        }
+      }
+
+      return dragOverStatusRef.current
+    }
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const nextDistance = Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY)
+      if (!dragMovedRef.current && nextDistance < 6) {
+        return
+      }
+
+      dragMovedRef.current = true
+      const nextStatus = resolveTargetStatus(moveEvent.clientX, moveEvent.clientY)
+      if (nextStatus && dragOverStatusRef.current !== nextStatus) {
+        dragOverStatusRef.current = nextStatus
+        setDragOverStatus(nextStatus)
+      }
+    }
+
+    const handlePointerUp = () => {
+      finishTodoDrag(todo, true)
+    }
+
+    const handlePointerCancel = () => {
+      finishTodoDrag(todo, false)
+    }
+
+    document.body.style.userSelect = 'none'
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp, { once: true })
+    window.addEventListener('pointercancel', handlePointerCancel, { once: true })
+
+    releaseTodoDragRef.current = () => {
+      document.body.style.userSelect = ''
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+      window.removeEventListener('pointercancel', handlePointerCancel)
+    }
+  }
 
   return (
     <section className="status-board" aria-label="状态看板">
@@ -3246,6 +3366,10 @@ function StatusBoard({
           <section
             key={column.status}
             className={`status-column status-column-${column.status}`}
+            data-drag-over={dragOverStatus === column.status ? 'true' : undefined}
+            ref={(node) => {
+              columnRefs.current[column.status] = node
+            }}
             style={
               {
                 '--status-tone': column.meta.tone,
@@ -3278,23 +3402,44 @@ function StatusBoard({
                     .join(' ')
 
                   return (
-                    <article key={todo.id} className="status-todo-card" role="listitem">
-                      <div className="status-card-content">
-                        <div className="status-card-row">
-                          <strong>{todo.title}</strong>
-                          <div className="status-card-meta-line">
-                            <span className={category ? 'status-card-category' : 'status-card-category is-neutral'}>
-                              <span
-                                className={category ? 'color-dot' : 'color-dot neutral'}
-                                style={category ? { backgroundColor: category.color } : undefined}
-                              />
-                              <span>{category?.name ?? '未分类'}</span>
-                            </span>
-                            <span className={dueClassName}>{dueText}</span>
+                    <div key={todo.id} className="status-todo-card-shell" role="listitem">
+                      <button
+                        type="button"
+                        className={[
+                          'status-todo-card',
+                          selectedTodoId === todo.id ? 'active' : '',
+                        ]
+                          .filter(Boolean)
+                          .join(' ')}
+                        data-dragging={draggingTodoId === todo.id ? 'true' : undefined}
+                        aria-label={`查看任务 ${todo.title}`}
+                        onPointerDown={(event) => handleTodoDragPointerDown(event, todo, column.status)}
+                        onClick={(event) => {
+                          if (suppressClickTodoIdRef.current === todo.id) {
+                            suppressClickTodoIdRef.current = null
+                            return
+                          }
+
+                          onSelectTodo(todo.id, event.currentTarget)
+                        }}
+                      >
+                        <div className="status-card-content">
+                          <div className="status-card-row">
+                            <strong>{todo.title}</strong>
+                            <div className="status-card-meta-line">
+                              <span className={category ? 'status-card-category' : 'status-card-category is-neutral'}>
+                                <span
+                                  className={category ? 'color-dot' : 'color-dot neutral'}
+                                  style={category ? { backgroundColor: category.color } : undefined}
+                                />
+                                <span>{category?.name ?? '未分类'}</span>
+                              </span>
+                              <span className={dueClassName}>{dueText}</span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </article>
+                      </button>
+                    </div>
                   )
                 })}
               </div>
@@ -5859,6 +6004,18 @@ function serializeTodoDraft(draft: TodoDraft) {
     draft.note,
     draft.recurrenceType,
   ])
+}
+
+function toTodoDraft(todo: TodoRecord): TodoDraft {
+  return {
+    title: todo.title,
+    categoryId: todo.categoryId ?? '',
+    dueDate: todo.dueDate ?? '',
+    myDayDate: todo.myDayDate ?? '',
+    status: todo.status,
+    note: todo.note,
+    recurrenceType: todo.recurrenceType,
+  }
 }
 
 function serializeEventDraft(draft: EventDraft) {
