@@ -302,6 +302,10 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   await expect(myDayButton).toContainText('1')
   await myDayButton.click()
   await expect(page.getByRole('button', { name: '查看任务 123' })).toBeVisible()
+  const myDayTask = page.locator('article', {
+    has: page.getByRole('button', { name: '查看任务 123' }),
+  })
+  await expect(myDayTask.locator('.todo-category.is-neutral')).toHaveText('未分类')
   await page.getByRole('button', { name: '查看任务 123' }).click()
   await page.locator('.detail-pane.is-open').getByRole('button', { name: '我的一天', exact: true }).click()
   await expect(myDayButton).toContainText('0')

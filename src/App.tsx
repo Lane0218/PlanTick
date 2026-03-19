@@ -521,7 +521,8 @@ function App() {
     [activeTodos],
   )
   const calendarEntriesByDate = useMemo(() => groupCalendarEntriesByDate(activeTodos, activeEvents), [activeEvents, activeTodos])
-  const shouldShowTodoCategoryMeta = activeFilter === 'all' && !selectedCategoryId && !selectedUncategorized
+  const shouldShowTodoCategoryMeta =
+    (activeFilter === 'all' || activeFilter === 'today') && !selectedCategoryId && !selectedUncategorized
   const sidebarCounts = useMemo(
     () => ({
       all: activeTodos.length,
