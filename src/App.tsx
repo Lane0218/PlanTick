@@ -485,8 +485,8 @@ function App() {
     activeCategories.find((category) => category.id === selectedCategoryId) ?? null
 
   const visibleTodos = useMemo(
-    () =>
-      activeTodos.filter((todo) => {
+    () => {
+      const filteredTodos = activeTodos.filter((todo) => {
         if (selectedUncategorized) {
           return todo.categoryId === null
         }
@@ -499,13 +499,20 @@ function App() {
           case 'today':
             return isTodoInMyDay(todo)
           case 'overdue':
-            return todo.status !== 'completed' && Boolean(todo.dueDate) && todo.dueDate! < todayDate()
+            return isTodoOverdue(todo)
           case 'completed':
             return todo.status === 'completed'
           default:
             return true
         }
-      }),
+      })
+
+      if (activeFilter !== 'today') {
+        return filteredTodos
+      }
+
+      return filteredTodos.slice().sort((left, right) => compareMyDayTodos(left, right))
+    },
     [activeFilter, activeTodos, selectedCategoryId, selectedUncategorized],
   )
 
@@ -527,9 +534,7 @@ function App() {
     () => ({
       all: activeTodos.length,
       today: activeTodos.filter((todo) => isIncompleteTodoInMyDay(todo)).length,
-      overdue: activeTodos.filter(
-        (todo) => todo.status !== 'completed' && Boolean(todo.dueDate) && todo.dueDate! < todayDate(),
-      ).length,
+      overdue: activeTodos.filter((todo) => isTodoOverdue(todo)).length,
       completed: activeTodos.filter((todo) => todo.status === 'completed').length,
     }),
     [activeTodos],
@@ -3848,6 +3853,7 @@ function TodoDetailPane({
     ? getMyDayMembership({
         dueDate: detailDraft.dueDate || null,
         myDayDate: detailDraft.myDayDate || null,
+        status: detailDraft.status,
       })
     : 'none'
   const recurrenceOptions = detailDraft
@@ -3878,7 +3884,11 @@ function TodoDetailPane({
   if (readOnly) {
     const readonlyDueDate = selectedTodo?.dueDate ? formatCalendarFullDate(selectedTodo.dueDate) : '未设置截止日期'
     const readonlyMyDay = selectedTodo
-      ? getMyDayMembership({ dueDate: selectedTodo.dueDate, myDayDate: selectedTodo.myDayDate })
+      ? getMyDayMembership({
+          dueDate: selectedTodo.dueDate,
+          myDayDate: selectedTodo.myDayDate,
+          status: selectedTodo.status,
+        })
       : 'none'
 
     return (
@@ -4040,7 +4050,7 @@ function TodoDetailPane({
                     myDayDate: myDayMembership === 'manual' ? '' : todayDate(),
                   })
                 }
-                disabled={busy || (detailDraft.status === 'completed' && myDayMembership === 'none')}
+                disabled={busy || (isTodoTerminalStatus(detailDraft.status) && myDayMembership === 'none')}
                 type="button"
               >
                 <Sun size={15} strokeWidth={2.1} />
@@ -5291,14 +5301,18 @@ function buildCalendarCells(
 }
 
 function getMyDayMembership(
-  todo: Pick<TodoRecord, 'dueDate' | 'myDayDate'>,
+  todo: Pick<TodoRecord, 'dueDate' | 'myDayDate' | 'status'>,
   targetDate = todayDate(),
 ) {
-  if (todo.dueDate === targetDate) {
+  if (isTodoTerminalStatus(todo.status)) {
+    return 'none' as const
+  }
+
+  if (todo.dueDate && todo.dueDate <= targetDate) {
     return 'auto' as const
   }
 
-  if (todo.myDayDate === targetDate) {
+  if (todo.myDayDate && todo.myDayDate <= targetDate) {
     return 'manual' as const
   }
 
@@ -5306,7 +5320,7 @@ function getMyDayMembership(
 }
 
 function isTodoInMyDay(
-  todo: Pick<TodoRecord, 'dueDate' | 'myDayDate'>,
+  todo: Pick<TodoRecord, 'dueDate' | 'myDayDate' | 'status'>,
   targetDate = todayDate(),
 ) {
   return getMyDayMembership(todo, targetDate) !== 'none'
@@ -5316,15 +5330,55 @@ function isIncompleteTodoInMyDay(
   todo: Pick<TodoRecord, 'dueDate' | 'myDayDate' | 'status'>,
   targetDate = todayDate(),
 ) {
-  return todo.status !== 'completed' && isTodoInMyDay(todo, targetDate)
+  return isTodoInMyDay(todo, targetDate)
 }
 
-function compareTodos(left: TodoRecord, right: TodoRecord) {
-  if (left.status === 'completed' && right.status !== 'completed') {
+function isTodoTerminalStatus(status: TodoStatus) {
+  return status === 'completed' || status === 'canceled'
+}
+
+function isTodoOverdue(
+  todo: Pick<TodoRecord, 'dueDate' | 'status'>,
+  targetDate = todayDate(),
+) {
+  return !isTodoTerminalStatus(todo.status) && Boolean(todo.dueDate) && todo.dueDate! < targetDate
+}
+
+function getMyDaySortPriority(
+  todo: Pick<TodoRecord, 'dueDate' | 'myDayDate' | 'status'>,
+  targetDate = todayDate(),
+) {
+  if (isTodoOverdue(todo, targetDate)) {
+    return 0
+  }
+
+  if (!isTodoTerminalStatus(todo.status) && todo.dueDate === targetDate) {
     return 1
   }
 
-  if (left.status !== 'completed' && right.status === 'completed') {
+  return 2
+}
+
+function compareMyDayTodos(left: TodoRecord, right: TodoRecord) {
+  const leftPriority = getMyDaySortPriority(left)
+  const rightPriority = getMyDaySortPriority(right)
+
+  if (leftPriority !== rightPriority) {
+    return leftPriority - rightPriority
+  }
+
+  return compareTodos(left, right)
+}
+
+function compareTodos(left: TodoRecord, right: TodoRecord) {
+  const leftIsTerminal = isTodoTerminalStatus(left.status)
+  const rightIsTerminal = isTodoTerminalStatus(right.status)
+
+  if (leftIsTerminal && !rightIsTerminal) {
+    return 1
+  }
+
+  if (!leftIsTerminal && rightIsTerminal) {
     return -1
   }
 
@@ -5424,6 +5478,8 @@ function createEventRecord(workspaceId: string, title: string, date: string): Ev
 }
 
 function formatDueDate(value: string | null, status: TodoStatus) {
+  const shouldEmphasize = !isTodoTerminalStatus(status)
+
   if (!value) {
     return {
       label: '',
@@ -5436,21 +5492,21 @@ function formatDueDate(value: string | null, status: TodoStatus) {
   if (diff === -2) {
     return {
       label: '前天',
-      emphasis: status !== 'completed',
+      emphasis: shouldEmphasize,
     }
   }
 
   if (diff === -1) {
     return {
       label: '昨天',
-      emphasis: status !== 'completed',
+      emphasis: shouldEmphasize,
     }
   }
 
   if (diff === 0) {
     return {
       label: '今天',
-      emphasis: status !== 'completed',
+      emphasis: shouldEmphasize,
     }
   }
 
@@ -5468,7 +5524,7 @@ function formatDueDate(value: string | null, status: TodoStatus) {
     }
   }
 
-  if (diff < 0 && status !== 'completed') {
+  if (diff < 0 && shouldEmphasize) {
     return {
       label: formatMonthDay(value),
       emphasis: true,
@@ -5645,7 +5701,7 @@ function buildStatsSummary(todos: TodoRecord[], events: EventRecord[]) {
   for (const todo of todos) {
     statusCounts[todo.status] += 1
 
-    if (todo.status !== 'completed' && todo.dueDate && todo.dueDate < today) {
+    if (isTodoOverdue(todo, today)) {
       overdueTodos += 1
     }
 
@@ -5658,7 +5714,7 @@ function buildStatsSummary(todos: TodoRecord[], events: EventRecord[]) {
     }
   }
 
-  const openTodos = todos.length - statusCounts.completed
+  const openTodos = todos.filter((todo) => !isTodoTerminalStatus(todo.status)).length
   const dueBuckets = {
     overdue: 0,
     today: 0,
@@ -5673,7 +5729,7 @@ function buildStatsSummary(todos: TodoRecord[], events: EventRecord[]) {
       continue
     }
 
-    if (todo.status !== 'completed' && todo.dueDate < today) {
+    if (isTodoOverdue(todo, today)) {
       dueBuckets.overdue += 1
       continue
     }

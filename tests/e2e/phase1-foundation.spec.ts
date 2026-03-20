@@ -10,6 +10,10 @@ function addDays(date: Date, days: number) {
   return next
 }
 
+function formatDateInputValue(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
 function weekdayLabel(date: Date) {
   return ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][date.getDay()]
 }
@@ -186,6 +190,52 @@ async function seedWorkspaceSyncError(page: Page, lastError: string) {
   }, lastError)
 }
 
+async function updatePersistedTodo(
+  page: Page,
+  title: string,
+  updates: Partial<{
+    dueDate: string | null
+    myDayDate: string | null
+    status: 'not_started' | 'in_progress' | 'completed' | 'blocked' | 'canceled'
+    completed: boolean
+  }>,
+) {
+  await page.evaluate(async ({ title: targetTitle, updates: nextUpdates }) => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('plantick-app')
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => resolve(request.result)
+    })
+
+    const transaction = database.transaction(['todos'], 'readwrite')
+    const store = transaction.objectStore('todos')
+    const records = await new Promise<Array<Record<string, unknown>>>((resolve, reject) => {
+      const request = store.getAll()
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => resolve(request.result as Array<Record<string, unknown>>)
+    })
+    const record = records.find((item) => item.title === targetTitle && !item.deleted)
+
+    if (!record) {
+      throw new Error(`未找到待更新任务：${targetTitle}`)
+    }
+
+    store.put({
+      ...record,
+      ...nextUpdates,
+      updatedAt: new Date().toISOString(),
+    })
+
+    await new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => resolve()
+      transaction.onerror = () => reject(transaction.error)
+      transaction.onabort = () => reject(transaction.error)
+    })
+
+    database.close()
+  }, { title, updates })
+}
+
 test('phase 2 首次进入直接展示工作台并支持游客模式', async ({ page, baseURL }) => {
   await page.goto(baseURL!)
   await page.setViewportSize({ width: 1440, height: 960 })
@@ -224,7 +274,7 @@ test('phase 2 首次进入直接展示工作台并支持游客模式', async ({ 
   await page.getByRole('button', { name: '新建分类' }).click()
   await page.getByPlaceholder('分类名称').fill('游客分类')
   await page.getByRole('button', { name: '添加分类' }).click()
-  await expect(page.getByRole('button', { name: '游客分类', exact: true })).toBeVisible()
+  await expect(page.locator('.sidebar-category-section').getByRole('button', { name: '游客分类', exact: true })).toBeVisible()
 
   await page.getByLabel('快速新建任务').fill('游客模式新任务')
   await page.getByLabel('快速新建任务').press('Enter')
@@ -247,7 +297,7 @@ test('phase 2 首次进入直接展示工作台并支持游客模式', async ({ 
   await expect(page.locator('.calendar-grid').getByText('整理今天的优先事项')).toBeVisible()
   await expect(page.locator('.calendar-grid').getByText('产品评审会')).toBeVisible()
   await page.getByLabel('快速新建事件').fill('游客事件')
-  await page.getByRole('button', { name: '新建事件' }).click()
+  await page.getByRole('button', { name: '添加事件' }).click()
   await expect(page.locator('.calendar-grid').getByText('游客事件')).toBeVisible()
 
   await page.reload()
@@ -335,18 +385,12 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   await expect(myDayTask.locator('.todo-category.is-neutral')).toHaveText('未分类')
   await myDayTask.getByRole('button', { name: '切换任务状态，当前未开始' }).click()
   await myDayTask.getByRole('button', { name: '切换任务状态，当前进行中' }).click()
-  await expect(myDayTask.getByRole('button', { name: '切换任务状态，当前已完成' })).toBeVisible()
   await expect(page.getByRole('heading', { name: '我的一天' })).toBeVisible()
   await expect(myDayButton).toContainText('0')
   await page.getByRole('button', { name: '数据统计' }).click()
   await expect(
-    page.locator('.stats-metric-card', { has: page.getByText('今日聚焦', { exact: true }) }).getByText('1', { exact: true }),
+    page.locator('.stats-metric-card', { has: page.getByText('今日聚焦', { exact: true }) }).getByText('0', { exact: true }),
   ).toBeVisible()
-  await myDayButton.click()
-  await page.getByRole('button', { name: '查看任务 123' }).click()
-  await page.locator('.detail-pane.is-open').getByRole('button', { name: '我的一天', exact: true }).click()
-  await expect(myDayButton).toContainText('0')
-  await expect(page.getByRole('button', { name: '查看任务 123' })).toHaveCount(0)
   await page.locator('.sidebar-nav').getByRole('button', { name: /^待办箱/ }).click()
   const noNoteTask = page.locator('article', {
     has: page.getByRole('button', { name: '查看任务 123' }),
@@ -523,6 +567,79 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   await expect(page.getByRole('button', { name: '明天' })).toHaveClass(/active/)
   await expect(restoredTask.getByRole('button', { name: /切换任务状态，当前/ })).toBeVisible()
   await expect(restoredTask.getByText('明天')).toBeVisible()
+})
+
+test('phase 3 我的一天会自动吸收延期任务并按优先级排序', async ({ page, baseURL }) => {
+  const passphrase = `phase3-myday-overdue-${Date.now()}-pw`
+  const overdueTitle = '昨天截止的任务'
+  const todayTitle = '今天截止的任务'
+  const manualTitle = '手动加入我的一天'
+  const canceledTitle = '已取消的昨天任务'
+  const yesterday = formatDateInputValue(addDays(new Date(), -1))
+
+  await page.goto(baseURL!)
+  await page.setViewportSize({ width: 1440, height: 960 })
+  await createWorkspaceFromDialog(page, passphrase)
+  await page.context().setOffline(true)
+
+  await page.getByLabel('快速新建任务').fill(overdueTitle)
+  await page.getByLabel('快速新建任务').press('Enter')
+  await page.locator('.detail-info-card, .detail-section').filter({ hasText: '截止日期' }).first().getByRole('button', {
+    name: '今天',
+    exact: true,
+  }).click()
+  await page.waitForTimeout(300)
+  await updatePersistedTodo(page, overdueTitle, {
+    dueDate: yesterday,
+    status: 'blocked',
+    completed: false,
+    myDayDate: null,
+  })
+
+  await page.getByLabel('快速新建任务').fill(todayTitle)
+  await page.getByLabel('快速新建任务').press('Enter')
+  await page.locator('.detail-info-card, .detail-section').filter({ hasText: '截止日期' }).first().getByRole('button', {
+    name: '今天',
+    exact: true,
+  }).click()
+  await page.waitForTimeout(300)
+
+  await page.getByLabel('快速新建任务').fill(manualTitle)
+  await page.getByLabel('快速新建任务').press('Enter')
+  await page.locator('.detail-pane.is-open').getByRole('button', { name: '我的一天', exact: true }).click()
+  await page.waitForTimeout(300)
+  await updatePersistedTodo(page, manualTitle, {
+    myDayDate: yesterday,
+  })
+
+  await page.getByLabel('快速新建任务').fill(canceledTitle)
+  await page.getByLabel('快速新建任务').press('Enter')
+  await page.locator('.detail-info-card, .detail-section').filter({ hasText: '截止日期' }).first().getByRole('button', {
+    name: '今天',
+    exact: true,
+  }).click()
+  await page.waitForTimeout(300)
+  await updatePersistedTodo(page, canceledTitle, {
+    dueDate: yesterday,
+    status: 'canceled',
+    completed: false,
+    myDayDate: null,
+  })
+
+  await page.reload()
+
+  const myDayButton = page.locator('.sidebar-nav').getByRole('button', { name: /^我的一天/ })
+  await expect(myDayButton).toContainText('3')
+  await myDayButton.click()
+  await expect(page.getByRole('heading', { name: '我的一天' })).toBeVisible()
+  await expect(page.locator('.todo-list .todo-main strong')).toHaveText([overdueTitle, todayTitle, manualTitle])
+  await expect(page.getByRole('button', { name: `查看任务 ${canceledTitle}` })).toHaveCount(0)
+
+  const overdueTask = page.locator('article', {
+    has: page.getByRole('button', { name: `查看任务 ${overdueTitle}` }),
+  })
+  await expect(overdueTask.locator('.todo-due')).toHaveText('昨天')
+  await expect(overdueTask.locator('.todo-due')).toHaveClass(/is-alert/)
 })
 
 test('phase 3 看板支持拖动任务切换状态', async ({ page, baseURL }) => {
