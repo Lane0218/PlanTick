@@ -1902,6 +1902,7 @@ function App() {
               selectedTodoId={selectedTodoId}
               onSelectTodo={handleSelectTodo}
               onUpdateTodoStatus={handleSetTodoStatus}
+              enableDrag={!isMobileViewport}
               busy={busy}
               readOnly={isReadOnly}
             />
@@ -3227,6 +3228,7 @@ function StatusBoard({
   selectedTodoId,
   onSelectTodo,
   onUpdateTodoStatus,
+  enableDrag,
   busy,
   readOnly,
 }: {
@@ -3235,6 +3237,7 @@ function StatusBoard({
   selectedTodoId: string | null
   onSelectTodo: (todoId: string, trigger?: HTMLElement | null) => void
   onUpdateTodoStatus: (todo: TodoRecord, nextStatus: TodoStatus) => Promise<void>
+  enableDrag: boolean
   busy: boolean
   readOnly: boolean
 }) {
@@ -3256,6 +3259,21 @@ function StatusBoard({
   useEffect(() => () => {
     releaseTodoDragRef.current?.()
   }, [])
+
+  useEffect(() => {
+    if (enableDrag) {
+      return
+    }
+
+    releaseTodoDragRef.current?.()
+    releaseTodoDragRef.current = null
+    draggingTodoIdRef.current = null
+    dragSourceStatusRef.current = null
+    dragOverStatusRef.current = null
+    dragMovedRef.current = false
+    setDraggingTodoId(null)
+    setDragOverStatus(null)
+  }, [enableDrag])
 
   const finishTodoDrag = (todo: TodoRecord, commit: boolean) => {
     const sourceStatus = dragSourceStatusRef.current
@@ -3294,7 +3312,7 @@ function StatusBoard({
     todo: TodoRecord,
     sourceStatus: BoardStatusColumn,
   ) => {
-    if (busy || readOnly || event.button !== 0 || draggingTodoIdRef.current) {
+    if (!enableDrag || busy || readOnly || event.button !== 0 || draggingTodoIdRef.current) {
       return
     }
 
@@ -3366,7 +3384,7 @@ function StatusBoard({
           <section
             key={column.status}
             className={`status-column status-column-${column.status}`}
-            data-drag-over={dragOverStatus === column.status ? 'true' : undefined}
+            data-drag-over={enableDrag && dragOverStatus === column.status ? 'true' : undefined}
             ref={(node) => {
               columnRefs.current[column.status] = node
             }}
@@ -3407,13 +3425,16 @@ function StatusBoard({
                         type="button"
                         className={[
                           'status-todo-card',
+                          enableDrag ? 'is-draggable' : '',
                           selectedTodoId === todo.id ? 'active' : '',
                         ]
                           .filter(Boolean)
                           .join(' ')}
-                        data-dragging={draggingTodoId === todo.id ? 'true' : undefined}
+                        data-dragging={enableDrag && draggingTodoId === todo.id ? 'true' : undefined}
                         aria-label={`查看任务 ${todo.title}`}
-                        onPointerDown={(event) => handleTodoDragPointerDown(event, todo, column.status)}
+                        onPointerDown={
+                          enableDrag ? (event) => handleTodoDragPointerDown(event, todo, column.status) : undefined
+                        }
                         onClick={(event) => {
                           if (suppressClickTodoIdRef.current === todo.id) {
                             suppressClickTodoIdRef.current = null

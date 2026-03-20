@@ -1287,6 +1287,17 @@ test('phase 4 移动端壳层：抽屉、底部详情与纵向看板', async ({ 
   await expect(mobileDetailSheet).toHaveCount(0)
 
   await dragStatusCardToColumn(page, taskTitle, '进行中')
+  await expect(getStatusColumn(page, '未开始').getByRole('button', { name: `查看任务 ${taskTitle}` })).toBeVisible()
+  await expect(getStatusColumn(page, '进行中').getByRole('button', { name: `查看任务 ${taskTitle}` })).toHaveCount(0)
+
+  await page.getByRole('button', { name: `查看任务 ${taskTitle}` }).click()
+  await expect(mobileDetailSheet).toBeVisible()
+  await mobileDetailSheet.getByRole('button', { name: '进行中', exact: true }).click()
+  await expect(mobileDetailSheet.getByRole('button', { name: '进行中', exact: true })).toHaveClass(/active/)
+  await expect(getStatusColumn(page, '进行中').getByRole('button', { name: `查看任务 ${taskTitle}` })).toBeVisible()
+  await expect(getStatusColumn(page, '未开始').getByRole('button', { name: `查看任务 ${taskTitle}` })).toHaveCount(0)
+  await page.locator('.mobile-detail-close').click()
+  await expect(mobileDetailSheet).toHaveCount(0)
   await expect(getStatusColumn(page, '进行中').getByRole('button', { name: `查看任务 ${taskTitle}` })).toBeVisible()
   await expect(getStatusColumn(page, '未开始').getByRole('button', { name: `查看任务 ${taskTitle}` })).toHaveCount(0)
 

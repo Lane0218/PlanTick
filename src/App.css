@@ -2084,6 +2084,9 @@
     box-shadow 0.16s ease,
     border-color 0.16s ease,
     opacity 0.16s ease;
+}
+
+.status-todo-card.is-draggable {
   touch-action: none;
 }
 
