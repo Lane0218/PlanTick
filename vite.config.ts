@@ -8,7 +8,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'mask-icon.svg'],
+      includeAssets: ['favicon.svg', 'mask-icon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'PlanTick',
         short_name: 'PlanTick',
@@ -19,19 +19,19 @@ export default defineConfig({
         start_url: '/',
         icons: [
           {
-            src: '/pwa-192.svg',
+            src: '/pwa-192x192.png',
             sizes: '192x192',
-            type: 'image/svg+xml',
+            type: 'image/png',
           },
           {
-            src: '/pwa-512.svg',
+            src: '/pwa-512x512.png',
             sizes: '512x512',
-            type: 'image/svg+xml',
+            type: 'image/png',
           },
           {
-            src: '/maskable-512.svg',
+            src: '/maskable-512x512.png',
             sizes: '512x512',
-            type: 'image/svg+xml',
+            type: 'image/png',
             purpose: 'maskable',
           },
         ],
