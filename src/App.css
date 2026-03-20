@@ -2078,7 +2078,7 @@
   box-shadow: 0 1px 1px rgba(15, 23, 42, 0.02);
   color: inherit;
   text-align: left;
-  cursor: pointer;
+  cursor: default;
   transition:
     transform 0.16s ease,
     box-shadow 0.16s ease,
@@ -2087,6 +2087,7 @@
 }
 
 .status-todo-card.is-draggable {
+  cursor: grab;
   touch-action: none;
 }
 
@@ -4205,7 +4206,7 @@
 }
 
 @media (hover: hover) {
-  .status-todo-card:hover {
+  .status-todo-card.is-draggable:hover {
     transform: translateY(-1px);
     box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
   }
@@ -4242,7 +4243,7 @@
 }
 
 @media (hover: none) {
-  .status-todo-card:hover {
+  .status-todo-card.is-draggable:hover {
     transform: none;
   }
 

@@ -1630,7 +1630,7 @@ function App() {
     }
     setSelectedTodoId(todoId)
     setSelectedEventId(null)
-    if (isMobileViewport && activeView !== 'stats') {
+    if (isMobileViewport && activeView !== 'board' && activeView !== 'stats') {
       setIsMobileDetailOpen(true)
     }
   }
@@ -1653,7 +1653,7 @@ function App() {
       return
     }
 
-    if (activeView === 'stats') {
+    if (activeView === 'board' || activeView === 'stats') {
       setIsMobileDetailOpen(false)
       return
     }
@@ -1742,7 +1742,8 @@ function App() {
   }
 
   const shouldShowDesktopCalendarDetail = !isMobileViewport && activeView === 'calendar' && Boolean(selectedTodoId || selectedEventId)
-  const shouldShowDesktopTodoDetail = !isMobileViewport && activeView !== 'stats' && activeView !== 'calendar' && Boolean(selectedTodoId)
+  const shouldShowDesktopTodoDetail =
+    !isMobileViewport && activeView !== 'board' && activeView !== 'stats' && activeView !== 'calendar' && Boolean(selectedTodoId)
 
   const shellClassName = [
     'workspace-shell',
@@ -1899,8 +1900,6 @@ function App() {
             <StatusBoard
               columns={boardColumns}
               categories={activeCategories}
-              selectedTodoId={selectedTodoId}
-              onSelectTodo={handleSelectTodo}
               onUpdateTodoStatus={handleSetTodoStatus}
               enableDrag={!isMobileViewport}
               busy={busy}
@@ -1932,7 +1931,7 @@ function App() {
         </section>
 
         {isMobileViewport ? (
-          activeView !== 'stats' && (selectedTodo || selectedEvent) && isMobileDetailOpen ? (
+          activeView !== 'board' && activeView !== 'stats' && (selectedTodo || selectedEvent) && isMobileDetailOpen ? (
             <div className="mobile-detail-layer">
               <button
                 type="button"
@@ -3225,8 +3224,6 @@ function TodoBoard({
 function StatusBoard({
   columns,
   categories,
-  selectedTodoId,
-  onSelectTodo,
   onUpdateTodoStatus,
   enableDrag,
   busy,
@@ -3234,8 +3231,6 @@ function StatusBoard({
 }: {
   columns: StatusBoardColumn[]
   categories: CategoryRecord[]
-  selectedTodoId: string | null
-  onSelectTodo: (todoId: string, trigger?: HTMLElement | null) => void
   onUpdateTodoStatus: (todo: TodoRecord, nextStatus: TodoStatus) => Promise<void>
   enableDrag: boolean
   busy: boolean
@@ -3254,26 +3249,23 @@ function StatusBoard({
   const dragOverStatusRef = useRef<BoardStatusColumn | null>(null)
   const dragMovedRef = useRef(false)
   const releaseTodoDragRef = useRef<(() => void) | null>(null)
-  const suppressClickTodoIdRef = useRef<string | null>(null)
 
   useEffect(() => () => {
     releaseTodoDragRef.current?.()
   }, [])
 
   useEffect(() => {
-    if (enableDrag) {
+    if (!draggingTodoId) {
       return
     }
 
-    releaseTodoDragRef.current?.()
-    releaseTodoDragRef.current = null
-    draggingTodoIdRef.current = null
-    dragSourceStatusRef.current = null
-    dragOverStatusRef.current = null
-    dragMovedRef.current = false
-    setDraggingTodoId(null)
-    setDragOverStatus(null)
-  }, [enableDrag])
+    const previousUserSelect = document.body.style.userSelect
+    document.body.style.userSelect = 'none'
+
+    return () => {
+      document.body.style.userSelect = previousUserSelect
+    }
+  }, [draggingTodoId])
 
   const finishTodoDrag = (todo: TodoRecord, commit: boolean) => {
     const sourceStatus = dragSourceStatusRef.current
@@ -3293,13 +3285,6 @@ function StatusBoard({
       return
     }
 
-    suppressClickTodoIdRef.current = todo.id
-    window.setTimeout(() => {
-      if (suppressClickTodoIdRef.current === todo.id) {
-        suppressClickTodoIdRef.current = null
-      }
-    }, 0)
-
     if (!commit || !sourceStatus || !targetStatus || sourceStatus === targetStatus) {
       return
     }
@@ -3308,7 +3293,7 @@ function StatusBoard({
   }
 
   const handleTodoDragPointerDown = (
-    event: ReactPointerEvent<HTMLButtonElement>,
+    event: ReactPointerEvent<HTMLElement>,
     todo: TodoRecord,
     sourceStatus: BoardStatusColumn,
   ) => {
@@ -3364,13 +3349,11 @@ function StatusBoard({
       finishTodoDrag(todo, false)
     }
 
-    document.body.style.userSelect = 'none'
     window.addEventListener('pointermove', handlePointerMove)
     window.addEventListener('pointerup', handlePointerUp, { once: true })
     window.addEventListener('pointercancel', handlePointerCancel, { once: true })
 
     releaseTodoDragRef.current = () => {
-      document.body.style.userSelect = ''
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
       window.removeEventListener('pointercancel', handlePointerCancel)
@@ -3421,28 +3404,18 @@ function StatusBoard({
 
                   return (
                     <div key={todo.id} className="status-todo-card-shell" role="listitem">
-                      <button
-                        type="button"
+                      <article
                         className={[
                           'status-todo-card',
                           enableDrag ? 'is-draggable' : '',
-                          selectedTodoId === todo.id ? 'active' : '',
                         ]
                           .filter(Boolean)
                           .join(' ')}
                         data-dragging={enableDrag && draggingTodoId === todo.id ? 'true' : undefined}
-                        aria-label={`查看任务 ${todo.title}`}
+                        data-testid={`status-card-${todo.id}`}
                         onPointerDown={
                           enableDrag ? (event) => handleTodoDragPointerDown(event, todo, column.status) : undefined
                         }
-                        onClick={(event) => {
-                          if (suppressClickTodoIdRef.current === todo.id) {
-                            suppressClickTodoIdRef.current = null
-                            return
-                          }
-
-                          onSelectTodo(todo.id, event.currentTarget)
-                        }}
                       >
                         <div className="status-card-content">
                           <div className="status-card-row">
@@ -3459,7 +3432,7 @@ function StatusBoard({
                             </div>
                           </div>
                         </div>
-                      </button>
+                      </article>
                     </div>
                   )
                 })}
