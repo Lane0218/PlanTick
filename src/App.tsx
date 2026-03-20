@@ -3,7 +3,6 @@ import type { CSSProperties, FormEvent, PointerEvent as ReactPointerEvent, RefOb
 import { DayPicker } from 'react-day-picker'
 import 'react-day-picker/dist/style.css'
 import {
-  Ban,
   BarChart3,
   CalendarDays,
   CheckCircle2,
@@ -222,11 +221,6 @@ const todoStatusMeta: Record<TodoStatus, { label: string; tone: string; accent: 
     label: '阻塞',
     tone: '#EF5350',
     accent: '#FFEBEE',
-  },
-  canceled: {
-    label: '取消',
-    tone: '#90A4AE',
-    accent: '#F5F7FA',
   },
 }
 
@@ -567,7 +561,6 @@ function App() {
       { id: 'in_progress', label: '进行中', value: statsSummary.statusCounts.in_progress, accent: '#1f6e66', tone: 'primary' },
       { id: 'completed', label: '已完成', value: statsSummary.statusCounts.completed, accent: '#1f6e66', tone: 'primary' },
       { id: 'blocked', label: '阻塞', value: statsSummary.statusCounts.blocked, accent: '#1f6e66', tone: 'primary' },
-      { id: 'canceled', label: '取消', value: statsSummary.statusCounts.canceled, accent: '#1f6e66', tone: 'primary' },
     ],
     [statsSummary],
   )
@@ -3872,7 +3865,7 @@ function TodoDetailPane({
         },
       ]
     : []
-  const detailStatusOptions: TodoStatus[] = ['not_started', 'in_progress', 'completed', 'blocked', 'canceled']
+  const detailStatusOptions: TodoStatus[] = ['not_started', 'in_progress', 'completed', 'blocked']
   const detailPaneClassName = [
     className ?? 'detail-pane',
     selectedTodo ? 'is-open' : '',
@@ -5304,10 +5297,6 @@ function getMyDayMembership(
   todo: Pick<TodoRecord, 'dueDate' | 'myDayDate' | 'status'>,
   targetDate = todayDate(),
 ) {
-  if (isTodoTerminalStatus(todo.status)) {
-    return 'none' as const
-  }
-
   if (todo.dueDate && todo.dueDate <= targetDate) {
     return 'auto' as const
   }
@@ -5330,11 +5319,11 @@ function isIncompleteTodoInMyDay(
   todo: Pick<TodoRecord, 'dueDate' | 'myDayDate' | 'status'>,
   targetDate = todayDate(),
 ) {
-  return isTodoInMyDay(todo, targetDate)
+  return todo.status !== 'completed' && isTodoInMyDay(todo, targetDate)
 }
 
 function isTodoTerminalStatus(status: TodoStatus) {
-  return status === 'completed' || status === 'canceled'
+  return status === 'completed'
 }
 
 function isTodoOverdue(
@@ -5638,7 +5627,7 @@ function toggleTodoStatus(status: TodoStatus): TodoStatus {
 }
 
 function nextTodoStatus(status: TodoStatus): TodoStatus {
-  const cycle: TodoStatus[] = ['not_started', 'in_progress', 'completed', 'blocked', 'canceled']
+  const cycle: TodoStatus[] = ['not_started', 'in_progress', 'completed', 'blocked']
   const currentIndex = cycle.indexOf(status)
   return cycle[(currentIndex + 1) % cycle.length]
 }
@@ -5691,7 +5680,6 @@ function buildStatsSummary(todos: TodoRecord[], events: EventRecord[]) {
     in_progress: 0,
     completed: 0,
     blocked: 0,
-    canceled: 0,
   }
 
   let overdueTodos = 0
@@ -5705,7 +5693,7 @@ function buildStatsSummary(todos: TodoRecord[], events: EventRecord[]) {
       overdueTodos += 1
     }
 
-    if (isTodoInMyDay(todo)) {
+    if (isIncompleteTodoInMyDay(todo)) {
       todayFocusTodos += 1
     }
 
@@ -5949,8 +5937,6 @@ function renderStatusIcon(status: TodoStatus) {
       return <CheckCircle2 size={28} strokeWidth={1.9} />
     case 'blocked':
       return <PauseCircle size={28} strokeWidth={1.9} />
-    case 'canceled':
-      return <Ban size={28} strokeWidth={1.9} />
     default:
       return <Circle size={28} strokeWidth={1.9} />
   }

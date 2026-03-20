@@ -152,9 +152,10 @@ function normalizeTodoStatus(
   return record.status === 'not_started' ||
     record.status === 'in_progress' ||
     record.status === 'completed' ||
-    record.status === 'blocked' ||
-    record.status === 'canceled'
+    record.status === 'blocked'
     ? record.status
+    : record.status === 'canceled'
+      ? 'blocked'
     : record.completed
       ? 'completed'
       : 'not_started'

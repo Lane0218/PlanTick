@@ -2466,8 +2466,7 @@
   opacity: 1;
 }
 
-.todo-card.status-completed strong,
-.todo-card.status-canceled strong {
+.todo-card.status-completed strong {
   color: rgba(44, 62, 80, 0.58);
   text-decoration: line-through;
 }
@@ -3835,8 +3834,7 @@
   text-overflow: ellipsis;
 }
 
-.calendar-item.status-completed .calendar-item-title,
-.calendar-item.status-canceled .calendar-item-title {
+.calendar-item.status-completed .calendar-item-title {
   color: rgba(71, 85, 105, 0.6);
   text-decoration: line-through;
 }
@@ -3993,11 +3991,6 @@
   color: #26a69a;
 }
 
-.todo-status-canceled,
-.detail-status-canceled {
-  color: #90a4ae;
-}
-
 .detail-status-not_started {
   background: #f5f7fa;
 }
@@ -4014,9 +4007,6 @@
   background: #e8f5f3;
 }
 
-.detail-status-canceled {
-  background: #f5f7fa;
-}
 
 @media (max-width: 1240px) {
   .workspace-shell,

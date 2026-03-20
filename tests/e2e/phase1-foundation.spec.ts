@@ -264,7 +264,6 @@ test('phase 2 首次进入直接展示工作台并支持游客模式', async ({ 
   await expect(page.getByText('进行中')).toBeVisible()
   await expect(page.getByText('已完成')).toBeVisible()
   await expect(page.getByText('阻塞')).toBeVisible()
-  await expect(page.getByText('取消')).toBeVisible()
   const guestDetailPane = page.getByLabel('任务详情')
   await expect(guestDetailPane.getByRole('button', { name: '工作', exact: true })).toBeVisible()
   await expect(guestDetailPane.getByRole('button', { name: '生活', exact: true })).toBeVisible()
@@ -482,10 +481,6 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   ).toBeVisible()
   await createdTask.getByRole('button', { name: '切换任务状态，当前阻塞' }).click()
   await expect(
-    createdTask.getByRole('button', { name: '切换任务状态，当前取消' }),
-  ).toBeVisible()
-  await createdTask.getByRole('button', { name: '切换任务状态，当前取消' }).click()
-  await expect(
     createdTask.getByRole('button', { name: '切换任务状态，当前未开始' }),
   ).toBeVisible()
   await createdTask.getByRole('button', { name: '切换任务状态，当前未开始' }).click()
@@ -574,7 +569,7 @@ test('phase 3 我的一天会自动吸收延期任务并按优先级排序', asy
   const overdueTitle = '昨天截止的任务'
   const todayTitle = '今天截止的任务'
   const manualTitle = '手动加入我的一天'
-  const canceledTitle = '已取消的昨天任务'
+  const completedTitle = '已完成的昨天任务'
   const yesterday = formatDateInputValue(addDays(new Date(), -1))
 
   await page.goto(baseURL!)
@@ -612,17 +607,17 @@ test('phase 3 我的一天会自动吸收延期任务并按优先级排序', asy
     myDayDate: yesterday,
   })
 
-  await page.getByLabel('快速新建任务').fill(canceledTitle)
+  await page.getByLabel('快速新建任务').fill(completedTitle)
   await page.getByLabel('快速新建任务').press('Enter')
   await page.locator('.detail-info-card, .detail-section').filter({ hasText: '截止日期' }).first().getByRole('button', {
     name: '今天',
     exact: true,
   }).click()
   await page.waitForTimeout(300)
-  await updatePersistedTodo(page, canceledTitle, {
+  await updatePersistedTodo(page, completedTitle, {
     dueDate: yesterday,
-    status: 'canceled',
-    completed: false,
+    status: 'completed',
+    completed: true,
     myDayDate: null,
   })
 
@@ -632,14 +627,43 @@ test('phase 3 我的一天会自动吸收延期任务并按优先级排序', asy
   await expect(myDayButton).toContainText('3')
   await myDayButton.click()
   await expect(page.getByRole('heading', { name: '我的一天' })).toBeVisible()
-  await expect(page.locator('.todo-list .todo-main strong')).toHaveText([overdueTitle, todayTitle, manualTitle])
-  await expect(page.getByRole('button', { name: `查看任务 ${canceledTitle}` })).toHaveCount(0)
+  await expect(page.locator('.todo-list .todo-main strong')).toHaveText([overdueTitle, todayTitle, manualTitle, completedTitle])
+  const completedTask = page.locator('article', {
+    has: page.getByRole('button', { name: `查看任务 ${completedTitle}` }),
+  })
+  await expect(completedTask.getByRole('button', { name: '切换任务状态，当前已完成' })).toBeVisible()
 
   const overdueTask = page.locator('article', {
     has: page.getByRole('button', { name: `查看任务 ${overdueTitle}` }),
   })
   await expect(overdueTask.locator('.todo-due')).toHaveText('昨天')
   await expect(overdueTask.locator('.todo-due')).toHaveClass(/is-alert/)
+})
+
+test('phase 3 兼容旧取消状态任务并映射为阻塞', async ({ page, baseURL }) => {
+  const passphrase = `phase3-legacy-canceled-${Date.now()}-pw`
+  const legacyTitle = '旧取消状态任务'
+
+  await page.goto(baseURL!)
+  await page.setViewportSize({ width: 1440, height: 960 })
+  await createWorkspaceFromDialog(page, passphrase)
+  await page.context().setOffline(true)
+
+  await page.getByLabel('快速新建任务').fill(legacyTitle)
+  await page.getByLabel('快速新建任务').press('Enter')
+  await updatePersistedTodo(page, legacyTitle, {
+    status: 'canceled',
+    completed: false,
+  })
+
+  await page.reload()
+
+  const legacyTask = page.locator('article', {
+    has: page.getByRole('button', { name: `查看任务 ${legacyTitle}` }),
+  })
+  await expect(legacyTask.getByRole('button', { name: '切换任务状态，当前阻塞' })).toBeVisible()
+  await legacyTask.getByRole('button', { name: `查看任务 ${legacyTitle}` }).click()
+  await expect(page.getByLabel('任务详情').getByRole('button', { name: '阻塞', exact: true })).toHaveClass(/active/)
 })
 
 test('phase 3 看板支持拖动任务切换状态', async ({ page, baseURL }) => {
