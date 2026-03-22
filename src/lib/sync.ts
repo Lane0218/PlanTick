@@ -36,6 +36,15 @@ function stripCategorySortOrder(payload: SyncRecord) {
   return rest satisfies SyncRecord
 }
 
+function isMissingTodoCompletedOnColumn(errorMessage: string) {
+  return errorMessage.includes("Could not find the 'completed_on' column of 'todos' in the schema cache")
+}
+
+function stripTodoCompletedOn(payload: SyncRecord) {
+  const { completed_on: _completedOn, ...rest } = payload
+  return rest satisfies SyncRecord
+}
+
 async function pushEntityOperations(
   client: Awaited<ReturnType<typeof getAuthenticatedSupabaseClient>>,
   entity: SyncEntityName,
@@ -50,6 +59,11 @@ async function pushEntityOperations(
   if (error && entity === 'categories' && isMissingCategorySortOrderColumn(error.message)) {
     console.warn('远端 categories.sort_order 尚未可用，已回退为兼容推送。')
     ;({ error } = await attempt(payloads.map((payload) => stripCategorySortOrder(payload))))
+  }
+
+  if (error && entity === 'todos' && isMissingTodoCompletedOnColumn(error.message)) {
+    console.warn('远端 todos.completed_on 尚未可用，已回退为兼容推送。')
+    ;({ error } = await attempt(payloads.map((payload) => stripTodoCompletedOn(payload))))
   }
 
   if (error) {
