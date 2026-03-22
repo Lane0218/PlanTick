@@ -423,12 +423,21 @@ export async function upsertTodo(record: TodoRecord) {
 export async function listTodos(workspaceId: string) {
   const database = await getDatabase()
   const records = await database.getAllFromIndex('todos', 'by-workspace', workspaceId)
-  return records.map((record) => ({
-    ...record,
-    myDayDate: typeof record.myDayDate === 'string' ? record.myDayDate : null,
-    status: normalizeTodoStatus(record),
-    completed: normalizeTodoStatus(record) === 'completed',
-  }))
+  return records.map((record) => {
+    const status = normalizeTodoStatus(record)
+    return {
+      ...record,
+      myDayDate: typeof record.myDayDate === 'string' ? record.myDayDate : null,
+      completedOn:
+        typeof record.completedOn === 'string'
+          ? record.completedOn
+          : typeof (record as Record<string, unknown>).completed_on === 'string'
+            ? String((record as Record<string, unknown>).completed_on)
+            : null,
+      status,
+      completed: status === 'completed',
+    }
+  })
 }
 
 export async function upsertEvent(record: EventRecord) {
@@ -527,6 +536,7 @@ export async function applyRemoteChanges(changes: RemoteChangeSet) {
           typeof record.category_id === 'string' ? record.category_id : null,
         dueDate: typeof record.due_date === 'string' ? record.due_date : null,
         myDayDate: typeof record.my_day_date === 'string' ? record.my_day_date : null,
+        completedOn: typeof record.completed_on === 'string' ? record.completed_on : null,
         status: normalizeTodoStatus(record),
         completed: normalizeTodoStatus(record) === 'completed',
         note: String(record.note ?? ''),

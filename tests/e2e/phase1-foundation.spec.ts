@@ -198,6 +198,7 @@ async function updatePersistedTodo(
     myDayDate: string | null
     status: 'not_started' | 'in_progress' | 'completed' | 'blocked' | 'canceled'
     completed: boolean
+    completedOn: string | null
   }>,
 ) {
   await page.evaluate(async ({ title: targetTitle, updates: nextUpdates }) => {
@@ -234,6 +235,74 @@ async function updatePersistedTodo(
 
     database.close()
   }, { title, updates })
+}
+
+async function seedLocalWorkspace(
+  page: Page,
+  seed: {
+    workspaceId: string
+    todos: Array<Record<string, unknown>>
+    categories?: Array<Record<string, unknown>>
+    events?: Array<Record<string, unknown>>
+  },
+) {
+  await page.evaluate(async ({ workspaceId, todos, categories = [], events = [] }) => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('plantick-app')
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => resolve(request.result)
+    })
+
+    const transaction = database.transaction(
+      ['workspace_meta', 'sync_meta', 'categories', 'todos', 'events', 'outbox'],
+      'readwrite',
+    )
+
+    transaction.objectStore('workspace_meta').put({
+      key: 'current',
+      workspaceId,
+      anonymousUserId: null,
+      joinedAt: new Date().toISOString(),
+      lastSeenAt: new Date().toISOString(),
+      lastProbeId: null,
+    }, 'current')
+    transaction.objectStore('sync_meta').put({
+      workspaceId,
+      status: 'idle',
+      lastPushAt: null,
+      lastPullAt: null,
+      lastError: null,
+      cursor: {
+        categories: { updatedAt: null },
+        todos: { updatedAt: null },
+        events: { updatedAt: null },
+      },
+    })
+
+    for (const storeName of ['categories', 'todos', 'events', 'outbox'] as const) {
+      transaction.objectStore(storeName).clear()
+    }
+
+    for (const record of categories) {
+      transaction.objectStore('categories').put(record)
+    }
+
+    for (const record of todos) {
+      transaction.objectStore('todos').put(record)
+    }
+
+    for (const record of events) {
+      transaction.objectStore('events').put(record)
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => resolve()
+      transaction.onerror = () => reject(transaction.error)
+      transaction.onabort = () => reject(transaction.error)
+    })
+
+    database.close()
+  }, seed)
 }
 
 test('phase 2 首次进入直接展示工作台并支持游客模式', async ({ page, baseURL }) => {
@@ -385,6 +454,7 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   await myDayTask.getByRole('button', { name: '切换任务状态，当前未开始' }).click()
   await myDayTask.getByRole('button', { name: '切换任务状态，当前进行中' }).click()
   await expect(page.getByRole('heading', { name: '我的一天' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '查看任务 123' })).toBeVisible()
   await expect(myDayButton).toContainText('0')
   await page.getByRole('button', { name: '数据统计' }).click()
   await expect(
@@ -564,61 +634,97 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   await expect(restoredTask.getByText('明天')).toBeVisible()
 })
 
-test('phase 3 我的一天会自动吸收延期任务并按优先级排序', async ({ page, baseURL }) => {
-  const passphrase = `phase3-myday-overdue-${Date.now()}-pw`
+test('phase 3 我的一天仅保留当天完成的任务并按优先级排序', async ({ page, baseURL }) => {
+  const workspaceId = `local-myday-${Date.now()}`
   const overdueTitle = '昨天截止的任务'
   const todayTitle = '今天截止的任务'
   const manualTitle = '手动加入我的一天'
-  const completedTitle = '已完成的昨天任务'
+  const completedTodayTitle = '今天完成的昨天任务'
+  const completedYesterdayTitle = '昨天完成的昨天任务'
   const yesterday = formatDateInputValue(addDays(new Date(), -1))
+  const today = formatDateInputValue(new Date())
 
   await page.goto(baseURL!)
   await page.setViewportSize({ width: 1440, height: 960 })
-  await createWorkspaceFromDialog(page, passphrase)
-  await page.context().setOffline(true)
-
-  await page.getByLabel('快速新建任务').fill(overdueTitle)
-  await page.getByLabel('快速新建任务').press('Enter')
-  await page.locator('.detail-info-card, .detail-section').filter({ hasText: '截止日期' }).first().getByRole('button', {
-    name: '今天',
-    exact: true,
-  }).click()
-  await page.waitForTimeout(300)
-  await updatePersistedTodo(page, overdueTitle, {
-    dueDate: yesterday,
-    status: 'blocked',
-    completed: false,
-    myDayDate: null,
-  })
-
-  await page.getByLabel('快速新建任务').fill(todayTitle)
-  await page.getByLabel('快速新建任务').press('Enter')
-  await page.locator('.detail-info-card, .detail-section').filter({ hasText: '截止日期' }).first().getByRole('button', {
-    name: '今天',
-    exact: true,
-  }).click()
-  await page.waitForTimeout(300)
-
-  await page.getByLabel('快速新建任务').fill(manualTitle)
-  await page.getByLabel('快速新建任务').press('Enter')
-  await page.locator('.detail-pane.is-open').getByRole('button', { name: '我的一天', exact: true }).click()
-  await page.waitForTimeout(300)
-  await updatePersistedTodo(page, manualTitle, {
-    myDayDate: yesterday,
-  })
-
-  await page.getByLabel('快速新建任务').fill(completedTitle)
-  await page.getByLabel('快速新建任务').press('Enter')
-  await page.locator('.detail-info-card, .detail-section').filter({ hasText: '截止日期' }).first().getByRole('button', {
-    name: '今天',
-    exact: true,
-  }).click()
-  await page.waitForTimeout(300)
-  await updatePersistedTodo(page, completedTitle, {
-    dueDate: yesterday,
-    status: 'completed',
-    completed: true,
-    myDayDate: null,
+  await seedLocalWorkspace(page, {
+    workspaceId,
+    todos: [
+      {
+        id: `${workspaceId}-overdue`,
+        workspaceId,
+        title: overdueTitle,
+        categoryId: null,
+        dueDate: yesterday,
+        myDayDate: null,
+        status: 'blocked',
+        completed: false,
+        completedOn: null,
+        note: '',
+        recurrenceType: 'none',
+        updatedAt: `${today}T08:00:00.000Z`,
+        deleted: false,
+      },
+      {
+        id: `${workspaceId}-today`,
+        workspaceId,
+        title: todayTitle,
+        categoryId: null,
+        dueDate: today,
+        myDayDate: null,
+        status: 'not_started',
+        completed: false,
+        completedOn: null,
+        note: '',
+        recurrenceType: 'none',
+        updatedAt: `${today}T08:10:00.000Z`,
+        deleted: false,
+      },
+      {
+        id: `${workspaceId}-manual`,
+        workspaceId,
+        title: manualTitle,
+        categoryId: null,
+        dueDate: null,
+        myDayDate: yesterday,
+        status: 'not_started',
+        completed: false,
+        completedOn: null,
+        note: '',
+        recurrenceType: 'none',
+        updatedAt: `${today}T08:20:00.000Z`,
+        deleted: false,
+      },
+      {
+        id: `${workspaceId}-completed-today`,
+        workspaceId,
+        title: completedTodayTitle,
+        categoryId: null,
+        dueDate: yesterday,
+        myDayDate: null,
+        status: 'completed',
+        completed: true,
+        completedOn: today,
+        note: '',
+        recurrenceType: 'none',
+        updatedAt: `${today}T08:30:00.000Z`,
+        deleted: false,
+      },
+      {
+        id: `${workspaceId}-completed-yesterday`,
+        workspaceId,
+        title: completedYesterdayTitle,
+        categoryId: null,
+        dueDate: yesterday,
+        myDayDate: null,
+        status: 'completed',
+        completed: true,
+        completedOn: yesterday,
+        note: '',
+        recurrenceType: 'none',
+        updatedAt: `${today}T08:40:00.000Z`,
+        deleted: false,
+      },
+    ],
   })
 
   await page.reload()
@@ -627,11 +733,12 @@ test('phase 3 我的一天会自动吸收延期任务并按优先级排序', asy
   await expect(myDayButton).toContainText('3')
   await myDayButton.click()
   await expect(page.getByRole('heading', { name: '我的一天' })).toBeVisible()
-  await expect(page.locator('.todo-list .todo-main strong')).toHaveText([overdueTitle, todayTitle, manualTitle, completedTitle])
+  await expect(page.locator('.todo-list .todo-main strong')).toHaveText([overdueTitle, todayTitle, manualTitle, completedTodayTitle])
   const completedTask = page.locator('article', {
-    has: page.getByRole('button', { name: `查看任务 ${completedTitle}` }),
+    has: page.getByRole('button', { name: `查看任务 ${completedTodayTitle}` }),
   })
   await expect(completedTask.getByRole('button', { name: '切换任务状态，当前已完成' })).toBeVisible()
+  await expect(page.getByRole('button', { name: `查看任务 ${completedYesterdayTitle}` })).toHaveCount(0)
 
   const overdueTask = page.locator('article', {
     has: page.getByRole('button', { name: `查看任务 ${overdueTitle}` }),

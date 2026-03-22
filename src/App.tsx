@@ -278,6 +278,7 @@ const demoTodos: TodoRecord[] = [
     myDayDate: null,
     status: 'not_started',
     completed: false,
+    completedOn: null,
     note: '先处理客户反馈，再安排下午的评审。',
     recurrenceType: 'daily',
     updatedAt: '2026-03-16T08:20:00.000Z',
@@ -292,6 +293,7 @@ const demoTodos: TodoRecord[] = [
     myDayDate: null,
     status: 'blocked',
     completed: false,
+    completedOn: null,
     note: '卡在设计确认，等最终素材。',
     recurrenceType: 'none',
     updatedAt: '2026-03-15T18:00:00.000Z',
@@ -306,6 +308,7 @@ const demoTodos: TodoRecord[] = [
     myDayDate: todayDate(),
     status: 'in_progress',
     completed: false,
+    completedOn: null,
     note: '',
     recurrenceType: 'weekly',
     updatedAt: '2026-03-16T10:30:00.000Z',
@@ -320,6 +323,7 @@ const demoTodos: TodoRecord[] = [
     myDayDate: null,
     status: 'completed',
     completed: true,
+    completedOn: nextDate(-1),
     note: '',
     recurrenceType: 'none',
     updatedAt: '2026-03-16T07:40:00.000Z',
@@ -334,6 +338,7 @@ const demoTodos: TodoRecord[] = [
     myDayDate: todayDate(),
     status: 'not_started',
     completed: false,
+    completedOn: null,
     note: '未分类任务会先留在 Inbox，之后再分派到列表。',
     recurrenceType: 'monthly',
     updatedAt: '2026-03-16T09:00:00.000Z',
@@ -863,6 +868,7 @@ function App() {
       note: draft.note,
       recurrenceType: draft.recurrenceType,
       completed: draft.status === 'completed',
+      completedOn: getCompletedOnForStatus(draft.status, baseTodo.status, baseTodo.completedOn),
       updatedAt: new Date().toISOString(),
     }
 
@@ -1441,6 +1447,7 @@ function App() {
       ...baseTodo,
       status: nextStatus,
       completed: nextStatus === 'completed',
+      completedOn: getCompletedOnForStatus(nextStatus, baseTodo.status, baseTodo.completedOn),
       updatedAt,
     }
     const shouldCreateRecurringTodo =
@@ -3846,7 +3853,6 @@ function TodoDetailPane({
     ? getMyDayMembership({
         dueDate: detailDraft.dueDate || null,
         myDayDate: detailDraft.myDayDate || null,
-        status: detailDraft.status,
       })
     : 'none'
   const recurrenceOptions = detailDraft
@@ -3880,7 +3886,6 @@ function TodoDetailPane({
       ? getMyDayMembership({
           dueDate: selectedTodo.dueDate,
           myDayDate: selectedTodo.myDayDate,
-          status: selectedTodo.status,
         })
       : 'none'
 
@@ -5294,7 +5299,7 @@ function buildCalendarCells(
 }
 
 function getMyDayMembership(
-  todo: Pick<TodoRecord, 'dueDate' | 'myDayDate' | 'status'>,
+  todo: Pick<TodoRecord, 'dueDate' | 'myDayDate'>,
   targetDate = todayDate(),
 ) {
   if (todo.dueDate && todo.dueDate <= targetDate) {
@@ -5309,17 +5314,39 @@ function getMyDayMembership(
 }
 
 function isTodoInMyDay(
-  todo: Pick<TodoRecord, 'dueDate' | 'myDayDate' | 'status'>,
+  todo: Pick<TodoRecord, 'dueDate' | 'myDayDate' | 'status' | 'completedOn'>,
   targetDate = todayDate(),
 ) {
-  return getMyDayMembership(todo, targetDate) !== 'none'
+  const membership = getMyDayMembership(todo, targetDate)
+  if (membership === 'none') {
+    return false
+  }
+
+  if (!isTodoTerminalStatus(todo.status)) {
+    return true
+  }
+
+  return todo.completedOn === targetDate
 }
 
 function isIncompleteTodoInMyDay(
-  todo: Pick<TodoRecord, 'dueDate' | 'myDayDate' | 'status'>,
+  todo: Pick<TodoRecord, 'dueDate' | 'myDayDate' | 'status' | 'completedOn'>,
   targetDate = todayDate(),
 ) {
   return todo.status !== 'completed' && isTodoInMyDay(todo, targetDate)
+}
+
+function getCompletedOnForStatus(
+  nextStatus: TodoStatus,
+  previousStatus: TodoStatus,
+  previousCompletedOn: string | null,
+  targetDate = todayDate(),
+) {
+  if (nextStatus !== 'completed') {
+    return null
+  }
+
+  return previousStatus === 'completed' ? previousCompletedOn : targetDate
 }
 
 function isTodoTerminalStatus(status: TodoStatus) {
@@ -5442,6 +5469,7 @@ function createTodoRecord(
     myDayDate: null,
     status: 'not_started',
     completed: false,
+    completedOn: null,
     note: '',
     recurrenceType: 'none',
     updatedAt: now,
@@ -5866,6 +5894,7 @@ function createNextRecurringTodo(baseTodo: TodoRecord, updatedAt: string): TodoR
     myDayDate: null,
     status: 'not_started',
     completed: false,
+    completedOn: null,
     updatedAt,
     deleted: false,
   }
@@ -6124,6 +6153,7 @@ function toSyncTodo(record: TodoRecord) {
     my_day_date: record.myDayDate,
     status: record.status,
     completed: record.completed,
+    completed_on: record.completedOn,
     note: record.note,
     recurrence_type: record.recurrenceType === 'none' ? null : record.recurrenceType,
     updated_at: record.updatedAt,

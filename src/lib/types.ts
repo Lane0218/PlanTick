@@ -49,6 +49,7 @@ export type TodoRecord = {
   myDayDate: string | null
   status: TodoStatus
   completed: boolean
+  completedOn: string | null
   note: string
   recurrenceType: TodoRecurrenceType
   updatedAt: IsoDatetime
