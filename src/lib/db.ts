@@ -3,13 +3,8 @@ import type { CategoryRecord, EventRecord, TodoRecord, WorkspaceMeta } from './l
 import type { OutboxOperation, RemoteChangeSet, SyncMeta, SyncRecord, SyncStoreAdapter } from './sync-types'
 
 const databaseName = 'plantick-app'
-const legacyStoreName = 'phase0_meta'
 
 interface PlantickDBSchema extends DBSchema {
-  phase0_meta: {
-    key: string
-    value: string
-  }
   workspace_meta: {
     key: WorkspaceMeta['key']
     value: WorkspaceMeta
@@ -147,18 +142,14 @@ function normalizeCategoryRecords(records: Array<Record<string, unknown>>) {
 }
 
 function normalizeTodoStatus(
-  record: Record<string, unknown> & { status?: unknown; completed?: unknown },
+  record: Record<string, unknown> & { status?: unknown },
 ): TodoRecord['status'] {
   return record.status === 'not_started' ||
     record.status === 'in_progress' ||
     record.status === 'completed' ||
     record.status === 'blocked'
     ? record.status
-    : record.status === 'canceled'
-      ? 'blocked'
-    : record.completed
-      ? 'completed'
-      : 'not_started'
+    : 'not_started'
 }
 
 function normalizeEventStatus(
@@ -208,12 +199,8 @@ function normalizeOutboxOperation(operation: OutboxOperation) {
 
 export async function getDatabase() {
   if (!databasePromise) {
-    databasePromise = openDB<PlantickDBSchema>(databaseName, 3, {
+    databasePromise = openDB<PlantickDBSchema>(databaseName, 4, {
       upgrade(database, oldVersion, _newVersion, transaction) {
-        if (oldVersion < 1 && !database.objectStoreNames.contains(legacyStoreName)) {
-          database.createObjectStore(legacyStoreName)
-        }
-
         if (oldVersion < 2) {
           if (!database.objectStoreNames.contains('workspace_meta')) {
             database.createObjectStore('workspace_meta')
@@ -268,6 +255,14 @@ export async function getDatabase() {
             store.createIndex('by-my-day-date', 'myDayDate')
           }
         }
+
+        const legacyDatabase = database as unknown as {
+          objectStoreNames: DOMStringList
+          deleteObjectStore(name: string): void
+        }
+        if (oldVersion < 4 && legacyDatabase.objectStoreNames.contains('phase0_meta')) {
+          legacyDatabase.deleteObjectStore('phase0_meta')
+        }
       },
     })
   }
@@ -286,8 +281,6 @@ export async function runIndexedDbProbe() {
       lastProbeId: probeId,
       lastSeenAt: new Date().toISOString(),
     })
-  } else if (database.objectStoreNames.contains(legacyStoreName)) {
-    await database.put(legacyStoreName, probeId, 'lastProbeId')
   }
 
   return probeId
@@ -311,35 +304,11 @@ export async function saveCurrentWorkspaceMeta(
   }
 
   await database.put('workspace_meta', next, 'current')
-
-  if (database.objectStoreNames.contains(legacyStoreName)) {
-    await database.put(legacyStoreName, workspaceId, 'workspaceId')
-  }
 }
 
 export async function getCurrentWorkspaceMeta() {
   const database = await getDatabase()
-  const current = await database.get('workspace_meta', 'current')
-  if (current) {
-    return current
-  }
-
-  const workspaceId = database.objectStoreNames.contains(legacyStoreName)
-    ? await database.get(legacyStoreName, 'workspaceId')
-    : null
-
-  if (typeof workspaceId === 'string' && workspaceId) {
-    return {
-      key: 'current' as const,
-      workspaceId,
-      anonymousUserId: null,
-      joinedAt: new Date().toISOString(),
-      lastSeenAt: new Date().toISOString(),
-      lastProbeId: null,
-    }
-  }
-
-  return null
+  return (await database.get('workspace_meta', 'current')) ?? null
 }
 
 export async function saveWorkspaceId(workspaceId: string) {
@@ -348,13 +317,9 @@ export async function saveWorkspaceId(workspaceId: string) {
 
 export async function clearCurrentWorkspaceMeta() {
   const database = await getDatabase()
-  const transaction = database.transaction(['workspace_meta', legacyStoreName], 'readwrite')
+  const transaction = database.transaction('workspace_meta', 'readwrite')
 
   await transaction.objectStore('workspace_meta').delete('current')
-
-  if (database.objectStoreNames.contains(legacyStoreName)) {
-    await transaction.objectStore(legacyStoreName).delete('workspaceId')
-  }
 
   await transaction.done
 }
@@ -424,18 +389,11 @@ export async function listTodos(workspaceId: string) {
   const database = await getDatabase()
   const records = await database.getAllFromIndex('todos', 'by-workspace', workspaceId)
   return records.map((record) => {
-    const status = normalizeTodoStatus(record)
     return {
       ...record,
       myDayDate: typeof record.myDayDate === 'string' ? record.myDayDate : null,
-      completedOn:
-        typeof record.completedOn === 'string'
-          ? record.completedOn
-          : typeof (record as Record<string, unknown>).completed_on === 'string'
-            ? String((record as Record<string, unknown>).completed_on)
-            : null,
-      status,
-      completed: status === 'completed',
+      completedOn: typeof record.completedOn === 'string' ? record.completedOn : null,
+      status: normalizeTodoStatus(record),
     }
   })
 }
@@ -538,7 +496,6 @@ export async function applyRemoteChanges(changes: RemoteChangeSet) {
         myDayDate: typeof record.my_day_date === 'string' ? record.my_day_date : null,
         completedOn: typeof record.completed_on === 'string' ? record.completed_on : null,
         status: normalizeTodoStatus(record),
-        completed: normalizeTodoStatus(record) === 'completed',
         note: String(record.note ?? ''),
         recurrenceType:
           record.recurrence_type === 'daily' ||

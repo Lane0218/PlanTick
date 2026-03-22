@@ -354,7 +354,6 @@ export function createTodoSeed(workspaceId: string, categoryId: string | null): 
     dueDate: now.slice(0, 10),
     myDayDate: null,
     status: 'not_started',
-    completed: false,
     completedOn: null,
     note: '用于验证本地 schema、outbox 和同步契约是否贯通。',
     recurrenceType: 'none',

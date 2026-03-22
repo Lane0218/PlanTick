@@ -196,8 +196,7 @@ async function updatePersistedTodo(
   updates: Partial<{
     dueDate: string | null
     myDayDate: string | null
-    status: 'not_started' | 'in_progress' | 'completed' | 'blocked' | 'canceled'
-    completed: boolean
+    status: 'not_started' | 'in_progress' | 'completed' | 'blocked'
     completedOn: string | null
   }>,
 ) {
@@ -657,7 +656,6 @@ test('phase 3 我的一天仅保留当天完成的任务并按优先级排序', 
         dueDate: yesterday,
         myDayDate: null,
         status: 'blocked',
-        completed: false,
         completedOn: null,
         note: '',
         recurrenceType: 'none',
@@ -672,7 +670,6 @@ test('phase 3 我的一天仅保留当天完成的任务并按优先级排序', 
         dueDate: today,
         myDayDate: null,
         status: 'not_started',
-        completed: false,
         completedOn: null,
         note: '',
         recurrenceType: 'none',
@@ -687,7 +684,6 @@ test('phase 3 我的一天仅保留当天完成的任务并按优先级排序', 
         dueDate: null,
         myDayDate: yesterday,
         status: 'not_started',
-        completed: false,
         completedOn: null,
         note: '',
         recurrenceType: 'none',
@@ -702,7 +698,6 @@ test('phase 3 我的一天仅保留当天完成的任务并按优先级排序', 
         dueDate: yesterday,
         myDayDate: null,
         status: 'completed',
-        completed: true,
         completedOn: today,
         note: '',
         recurrenceType: 'none',
@@ -717,7 +712,6 @@ test('phase 3 我的一天仅保留当天完成的任务并按优先级排序', 
         dueDate: yesterday,
         myDayDate: null,
         status: 'completed',
-        completed: true,
         completedOn: yesterday,
         note: '',
         recurrenceType: 'none',
@@ -747,29 +741,39 @@ test('phase 3 我的一天仅保留当天完成的任务并按优先级排序', 
   await expect(overdueTask.locator('.todo-due')).toHaveClass(/is-alert/)
 })
 
-test('phase 3 兼容旧取消状态任务并映射为阻塞', async ({ page, baseURL }) => {
-  const passphrase = `phase3-legacy-canceled-${Date.now()}-pw`
-  const legacyTitle = '旧取消状态任务'
+test('phase 3 阻塞状态任务会在刷新后保持', async ({ page, baseURL }) => {
+  const workspaceId = `local-blocked-${Date.now()}`
+  const blockedTitle = '阻塞状态任务'
 
   await page.goto(baseURL!)
   await page.setViewportSize({ width: 1440, height: 960 })
-  await createWorkspaceFromDialog(page, passphrase)
-  await page.context().setOffline(true)
-
-  await page.getByLabel('快速新建任务').fill(legacyTitle)
-  await page.getByLabel('快速新建任务').press('Enter')
-  await updatePersistedTodo(page, legacyTitle, {
-    status: 'canceled',
-    completed: false,
+  await seedLocalWorkspace(page, {
+    workspaceId,
+    todos: [
+      {
+        id: `${workspaceId}-blocked`,
+        workspaceId,
+        title: blockedTitle,
+        categoryId: null,
+        dueDate: null,
+        myDayDate: null,
+        status: 'blocked',
+        completedOn: null,
+        note: '',
+        recurrenceType: 'none',
+        updatedAt: new Date().toISOString(),
+        deleted: false,
+      },
+    ],
   })
 
   await page.reload()
 
-  const legacyTask = page.locator('article', {
-    has: page.getByRole('button', { name: `查看任务 ${legacyTitle}` }),
+  const blockedTask = page.locator('article', {
+    has: page.getByRole('button', { name: `查看任务 ${blockedTitle}` }),
   })
-  await expect(legacyTask.getByRole('button', { name: '切换任务状态，当前阻塞' })).toBeVisible()
-  await legacyTask.getByRole('button', { name: `查看任务 ${legacyTitle}` }).click()
+  await expect(blockedTask.getByRole('button', { name: '切换任务状态，当前阻塞' })).toBeVisible()
+  await blockedTask.getByRole('button', { name: `查看任务 ${blockedTitle}` }).click()
   await expect(page.getByLabel('任务详情').getByRole('button', { name: '阻塞', exact: true })).toHaveClass(/active/)
 })
 

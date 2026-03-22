@@ -20,7 +20,7 @@ export type WorkspaceSettingsInfo = {
   }
 }
 
-export type SyncMeta = {
+export type SyncMetaRecord = {
   key: string
   value: string
   updatedAt: IsoDatetime
@@ -48,7 +48,6 @@ export type TodoRecord = {
   dueDate: string | null
   myDayDate: string | null
   status: TodoStatus
-  completed: boolean
   completedOn: string | null
   note: string
   recurrenceType: TodoRecurrenceType
