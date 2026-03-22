@@ -5721,7 +5721,7 @@ function buildStatsSummary(todos: TodoRecord[], events: EventRecord[]) {
       overdueTodos += 1
     }
 
-    if (isIncompleteTodoInMyDay(todo)) {
+    if (isTodoInMyDay(todo)) {
       todayFocusTodos += 1
     }
 

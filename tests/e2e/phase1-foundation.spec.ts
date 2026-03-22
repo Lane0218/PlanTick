@@ -458,7 +458,7 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   await expect(myDayButton).toContainText('0')
   await page.getByRole('button', { name: '数据统计' }).click()
   await expect(
-    page.locator('.stats-metric-card', { has: page.getByText('今日聚焦', { exact: true }) }).getByText('0', { exact: true }),
+    page.locator('.stats-metric-card', { has: page.getByText('今日聚焦', { exact: true }) }).getByText('1', { exact: true }),
   ).toBeVisible()
   await page.locator('.sidebar-nav').getByRole('button', { name: /^待办箱/ }).click()
   const noNoteTask = page.locator('article', {
