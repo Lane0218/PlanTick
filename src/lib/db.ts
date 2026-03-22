@@ -186,7 +186,21 @@ function normalizeEventSyncRecord(
   } satisfies SyncRecord
 }
 
+function normalizeTodoSyncRecord(
+  record: SyncRecord,
+) {
+  const { completed: _completed, ...rest } = record as SyncRecord & { completed?: unknown }
+  return rest satisfies SyncRecord
+}
+
 function normalizeOutboxOperation(operation: OutboxOperation) {
+  if (operation.entity === 'todos') {
+    return {
+      ...operation,
+      payload: normalizeTodoSyncRecord(operation.payload),
+    } satisfies OutboxOperation
+  }
+
   if (operation.entity !== 'events') {
     return operation
   }

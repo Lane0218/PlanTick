@@ -243,9 +243,10 @@ async function seedLocalWorkspace(
     todos: Array<Record<string, unknown>>
     categories?: Array<Record<string, unknown>>
     events?: Array<Record<string, unknown>>
+    outbox?: Array<Record<string, unknown>>
   },
 ) {
-  await page.evaluate(async ({ workspaceId, todos, categories = [], events = [] }) => {
+  await page.evaluate(async ({ workspaceId, todos, categories = [], events = [], outbox = [] }) => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open('plantick-app')
       request.onerror = () => reject(request.error)
@@ -292,6 +293,10 @@ async function seedLocalWorkspace(
 
     for (const record of events) {
       transaction.objectStore('events').put(record)
+    }
+
+    for (const record of outbox) {
+      transaction.objectStore('outbox').put(record)
     }
 
     await new Promise<void>((resolve, reject) => {
@@ -775,6 +780,84 @@ test('phase 3 阻塞状态任务会在刷新后保持', async ({ page, baseURL }
   await expect(blockedTask.getByRole('button', { name: '切换任务状态，当前阻塞' })).toBeVisible()
   await blockedTask.getByRole('button', { name: `查看任务 ${blockedTitle}` }).click()
   await expect(page.getByLabel('任务详情').getByRole('button', { name: '阻塞', exact: true })).toHaveClass(/active/)
+})
+
+test('phase 3 旧 todo outbox payload 会在读取后自动移除 completed 字段', async ({ page, baseURL }) => {
+  const workspaceId = `local-legacy-todo-outbox-${Date.now()}`
+  const title = '旧 todo payload'
+  const now = new Date().toISOString()
+  const today = now.slice(0, 10)
+  const todoId = `${workspaceId}-todo`
+  const outboxId = `${workspaceId}-outbox`
+
+  await page.goto(baseURL!)
+  await page.setViewportSize({ width: 1440, height: 960 })
+  await seedLocalWorkspace(page, {
+    workspaceId,
+    todos: [
+      {
+        id: todoId,
+        workspaceId,
+        title,
+        categoryId: null,
+        dueDate: today,
+        myDayDate: null,
+        status: 'completed',
+        completedOn: today,
+        note: '模拟旧版 todo outbox payload',
+        recurrenceType: 'none',
+        updatedAt: now,
+        deleted: false,
+      },
+    ],
+    outbox: [
+      {
+        id: outboxId,
+        workspaceId,
+        entity: 'todos',
+        kind: 'upsert',
+        recordId: todoId,
+        payload: {
+          id: todoId,
+          workspace_id: workspaceId,
+          title,
+          category_id: null,
+          due_date: today,
+          my_day_date: null,
+          status: 'completed',
+          completed: true,
+          completed_on: today,
+          note: '模拟旧版 todo outbox payload',
+          recurrence_type: null,
+          updated_at: now,
+          deleted: false,
+        },
+        createdAt: now,
+        retryCount: 0,
+        lastError: null,
+      },
+    ],
+  })
+
+  await page.reload()
+
+  await expect.poll(async () => page.evaluate(async ({ targetOutboxId }) => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('plantick-app')
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => resolve(request.result)
+    })
+
+    const transaction = database.transaction(['outbox'], 'readonly')
+    const record = await new Promise<Record<string, unknown> | undefined>((resolve, reject) => {
+      const request = transaction.objectStore('outbox').get(targetOutboxId)
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => resolve(request.result as Record<string, unknown> | undefined)
+    })
+
+    database.close()
+    return Boolean((record?.payload as Record<string, unknown> | undefined)?.completed)
+  }, { targetOutboxId: outboxId })).toBe(false)
 })
 
 test('phase 3 看板支持拖动任务切换状态', async ({ page, baseURL }) => {
