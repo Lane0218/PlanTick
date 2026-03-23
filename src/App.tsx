@@ -200,6 +200,7 @@ const filterLabels: Record<TaskFilter, string> = {
   overdue: '逾期',
   completed: '已完成',
 }
+const myDayCutoffHour = 2
 
 const todoStatusMeta: Record<TodoStatus, { label: string; tone: string; accent: string }> = {
   not_started: {
@@ -419,6 +420,7 @@ function App() {
   const [eventDraft, setEventDraft] = useState<EventDraft | null>(null)
   const [confirmDeleteTodo, setConfirmDeleteTodo] = useState(false)
   const [confirmDeleteEvent, setConfirmDeleteEvent] = useState(false)
+  const [currentTime, setCurrentTime] = useState(() => Date.now())
   const [isMobileViewport, setIsMobileViewport] = useState(() =>
     typeof window !== 'undefined' ? window.matchMedia('(max-width: 980px)').matches : false,
   )
@@ -477,6 +479,8 @@ function App() {
 
   const selectedCategory =
     activeCategories.find((category) => category.id === selectedCategoryId) ?? null
+  const myDayTargetDate = useMemo(() => getMyDayTargetDate(new Date(currentTime)), [currentTime])
+  const myDayHint = useMemo(() => getMyDayHint(new Date(currentTime)), [currentTime])
 
   const visibleTodos = useMemo(
     () => {
@@ -491,7 +495,7 @@ function App() {
 
         switch (activeFilter) {
           case 'today':
-            return isTodoInMyDay(todo)
+            return isTodoInMyDay(todo, myDayTargetDate)
           case 'overdue':
             return isTodoOverdue(todo)
           case 'completed':
@@ -505,9 +509,9 @@ function App() {
         return filteredTodos
       }
 
-      return filteredTodos.slice().sort((left, right) => compareMyDayTodos(left, right))
+      return filteredTodos.slice().sort((left, right) => compareMyDayTodos(left, right, myDayTargetDate))
     },
-    [activeFilter, activeTodos, selectedCategoryId, selectedUncategorized],
+    [activeFilter, activeTodos, myDayTargetDate, selectedCategoryId, selectedUncategorized],
   )
 
   const selectedTodo = activeTodos.find((todo) => todo.id === selectedTodoId) ?? null
@@ -527,13 +531,16 @@ function App() {
   const sidebarCounts = useMemo(
     () => ({
       all: activeTodos.length,
-      today: activeTodos.filter((todo) => isIncompleteTodoInMyDay(todo)).length,
+      today: activeTodos.filter((todo) => isIncompleteTodoInMyDay(todo, myDayTargetDate)).length,
       overdue: activeTodos.filter((todo) => isTodoOverdue(todo)).length,
       completed: activeTodos.filter((todo) => todo.status === 'completed').length,
     }),
-    [activeTodos],
+    [activeTodos, myDayTargetDate],
   )
-  const statsSummary = useMemo(() => buildStatsSummary(activeTodos, activeEvents), [activeTodos, activeEvents])
+  const statsSummary = useMemo(
+    () => buildStatsSummary(activeTodos, activeEvents, myDayTargetDate),
+    [activeEvents, activeTodos, myDayTargetDate],
+  )
   const statsMetricCards = useMemo<StatsMetricCard[]>(
     () => [
       {
@@ -585,6 +592,25 @@ function App() {
     workspaceSettingsInfo?.syncStatus.status === 'error'
   const isWorkspaceSyncing =
     workspaceSyncSnapshot?.status === 'pushing' || workspaceSyncSnapshot?.status === 'pulling'
+
+  useEffect(() => {
+    let timer = 0
+
+    const scheduleTick = () => {
+      const now = Date.now()
+      const nextMinuteDelay = 60_000 - (now % 60_000)
+      timer = window.setTimeout(() => {
+        setCurrentTime(Date.now())
+        scheduleTick()
+      }, nextMinuteDelay)
+    }
+
+    scheduleTick()
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [])
 
   useEffect(() => {
     if (!toast) {
@@ -1849,6 +1875,9 @@ function App() {
               </button>
               <div className="mobile-board-toolbar-copy">
                 <h1>{boardTitle}</h1>
+                {activeView === 'todos' && activeFilter === 'today' && !selectedCategoryId && !selectedUncategorized && myDayHint ? (
+                  <p className="board-subtitle">{myDayHint}</p>
+                ) : null}
               </div>
             </header>
           ) : null}
@@ -1872,6 +1901,9 @@ function App() {
             <header className="board-header">
               <div className="board-heading">
                 <h1>{boardTitle}</h1>
+                {activeView === 'todos' && activeFilter === 'today' && !selectedCategoryId && !selectedUncategorized && myDayHint ? (
+                  <p className="board-subtitle">{myDayHint}</p>
+                ) : null}
               </div>
             </header>
           )}
@@ -1962,6 +1994,7 @@ function App() {
                     busy={busy}
                     className="detail-pane detail-pane-sheet"
                     showCloseButton={false}
+                    myDayTargetDate={myDayTargetDate}
                     readOnly={isReadOnly}
                   />
                 ) : (
@@ -1994,6 +2027,7 @@ function App() {
               setConfirmDeleteTodo={setConfirmDeleteTodo}
               closeDetail={() => closeDetail(false)}
               busy={busy}
+              myDayTargetDate={myDayTargetDate}
               readOnly={isReadOnly}
             />
           ) : selectedEvent ? (
@@ -2020,6 +2054,7 @@ function App() {
             setConfirmDeleteTodo={setConfirmDeleteTodo}
             closeDetail={() => closeDetail(false)}
             busy={busy}
+            myDayTargetDate={myDayTargetDate}
             readOnly={isReadOnly}
           />
         )}
@@ -3699,6 +3734,7 @@ function TodoDetailPane({
   busy,
   className,
   showCloseButton = true,
+  myDayTargetDate,
   readOnly,
 }: {
   selectedTodo: TodoRecord | null
@@ -3712,6 +3748,7 @@ function TodoDetailPane({
   busy: boolean
   className?: string
   showCloseButton?: boolean
+  myDayTargetDate: string
   readOnly: boolean
 }) {
   const selectedCategory = categories.find((category) => category.id === detailDraft?.categoryId) ?? null
@@ -3846,7 +3883,7 @@ function TodoDetailPane({
     ? getMyDayMembership({
         dueDate: detailDraft.dueDate || null,
         myDayDate: detailDraft.myDayDate || null,
-      })
+      }, myDayTargetDate)
     : 'none'
   const recurrenceOptions = detailDraft
     ? [
@@ -3879,7 +3916,7 @@ function TodoDetailPane({
       ? getMyDayMembership({
           dueDate: selectedTodo.dueDate,
           myDayDate: selectedTodo.myDayDate,
-        })
+        }, myDayTargetDate)
       : 'none'
 
     return (
@@ -5226,6 +5263,24 @@ function todayDate() {
   return formatDateInputValue(new Date())
 }
 
+function getMyDayTargetDate(now = new Date(), cutoffHour = myDayCutoffHour) {
+  const target = new Date(now)
+
+  if (now.getHours() < cutoffHour) {
+    target.setDate(target.getDate() - 1)
+  }
+
+  return formatDateInputValue(target)
+}
+
+function getMyDayHint(now = new Date(), cutoffHour = myDayCutoffHour) {
+  if (now.getHours() >= cutoffHour) {
+    return ''
+  }
+
+  return `当前按昨日视角展示，${String(cutoffHour).padStart(2, '0')}:00 后切换到今天`
+}
+
 function groupCalendarEntriesByDate(todos: TodoRecord[], events: EventRecord[]) {
   const grouped = new Map<string, CalendarEntry[]>()
 
@@ -5368,9 +5423,9 @@ function getMyDaySortPriority(
   return 2
 }
 
-function compareMyDayTodos(left: TodoRecord, right: TodoRecord) {
-  const leftPriority = getMyDaySortPriority(left)
-  const rightPriority = getMyDaySortPriority(right)
+function compareMyDayTodos(left: TodoRecord, right: TodoRecord, targetDate = todayDate()) {
+  const leftPriority = getMyDaySortPriority(left, targetDate)
+  const rightPriority = getMyDaySortPriority(right, targetDate)
 
   if (leftPriority !== rightPriority) {
     return leftPriority - rightPriority
@@ -5692,7 +5747,7 @@ function formatReadonlyRecurrenceLabel(recurrenceType: TodoRecurrenceType, dueDa
   return formatRecurrenceOptionLabel(recurrenceType, dueDate)
 }
 
-function buildStatsSummary(todos: TodoRecord[], events: EventRecord[]) {
+function buildStatsSummary(todos: TodoRecord[], events: EventRecord[], myDayDate = todayDate()) {
   const today = todayDate()
   const nextSevenDaysEnd = nextDate(6)
   const statusCounts: Record<TodoStatus, number> = {
@@ -5713,7 +5768,7 @@ function buildStatsSummary(todos: TodoRecord[], events: EventRecord[]) {
       overdueTodos += 1
     }
 
-    if (isTodoInMyDay(todo)) {
+    if (isTodoInMyDay(todo, myDayDate)) {
       todayFocusTodos += 1
     }
 

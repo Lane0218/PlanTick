@@ -1285,6 +1285,13 @@
   letter-spacing: -0.05em;
 }
 
+.board-subtitle {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: #5f6f86;
+}
+
 .mobile-board-toolbar {
   display: none;
 }

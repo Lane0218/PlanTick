@@ -10,8 +10,39 @@ function addDays(date: Date, days: number) {
   return next
 }
 
-function formatDateInputValue(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+async function mockCurrentTime(
+  page: Page,
+  fixedTime: { year: number; month: number; day: number; hour: number; minute: number; second?: number },
+) {
+  await page.addInitScript((value) => {
+    const RealDate = Date
+    const fixedTimestamp = new RealDate(
+      value.year,
+      value.month - 1,
+      value.day,
+      value.hour,
+      value.minute,
+      value.second ?? 0,
+      0,
+    ).valueOf()
+
+    class MockDate extends RealDate {
+      constructor(...args: [] | [string | number | Date] | [number, number, number?, number?, number?, number?, number?]) {
+        if (args.length === 0) {
+          super(fixedTimestamp)
+          return
+        }
+
+        super(...args)
+      }
+
+      static now() {
+        return fixedTimestamp
+      }
+    }
+
+    ;(globalThis as typeof globalThis & { Date: DateConstructor }).Date = MockDate as DateConstructor
+  }, fixedTime)
 }
 
 function weekdayLabel(date: Date) {
@@ -638,16 +669,118 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   await expect(restoredTask.getByText('明天')).toBeVisible()
 })
 
-test('phase 3 我的一天仅保留当天完成的任务并按优先级排序', async ({ page, baseURL }) => {
+test('phase 3 我的一天在凌晨 2 点前仍按昨天展示回顾任务', async ({ page, baseURL }) => {
+  const workspaceId = `local-myday-late-night-${Date.now()}`
+  const overdueTitle = '昨天截止的任务'
+  const todayTitle = '今天截止的任务'
+  const manualTitle = '昨天手动加入我的一天'
+  const completedYesterdayTitle = '昨天完成的昨天任务'
+  const completedTodayTitle = '今天完成的昨天任务'
+  const yesterday = '2026-03-22'
+  const today = '2026-03-23'
+
+  await mockCurrentTime(page, { year: 2026, month: 3, day: 23, hour: 0, minute: 30 })
+  await page.goto(baseURL!)
+  await page.setViewportSize({ width: 1440, height: 960 })
+  await seedLocalWorkspace(page, {
+    workspaceId,
+    todos: [
+      {
+        id: `${workspaceId}-overdue`,
+        workspaceId,
+        title: overdueTitle,
+        categoryId: null,
+        dueDate: yesterday,
+        myDayDate: null,
+        status: 'blocked',
+        completedOn: null,
+        note: '',
+        recurrenceType: 'none',
+        updatedAt: `${today}T08:00:00.000Z`,
+        deleted: false,
+      },
+      {
+        id: `${workspaceId}-today`,
+        workspaceId,
+        title: todayTitle,
+        categoryId: null,
+        dueDate: today,
+        myDayDate: null,
+        status: 'not_started',
+        completedOn: null,
+        note: '',
+        recurrenceType: 'none',
+        updatedAt: `${today}T08:10:00.000Z`,
+        deleted: false,
+      },
+      {
+        id: `${workspaceId}-manual`,
+        workspaceId,
+        title: manualTitle,
+        categoryId: null,
+        dueDate: null,
+        myDayDate: yesterday,
+        status: 'not_started',
+        completedOn: null,
+        note: '',
+        recurrenceType: 'none',
+        updatedAt: `${today}T08:20:00.000Z`,
+        deleted: false,
+      },
+      {
+        id: `${workspaceId}-completed-yesterday`,
+        workspaceId,
+        title: completedYesterdayTitle,
+        categoryId: null,
+        dueDate: yesterday,
+        myDayDate: null,
+        status: 'completed',
+        completedOn: yesterday,
+        note: '',
+        recurrenceType: 'none',
+        updatedAt: `${today}T08:30:00.000Z`,
+        deleted: false,
+      },
+      {
+        id: `${workspaceId}-completed-today`,
+        workspaceId,
+        title: completedTodayTitle,
+        categoryId: null,
+        dueDate: yesterday,
+        myDayDate: null,
+        status: 'completed',
+        completedOn: today,
+        note: '',
+        recurrenceType: 'none',
+        updatedAt: `${today}T08:40:00.000Z`,
+        deleted: false,
+      },
+    ],
+  })
+
+  await page.reload()
+
+  const myDayButton = page.locator('.sidebar-nav').getByRole('button', { name: /^我的一天/ })
+  await expect(myDayButton).toContainText('2')
+  await myDayButton.click()
+  await expect(page.getByRole('heading', { name: '我的一天' })).toBeVisible()
+  await expect(page.getByText('当前按昨日视角展示，02:00 后切换到今天')).toBeVisible()
+  await expect(page.locator('.todo-list .todo-main strong')).toHaveText([overdueTitle, manualTitle, completedYesterdayTitle])
+  await expect(page.getByRole('button', { name: `查看任务 ${todayTitle}` })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: `查看任务 ${completedTodayTitle}` })).toHaveCount(0)
+})
+
+test('phase 3 我的一天在凌晨 2 点后仅保留当天完成的任务并按优先级排序', async ({ page, baseURL }) => {
   const workspaceId = `local-myday-${Date.now()}`
   const overdueTitle = '昨天截止的任务'
   const todayTitle = '今天截止的任务'
   const manualTitle = '手动加入我的一天'
   const completedTodayTitle = '今天完成的昨天任务'
   const completedYesterdayTitle = '昨天完成的昨天任务'
-  const yesterday = formatDateInputValue(addDays(new Date(), -1))
-  const today = formatDateInputValue(new Date())
+  const yesterday = '2026-03-22'
+  const today = '2026-03-23'
 
+  await mockCurrentTime(page, { year: 2026, month: 3, day: 23, hour: 10, minute: 0 })
   await page.goto(baseURL!)
   await page.setViewportSize({ width: 1440, height: 960 })
   await seedLocalWorkspace(page, {
@@ -732,6 +865,7 @@ test('phase 3 我的一天仅保留当天完成的任务并按优先级排序', 
   await expect(myDayButton).toContainText('3')
   await myDayButton.click()
   await expect(page.getByRole('heading', { name: '我的一天' })).toBeVisible()
+  await expect(page.getByText('当前按昨日视角展示，02:00 后切换到今天')).toHaveCount(0)
   await expect(page.locator('.todo-list .todo-main strong')).toHaveText([overdueTitle, todayTitle, manualTitle, completedTodayTitle])
   const completedTask = page.locator('article', {
     has: page.getByRole('button', { name: `查看任务 ${completedTodayTitle}` }),
