@@ -344,13 +344,13 @@ test('phase 2 首次进入直接展示工作台并支持游客模式', async ({ 
   await page.goto(baseURL!)
   await page.setViewportSize({ width: 1440, height: 960 })
 
-  await expect(page.getByRole('heading', { name: '待办箱' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '我的一天' })).toBeVisible()
   await expectWorkspaceAccessDialog(page)
   await page.getByRole('dialog', { name: '创建或加入你的任务工作台' }).getByRole('button', { name: '创建工作区' }).click()
   await expectWorkspaceAccessDialog(page)
   await page.getByRole('dialog', { name: '创建或加入你的任务工作台' }).getByRole('button', { name: '游客模式' }).click()
   await expect(page.getByRole('dialog', { name: '创建或加入你的任务工作台' })).toHaveCount(0)
-  await expect(page.getByRole('heading', { name: '待办箱' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '我的一天' })).toBeVisible()
   await expect(page.getByRole('button', { name: '创建工作区' })).toBeVisible()
   await expect(page.getByRole('button', { name: '加入工作区' })).toBeVisible()
 
@@ -437,7 +437,7 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   }
 
   await createWorkspaceFromDialog(page, passphrase)
-  await expect(page.getByRole('heading', { name: '待办箱' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '我的一天' })).toBeVisible()
   await expect(page.locator('.sidebar-nav .sidebar-icon svg')).toHaveCount(5)
   await page.getByLabel('快速新建任务').focus()
   await expect(page.getByLabel('快速新建任务')).toHaveCSS('outline-style', 'none')
@@ -1134,7 +1134,7 @@ test('phase 4 日程概览：月历展示截止事项并支持在日历中改期
   }
 
   await createWorkspaceFromDialog(page, passphrase)
-  await expect(page.getByRole('heading', { name: '待办箱' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '我的一天' })).toBeVisible()
 
   await createTodayTask('月历任务一')
   await createTodayTask('月历已完成')
