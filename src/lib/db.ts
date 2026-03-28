@@ -189,7 +189,8 @@ function normalizeEventSyncRecord(
 function normalizeTodoSyncRecord(
   record: SyncRecord,
 ) {
-  const { completed: _completed, ...rest } = record as SyncRecord & { completed?: unknown }
+  const rest = { ...record } as SyncRecord & { completed?: unknown }
+  delete rest.completed
   return rest satisfies SyncRecord
 }
 

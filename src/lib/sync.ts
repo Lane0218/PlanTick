@@ -32,7 +32,8 @@ function isMissingCategorySortOrderColumn(errorMessage: string) {
 }
 
 function stripCategorySortOrder(payload: SyncRecord) {
-  const { sort_order: _sortOrder, ...rest } = payload
+  const rest = { ...payload } as SyncRecord & { sort_order?: unknown }
+  delete rest.sort_order
   return rest satisfies SyncRecord
 }
 

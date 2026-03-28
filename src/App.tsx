@@ -3,6 +3,7 @@ import type { CSSProperties, FormEvent, PointerEvent as ReactPointerEvent, RefOb
 import { DayPicker } from 'react-day-picker'
 import 'react-day-picker/dist/style.css'
 import {
+  TriangleAlert,
   BarChart3,
   CalendarDays,
   CheckCircle2,
@@ -13,6 +14,7 @@ import {
   Clock3,
   Inbox,
   LogOut,
+  LoaderCircle,
   Menu,
   PauseCircle,
   Pencil,
@@ -66,6 +68,7 @@ type WorkspaceMode = 'create' | 'join'
 type WorkspaceView = 'todos' | 'board' | 'stats' | 'calendar'
 type TaskFilter = 'all' | 'today' | 'overdue' | 'completed'
 type WorkspaceRuntimeMode = 'workspace' | 'guest' | 'unattached'
+type AppBootState = 'booting' | 'idle' | 'boot-error'
 type WorkspaceSettingsBusyState = 'loading' | 'updating' | 'leaving' | null
 
 type WorkspaceSyncSnapshot = {
@@ -78,6 +81,8 @@ type AppToast = {
   id: number
   message: string
 }
+
+const BOOT_RESTORE_TIMEOUT_MS = 8_000
 
 type WorkspacePrimaryNavProps = {
   activeView: WorkspaceView
@@ -385,6 +390,8 @@ function App() {
   const [passphrase, setPassphrase] = useState('')
   const [workspaceId, setWorkspaceId] = useState('')
   const [runtimeMode, setRuntimeMode] = useState<WorkspaceRuntimeMode>('unattached')
+  const [appBootState, setAppBootState] = useState<AppBootState>('booting')
+  const [bootErrorMessage, setBootErrorMessage] = useState('')
   const [workspaceDialogOpen, setWorkspaceDialogOpen] = useState(false)
   const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = useState(false)
   const [workspaceSettingsInfo, setWorkspaceSettingsInfo] = useState<WorkspaceSettingsInfo | null>(null)
@@ -432,6 +439,7 @@ function App() {
   const lastSavedDraftRef = useRef('')
   const lastSavedEventDraftRef = useRef('')
   const refreshRequestIdRef = useRef(0)
+  const bootRestoreRequestIdRef = useRef(0)
   const workspaceSettingsRequestIdRef = useRef(0)
   const lastSyncErrorToastKeyRef = useRef<string | null>(null)
 
@@ -441,18 +449,20 @@ function App() {
   const isGuestMode = runtimeMode === 'guest'
   const isReadOnly = runtimeMode === 'unattached'
   const showWorkspaceControls = runtimeMode === 'workspace'
+  const isBooting = appBootState === 'booting'
+  const isBootError = appBootState === 'boot-error'
 
-  const dismissToast = useEffectEvent(() => {
+  function dismissToast() {
     setToast(null)
-  })
+  }
 
-  const showErrorToast = useEffectEvent((nextMessage: string) => {
+  function showErrorToast(nextMessage: string) {
     toastIdRef.current += 1
     setToast({
       id: toastIdRef.current,
       message: nextMessage,
     })
-  })
+  }
 
   const activeCategories = useMemo(
     () =>
@@ -744,6 +754,101 @@ function App() {
     setWorkspaceSettingsMessage('')
   }
 
+  function cancelOngoingWorkspaceRefresh() {
+    refreshRequestIdRef.current += 1
+  }
+
+  function resetDetachedWorkspaceState(options?: { openDialog?: boolean }) {
+    const openDialog = options?.openDialog ?? false
+
+    setWorkspaceId('')
+    setRuntimeMode('unattached')
+    setWorkspaceDialogOpen(openDialog)
+    setWorkspaceSettingsOpen(false)
+    setWorkspaceSettingsInfo(null)
+    setWorkspaceSettingsMessage('')
+    setCategories([])
+    setTodos([])
+    setEvents([])
+    setSelectedCategoryId(null)
+    setSelectedUncategorized(false)
+    setActiveFilter('today')
+    setSelectedTodoId(null)
+    setSelectedEventId(null)
+    setActiveView('todos')
+    setSelectedMyDayDate(todayDate())
+    setCalendarMonth(startOfMonthIso(todayDate()))
+    setSelectedCalendarDate(todayDate())
+    setQuickTodoTitle('')
+    setQuickEventTitle('')
+    setSessionLabel('尚未建立匿名会话')
+    applyWorkspaceSyncSnapshot(null)
+  }
+
+  async function restoreRecentWorkspace() {
+    const requestId = bootRestoreRequestIdRef.current + 1
+    bootRestoreRequestIdRef.current = requestId
+    setAppBootState('booting')
+    setBootErrorMessage('')
+    setWorkspaceDialogOpen(false)
+    setMessage('')
+
+    let timeoutId: number | null = null
+
+    try {
+      const restoredWorkspaceId = await loadWorkspaceId()
+      if (bootRestoreRequestIdRef.current !== requestId) {
+        return
+      }
+
+      if (!restoredWorkspaceId) {
+        resetDetachedWorkspaceState({ openDialog: true })
+        setAppBootState('idle')
+        return
+      }
+
+      const timeoutPromise = new Promise<never>((_resolve, reject) => {
+        timeoutId = window.setTimeout(() => {
+          reject(new Error('连接最近工作区超时，请重试或重新进入工作区。'))
+        }, BOOT_RESTORE_TIMEOUT_MS)
+      })
+
+      await Promise.race([refreshWorkspaceData(restoredWorkspaceId), timeoutPromise])
+      if (bootRestoreRequestIdRef.current !== requestId) {
+        return
+      }
+
+      setAppBootState('idle')
+      setMessage(`已恢复最近工作区：${restoredWorkspaceId}`)
+    } catch (error) {
+      if (bootRestoreRequestIdRef.current !== requestId) {
+        return
+      }
+
+      cancelOngoingWorkspaceRefresh()
+      resetDetachedWorkspaceState()
+      setAppBootState('boot-error')
+      setBootErrorMessage(error instanceof Error ? error.message : '最近工作区恢复失败，请重试。')
+    } finally {
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId)
+      }
+    }
+  }
+
+  function handleRetryWorkspaceRestore() {
+    void restoreRecentWorkspace()
+  }
+
+  function handleOpenWorkspaceEntry() {
+    bootRestoreRequestIdRef.current += 1
+    cancelOngoingWorkspaceRefresh()
+    setAppBootState('idle')
+    setBootErrorMessage('')
+    resetDetachedWorkspaceState()
+    openWorkspaceDialog('join')
+  }
+
   useEffect(() => {
     const mediaQuery = window.matchMedia('(max-width: 980px)')
     const updateViewportState = () => {
@@ -760,22 +865,7 @@ function App() {
 
   useEffect(() => {
     void runIndexedDbProbe().catch(() => undefined)
-
-    const restore = async () => {
-      const restoredWorkspaceId = await loadWorkspaceId()
-      if (!restoredWorkspaceId) {
-        setRuntimeMode('unattached')
-        setWorkspaceDialogOpen(true)
-        setMessage('')
-        return
-      }
-
-      await refreshWorkspaceData(restoredWorkspaceId)
-      setMessage(`已恢复最近工作区：${restoredWorkspaceId}`)
-    }
-
-    void restore()
-    // `refreshWorkspaceData` is intentionally invoked only during initial restore.
+    void restoreRecentWorkspace()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -1029,19 +1119,7 @@ function App() {
         return
       }
 
-      setWorkspaceId('')
-      setRuntimeMode('unattached')
-      setCategories([])
-      setTodos([])
-      setEvents([])
-      setSelectedCategoryId(null)
-      setSelectedUncategorized(false)
-      setActiveFilter('today')
-      setSelectedTodoId(null)
-      setSelectedEventId(null)
-      applyWorkspaceSyncSnapshot(null)
-      setActiveView('todos')
-      setSessionLabel('尚未建立匿名会话')
+      resetDetachedWorkspaceState()
       return
     }
 
@@ -1085,6 +1163,8 @@ function App() {
       await saveCurrentWorkspaceMeta(response.workspaceId, session.user.id)
       await refreshWorkspaceData(response.workspaceId)
 
+      setAppBootState('idle')
+      setBootErrorMessage('')
       setRuntimeMode('workspace')
       setWorkspaceDialogOpen(false)
       setMessage(
@@ -1720,6 +1800,8 @@ function App() {
   function enterGuestMode() {
     const guestSession = createGuestSessionData()
 
+    setAppBootState('idle')
+    setBootErrorMessage('')
     setRuntimeMode('guest')
     setWorkspaceId(demoWorkspaceId)
     setWorkspaceDialogOpen(false)
@@ -1818,204 +1900,236 @@ function App() {
 
   return (
     <>
-      <main className={shellClassName}>
-        {isMobileViewport ? null : (
-          <Sidebar
-            {...sidebarProps}
-            readOnly={isReadOnly}
-          />
-        )}
-
-        {isMobileViewport && isMobileSidebarOpen ? (
-          <div className="mobile-sidebar-layer">
-            <button
-              type="button"
-              className="mobile-sidebar-backdrop"
-              aria-label="关闭侧边抽屉"
-              onClick={() => closeMobileSidebar(true)}
+      {isBootError ? (
+        <WorkspaceRestoreErrorState
+          message={bootErrorMessage}
+          onRetry={handleRetryWorkspaceRestore}
+          onOpenWorkspaceEntry={handleOpenWorkspaceEntry}
+        />
+      ) : (
+        <main className={shellClassName}>
+          {isMobileViewport ? null : (
+            <Sidebar
+              {...sidebarProps}
+              readOnly={isReadOnly}
             />
-            <div className="mobile-sidebar-shell" role="dialog" aria-modal="true" aria-label="侧边导航">
-              <Sidebar
-                {...sidebarProps}
-                id="mobile-sidebar-drawer"
-                className="sidebar-pane sidebar-pane-drawer"
-                onNavigate={() => closeMobileSidebar()}
-                readOnly={isReadOnly}
-              />
-            </div>
-          </div>
-        ) : null}
+          )}
 
-        <section className="board-pane">
-          {isMobileViewport ? (
-            <header className="mobile-board-toolbar">
+          {isMobileViewport && isMobileSidebarOpen ? (
+            <div className="mobile-sidebar-layer">
               <button
-                ref={mobileSidebarButtonRef}
                 type="button"
-                className="mobile-toolbar-button"
-                aria-label={isMobileSidebarOpen ? '关闭侧边抽屉' : '打开侧边抽屉'}
-                aria-expanded={isMobileSidebarOpen}
-                aria-controls="mobile-sidebar-drawer"
-                onClick={() => setIsMobileSidebarOpen((current) => !current)}
-              >
-                <Menu size={20} strokeWidth={2.2} />
-              </button>
-              <div className="mobile-board-toolbar-copy">
-                <h1>{boardTitle}</h1>
-                {isBrowsingMyDay ? (
-                  <>
+                className="mobile-sidebar-backdrop"
+                aria-label="关闭侧边抽屉"
+                onClick={() => closeMobileSidebar(true)}
+              />
+              <div className="mobile-sidebar-shell" role="dialog" aria-modal="true" aria-label="侧边导航">
+                <Sidebar
+                  {...sidebarProps}
+                  id="mobile-sidebar-drawer"
+                  className="sidebar-pane sidebar-pane-drawer"
+                  onNavigate={() => closeMobileSidebar()}
+                  readOnly={isReadOnly}
+                />
+              </div>
+            </div>
+          ) : null}
+
+          <section className="board-pane">
+            {isMobileViewport ? (
+              <header className="mobile-board-toolbar">
+                <button
+                  ref={mobileSidebarButtonRef}
+                  type="button"
+                  className="mobile-toolbar-button"
+                  aria-label={isMobileSidebarOpen ? '关闭侧边抽屉' : '打开侧边抽屉'}
+                  aria-expanded={isMobileSidebarOpen}
+                  aria-controls="mobile-sidebar-drawer"
+                  onClick={() => setIsMobileSidebarOpen((current) => !current)}
+                >
+                  <Menu size={20} strokeWidth={2.2} />
+                </button>
+                <div className="mobile-board-toolbar-copy">
+                  <h1>{boardTitle}</h1>
+                  {isBrowsingMyDay ? (
                     <MyDayDateNavigator
                       selectedDate={selectedMyDayDate}
                       onPreviousDay={() => shiftMyDayViewDate(-1)}
                       onNextDay={() => shiftMyDayViewDate(1)}
                       compact
                     />
-                  </>
-                ) : null}
-              </div>
-            </header>
-          ) : null}
+                  ) : null}
+                </div>
+              </header>
+            ) : null}
 
-          <WorkspacePrimaryNav
-            className="board-primary-nav"
-            activeView={activeView}
-            setActiveView={setActiveView}
-            activeFilter={activeFilter}
-            setActiveFilter={setActiveFilter}
-            selectedCategoryId={selectedCategoryId}
-            setSelectedCategoryId={setSelectedCategoryId}
-            selectedUncategorized={selectedUncategorized}
-            setSelectedUncategorized={setSelectedUncategorized}
-            setSelectedTodoId={setSelectedTodoId}
-            setSelectedEventId={setSelectedEventId}
-            sidebarCounts={sidebarCounts}
-            openTodayMyDay={openTodayMyDay}
-          />
-
-          {isMobileViewport || activeView === 'calendar' ? null : (
-            <header className="board-header">
-              <div className="board-heading">
-                <h1>{boardTitle}</h1>
-              </div>
-              {isBrowsingMyDay ? (
-                <MyDayDateNavigator
-                  selectedDate={selectedMyDayDate}
-                  onPreviousDay={() => shiftMyDayViewDate(-1)}
-                  onNextDay={() => shiftMyDayViewDate(1)}
-                />
-              ) : null}
-            </header>
-          )}
-
-          {activeView === 'calendar' ? (
-            <CalendarBoard
-              entriesByDate={calendarEntriesByDate}
-              selectedDate={selectedCalendarDate}
-              selectedTodoId={selectedTodoId}
-              selectedEventId={selectedEventId}
-              visibleMonth={calendarMonth}
-              setVisibleMonth={setCalendarMonth}
-              setSelectedDate={setSelectedCalendarDate}
+            <WorkspacePrimaryNav
+              className="board-primary-nav"
+              activeView={activeView}
+              setActiveView={setActiveView}
+              activeFilter={activeFilter}
+              setActiveFilter={setActiveFilter}
+              selectedCategoryId={selectedCategoryId}
+              setSelectedCategoryId={setSelectedCategoryId}
+              selectedUncategorized={selectedUncategorized}
+              setSelectedUncategorized={setSelectedUncategorized}
               setSelectedTodoId={setSelectedTodoId}
               setSelectedEventId={setSelectedEventId}
-              quickEventTitle={quickEventTitle}
-              setQuickEventTitle={setQuickEventTitle}
-              handleQuickCreateEvent={handleQuickCreateEvent}
-              onSelectTodo={handleSelectTodo}
-              onSelectEvent={handleSelectEvent}
-              readOnly={isReadOnly}
+              sidebarCounts={sidebarCounts}
+              openTodayMyDay={openTodayMyDay}
             />
-          ) : activeView === 'board' ? (
-            <StatusBoard
-              columns={boardColumns}
-              categories={activeCategories}
-              onUpdateTodoStatus={handleSetTodoStatus}
-              enableDrag={!isMobileViewport}
-              busy={busy}
-              readOnly={isReadOnly}
-            />
-          ) : activeView === 'stats' ? (
-            <StatsBoard
-              metricCards={statsMetricCards}
-              statusDistribution={statusDistribution}
-              categoryDistribution={categoryDistribution}
-              dueDistribution={dueDistribution}
-              dayLoad={nextSevenDayLoad}
-              historicalCompletionSeries={historicalCompletionSeries}
-            />
-          ) : (
-            <TodoBoard
-              quickTodoTitle={quickTodoTitle}
-              setQuickTodoTitle={setQuickTodoTitle}
-              handleQuickCreateTodo={handleQuickCreateTodo}
-              visibleTodos={visibleTodos}
-              selectedTodoId={selectedTodoId}
-              onSelectTodo={handleSelectTodo}
-              categories={activeCategories}
-              handleToggleTodo={handleToggleTodo}
-              showCategoryMeta={shouldShowTodoCategoryMeta}
-              readOnly={isReadOnly}
-            />
-          )}
-        </section>
 
-        {isMobileViewport ? (
-          activeView !== 'board' && activeView !== 'stats' && (selectedTodo || selectedEvent) && isMobileDetailOpen ? (
-            <div className="mobile-detail-layer">
-              <button
-                type="button"
-                className="mobile-detail-backdrop"
-                aria-label="关闭详情"
-                onClick={() => closeDetail(true)}
+            {isMobileViewport || activeView === 'calendar' ? null : (
+              <header className="board-header">
+                <div className="board-heading">
+                  <h1>{boardTitle}</h1>
+                </div>
+                {isBrowsingMyDay ? (
+                  <MyDayDateNavigator
+                    selectedDate={selectedMyDayDate}
+                    onPreviousDay={() => shiftMyDayViewDate(-1)}
+                    onNextDay={() => shiftMyDayViewDate(1)}
+                  />
+                ) : null}
+              </header>
+            )}
+
+            {activeView === 'calendar' ? (
+              <CalendarBoard
+                entriesByDate={calendarEntriesByDate}
+                selectedDate={selectedCalendarDate}
+                selectedTodoId={selectedTodoId}
+                selectedEventId={selectedEventId}
+                visibleMonth={calendarMonth}
+                setVisibleMonth={setCalendarMonth}
+                setSelectedDate={setSelectedCalendarDate}
+                setSelectedTodoId={setSelectedTodoId}
+                setSelectedEventId={setSelectedEventId}
+                quickEventTitle={quickEventTitle}
+                setQuickEventTitle={setQuickEventTitle}
+                handleQuickCreateEvent={handleQuickCreateEvent}
+                onSelectTodo={handleSelectTodo}
+                onSelectEvent={handleSelectEvent}
+                readOnly={isReadOnly}
               />
-              <div className="mobile-detail-sheet" role="dialog" aria-modal="true" aria-label="移动端任务详情">
-                <div className="mobile-detail-sheet-chrome">
-                  <div className="mobile-detail-sheet-handle" aria-hidden="true" />
-                  <button
-                    type="button"
-                    className="detail-close mobile-detail-close"
-                    aria-label="关闭详情"
-                    onClick={() => closeDetail(true)}
-                >
-                  ×
-                </button>
+            ) : activeView === 'board' ? (
+              <StatusBoard
+                columns={boardColumns}
+                categories={activeCategories}
+                onUpdateTodoStatus={handleSetTodoStatus}
+                enableDrag={!isMobileViewport}
+                busy={busy}
+                readOnly={isReadOnly}
+              />
+            ) : activeView === 'stats' ? (
+              <StatsBoard
+                metricCards={statsMetricCards}
+                statusDistribution={statusDistribution}
+                categoryDistribution={categoryDistribution}
+                dueDistribution={dueDistribution}
+                dayLoad={nextSevenDayLoad}
+                historicalCompletionSeries={historicalCompletionSeries}
+              />
+            ) : (
+              <TodoBoard
+                quickTodoTitle={quickTodoTitle}
+                setQuickTodoTitle={setQuickTodoTitle}
+                handleQuickCreateTodo={handleQuickCreateTodo}
+                visibleTodos={visibleTodos}
+                selectedTodoId={selectedTodoId}
+                onSelectTodo={handleSelectTodo}
+                categories={activeCategories}
+                handleToggleTodo={handleToggleTodo}
+                showCategoryMeta={shouldShowTodoCategoryMeta}
+                readOnly={isReadOnly}
+              />
+            )}
+          </section>
+
+          {isMobileViewport ? (
+            activeView !== 'board' && activeView !== 'stats' && (selectedTodo || selectedEvent) && isMobileDetailOpen ? (
+              <div className="mobile-detail-layer">
+                <button
+                  type="button"
+                  className="mobile-detail-backdrop"
+                  aria-label="关闭详情"
+                  onClick={() => closeDetail(true)}
+                />
+                <div className="mobile-detail-sheet" role="dialog" aria-modal="true" aria-label="移动端任务详情">
+                  <div className="mobile-detail-sheet-chrome">
+                    <div className="mobile-detail-sheet-handle" aria-hidden="true" />
+                    <button
+                      type="button"
+                      className="detail-close mobile-detail-close"
+                      aria-label="关闭详情"
+                      onClick={() => closeDetail(true)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                  {selectedTodo ? (
+                    <TodoDetailPane
+                      selectedTodo={selectedTodo}
+                      categories={activeCategories}
+                      detailDraft={detailDraft}
+                      setDetailDraft={setDetailDraft}
+                      handleDeleteTodo={handleDeleteTodo}
+                      confirmDeleteTodo={confirmDeleteTodo}
+                      setConfirmDeleteTodo={setConfirmDeleteTodo}
+                      closeDetail={() => closeDetail(true)}
+                      busy={busy}
+                      className="detail-pane detail-pane-sheet"
+                      showCloseButton={false}
+                      myDayReferenceDate={myDayReferenceDate}
+                      readOnly={isReadOnly}
+                    />
+                  ) : (
+                    <EventDetailPane
+                      selectedEvent={selectedEvent}
+                      eventDraft={eventDraft}
+                      setEventDraft={setEventDraft}
+                      handleDeleteEvent={handleDeleteEvent}
+                      confirmDeleteEvent={confirmDeleteEvent}
+                      setConfirmDeleteEvent={setConfirmDeleteEvent}
+                      closeDetail={() => closeDetail(true)}
+                      busy={busy}
+                      className="detail-pane detail-pane-sheet"
+                      showCloseButton={false}
+                      readOnly={isReadOnly}
+                    />
+                  )}
+                </div>
               </div>
-                {selectedTodo ? (
-                  <TodoDetailPane
-                    selectedTodo={selectedTodo}
-                    categories={activeCategories}
-                    detailDraft={detailDraft}
-                    setDetailDraft={setDetailDraft}
-                    handleDeleteTodo={handleDeleteTodo}
-                    confirmDeleteTodo={confirmDeleteTodo}
-                    setConfirmDeleteTodo={setConfirmDeleteTodo}
-                    closeDetail={() => closeDetail(true)}
-                    busy={busy}
-                    className="detail-pane detail-pane-sheet"
-                    showCloseButton={false}
-                    myDayReferenceDate={myDayReferenceDate}
-                    readOnly={isReadOnly}
-                  />
-                ) : (
-                  <EventDetailPane
-                    selectedEvent={selectedEvent}
-                    eventDraft={eventDraft}
-                    setEventDraft={setEventDraft}
-                    handleDeleteEvent={handleDeleteEvent}
-                    confirmDeleteEvent={confirmDeleteEvent}
-                    setConfirmDeleteEvent={setConfirmDeleteEvent}
-                    closeDetail={() => closeDetail(true)}
-                    busy={busy}
-                    className="detail-pane detail-pane-sheet"
-                    showCloseButton={false}
-                    readOnly={isReadOnly}
-                  />
-                )}
-              </div>
-            </div>
-          ) : null
-        ) : activeView === 'calendar' ? (
-          selectedTodo ? (
+            ) : null
+          ) : activeView === 'calendar' ? (
+            selectedTodo ? (
+              <TodoDetailPane
+                selectedTodo={selectedTodo}
+                categories={activeCategories}
+                detailDraft={detailDraft}
+                setDetailDraft={setDetailDraft}
+                handleDeleteTodo={handleDeleteTodo}
+                confirmDeleteTodo={confirmDeleteTodo}
+                setConfirmDeleteTodo={setConfirmDeleteTodo}
+                closeDetail={() => closeDetail(false)}
+                busy={busy}
+                myDayReferenceDate={myDayReferenceDate}
+                readOnly={isReadOnly}
+              />
+            ) : selectedEvent ? (
+              <EventDetailPane
+                selectedEvent={selectedEvent}
+                eventDraft={eventDraft}
+                setEventDraft={setEventDraft}
+                handleDeleteEvent={handleDeleteEvent}
+                confirmDeleteEvent={confirmDeleteEvent}
+                setConfirmDeleteEvent={setConfirmDeleteEvent}
+                closeDetail={() => closeDetail(false)}
+                busy={busy}
+                readOnly={isReadOnly}
+              />
+            ) : null
+          ) : activeView === 'stats' ? null : !shouldShowDesktopTodoDetail ? null : (
             <TodoDetailPane
               selectedTodo={selectedTodo}
               categories={activeCategories}
@@ -2029,35 +2143,11 @@ function App() {
               myDayReferenceDate={myDayReferenceDate}
               readOnly={isReadOnly}
             />
-          ) : selectedEvent ? (
-            <EventDetailPane
-              selectedEvent={selectedEvent}
-              eventDraft={eventDraft}
-              setEventDraft={setEventDraft}
-              handleDeleteEvent={handleDeleteEvent}
-              confirmDeleteEvent={confirmDeleteEvent}
-              setConfirmDeleteEvent={setConfirmDeleteEvent}
-              closeDetail={() => closeDetail(false)}
-              busy={busy}
-              readOnly={isReadOnly}
-            />
-          ) : null
-        ) : activeView === 'stats' ? null : !shouldShowDesktopTodoDetail ? null : (
-          <TodoDetailPane
-            selectedTodo={selectedTodo}
-            categories={activeCategories}
-            detailDraft={detailDraft}
-            setDetailDraft={setDetailDraft}
-            handleDeleteTodo={handleDeleteTodo}
-            confirmDeleteTodo={confirmDeleteTodo}
-            setConfirmDeleteTodo={setConfirmDeleteTodo}
-            closeDetail={() => closeDetail(false)}
-            busy={busy}
-            myDayReferenceDate={myDayReferenceDate}
-            readOnly={isReadOnly}
-          />
-        )}
-      </main>
+          )}
+        </main>
+      )}
+
+      {isBooting ? <WorkspaceRestoreOverlay /> : null}
 
       <AppToastViewport toast={toast} onClose={dismissToast} />
 
@@ -2091,6 +2181,53 @@ function App() {
         closeDialog={closeWorkspaceSettings}
       />
     </>
+  )
+}
+
+function WorkspaceRestoreOverlay() {
+  return (
+    <div className="workspace-restore-overlay" role="status" aria-live="polite" aria-label="正在恢复最近工作区">
+      <section className="workspace-restore-card">
+        <div className="workspace-restore-mark" aria-hidden="true">
+          <LoaderCircle size={28} strokeWidth={2.2} />
+        </div>
+        <p className="eyebrow">恢复最近工作区</p>
+        <h2>正在连接最近的工作区…</h2>
+        <p>启动流程尚未完成，先等待本地数据与工作区上下文恢复，再进入任务工作台。</p>
+      </section>
+    </div>
+  )
+}
+
+function WorkspaceRestoreErrorState({
+  message,
+  onRetry,
+  onOpenWorkspaceEntry,
+}: {
+  message: string
+  onRetry: () => void
+  onOpenWorkspaceEntry: () => void
+}) {
+  return (
+    <main className="workspace-restore-error-shell">
+      <section className="workspace-restore-error-card" role="alert" aria-live="assertive">
+        <div className="workspace-restore-error-icon" aria-hidden="true">
+          <TriangleAlert size={28} strokeWidth={2.1} />
+        </div>
+        <p className="eyebrow">工作区恢复失败</p>
+        <h1>最近工作区暂时没有连上</h1>
+        <p className="workspace-restore-error-copy">{message || '最近工作区恢复失败，请稍后重试。'}</p>
+        <div className="workspace-restore-error-actions">
+          <button type="button" className="secondary-button" onClick={onRetry}>
+            <RefreshCw size={16} strokeWidth={2.1} aria-hidden="true" />
+            <span>重试恢复</span>
+          </button>
+          <button type="button" className="primary-button" onClick={onOpenWorkspaceEntry}>
+            <span>进入工作区入口</span>
+          </button>
+        </div>
+      </section>
+    </main>
   )
 }
 
@@ -3165,7 +3302,7 @@ function TodoBoard({
   return (
     <section className={readOnly ? 'todo-board is-readonly' : 'todo-board'}>
       {readOnly ? (
-        <div className="readonly-tip">当前为只读示例模式，不能新建任务或切换状态。</div>
+        <div className="readonly-tip">当前未连接工作区，暂时不能新建任务或切换状态。</div>
       ) : null}
       <form className="quick-create" onSubmit={(event) => void handleQuickCreateTodo(event)}>
         <div className={readOnly ? 'quick-create-shell is-disabled' : 'quick-create-shell'}>
@@ -3175,7 +3312,7 @@ function TodoBoard({
           <input
             value={quickTodoTitle}
             onChange={(event) => setQuickTodoTitle(event.target.value)}
-            placeholder={readOnly ? '游客模式下不可新建任务' : '添加任务'}
+            placeholder={readOnly ? '连接工作区后可新建任务' : '添加任务'}
             aria-label="快速新建任务"
             name="quickTodoTitle"
             autoComplete="off"
@@ -4075,13 +4212,13 @@ function TodoDetailPane({
             </div>
 
             <div className="detail-footer detail-footer-left">
-              <p className="detail-footer-hint">示例数据仅用于预览，不支持编辑、删除或同步。</p>
+              <p className="detail-footer-hint">当前未连接工作区，详情仅供查看，暂不支持编辑、删除或同步。</p>
             </div>
           </>
         ) : (
           <div className="detail-empty">
-            <h2>点开一条任务，右侧会展示示例详情。</h2>
-            <p>游客模式下详情仅供阅读，不支持编辑与删除。</p>
+            <h2>点开一条任务，右侧会展示详情。</h2>
+            <p>连接工作区前，详情区域会保持只读。</p>
           </div>
         )}
       </aside>
@@ -4552,13 +4689,13 @@ function EventDetailPane({
             </div>
 
             <div className="detail-footer detail-footer-left">
-              <p className="detail-footer-hint">示例数据仅用于预览，不支持编辑、删除或同步。</p>
+              <p className="detail-footer-hint">当前未连接工作区，详情仅供查看，暂不支持编辑、删除或同步。</p>
             </div>
           </>
         ) : (
           <div className="detail-empty">
-            <h2>点击一条事件，右侧会展示示例详情。</h2>
-            <p>游客模式下详情仅供阅读，不支持编辑与删除。</p>
+            <h2>点击一条事件，右侧会展示详情。</h2>
+            <p>连接工作区前，详情区域会保持只读。</p>
           </div>
         )}
       </aside>
@@ -5007,7 +5144,7 @@ function CalendarBoard({
             <input
               value={quickEventTitle}
               onChange={(event) => setQuickEventTitle(event.target.value)}
-              placeholder={readOnly ? '游客模式下不可新建事件' : `为 ${formatMonthDay(selectedDate)} 添加事件`}
+              placeholder={readOnly ? '连接工作区后可新建事件' : `为 ${formatMonthDay(selectedDate)} 添加事件`}
               aria-label="快速新建事件"
               name="quickEventTitle"
               autoComplete="off"

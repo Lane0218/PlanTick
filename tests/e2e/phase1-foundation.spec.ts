@@ -195,50 +195,46 @@ async function seedWorkspaceSyncError(page: Page, lastError: string) {
   }, lastError)
 }
 
-async function updatePersistedTodo(
-  page: Page,
-  title: string,
-  updates: Partial<{
-    dueDate: string | null
-    myDayDate: string | null
-    status: 'not_started' | 'in_progress' | 'completed' | 'blocked'
-    completedOn: string | null
-  }>,
-) {
-  await page.evaluate(async ({ title: targetTitle, updates: nextUpdates }) => {
-    const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open('plantick-app')
-      request.onerror = () => reject(request.error)
-      request.onsuccess = () => resolve(request.result)
+async function stallPlantickDbOpen(page: Page) {
+  await page.addInitScript(() => {
+    const originalOpen = window.indexedDB.open.bind(window.indexedDB)
+    const runtimeWindow = window as typeof window & { __stallPlantickDbOpen?: boolean }
+
+    runtimeWindow.__stallPlantickDbOpen = true
+
+    Object.defineProperty(window.indexedDB, 'open', {
+      configurable: true,
+      writable: true,
+      value(name: string, version?: number) {
+        if (name === 'plantick-app' && runtimeWindow.__stallPlantickDbOpen) {
+          return {
+            result: undefined,
+            error: null,
+            source: null,
+            transaction: null,
+            readyState: 'pending',
+            onsuccess: null,
+            onerror: null,
+            onupgradeneeded: null,
+            onblocked: null,
+            addEventListener() {},
+            removeEventListener() {},
+            dispatchEvent() {
+              return false
+            },
+          } as unknown as IDBOpenDBRequest
+        }
+
+        return version === undefined ? originalOpen(name) : originalOpen(name, version)
+      },
     })
+  })
+}
 
-    const transaction = database.transaction(['todos'], 'readwrite')
-    const store = transaction.objectStore('todos')
-    const records = await new Promise<Array<Record<string, unknown>>>((resolve, reject) => {
-      const request = store.getAll()
-      request.onerror = () => reject(request.error)
-      request.onsuccess = () => resolve(request.result as Array<Record<string, unknown>>)
-    })
-    const record = records.find((item) => item.title === targetTitle && !item.deleted)
-
-    if (!record) {
-      throw new Error(`未找到待更新任务：${targetTitle}`)
-    }
-
-    store.put({
-      ...record,
-      ...nextUpdates,
-      updatedAt: new Date().toISOString(),
-    })
-
-    await new Promise<void>((resolve, reject) => {
-      transaction.oncomplete = () => resolve()
-      transaction.onerror = () => reject(transaction.error)
-      transaction.onabort = () => reject(transaction.error)
-    })
-
-    database.close()
-  }, { title, updates })
+async function resumePlantickDbOpen(page: Page) {
+  await page.evaluate(() => {
+    ;(window as typeof window & { __stallPlantickDbOpen?: boolean }).__stallPlantickDbOpen = false
+  })
 }
 
 async function seedLocalWorkspace(
@@ -400,6 +396,33 @@ test('phase 2 首次进入直接展示工作台并支持游客模式', async ({ 
   await page.getByRole('button', { name: '创建工作区' }).click()
   await expect(page.getByRole('dialog', { name: '创建或加入你的任务工作台' })).toBeVisible()
   await expect(page.getByLabel('工作区口令')).toBeVisible()
+})
+
+test('phase 2 启动恢复失败后进入错误态，并可直接进入工作区入口', async ({ page, baseURL }) => {
+  await stallPlantickDbOpen(page)
+  await page.goto(baseURL!, { waitUntil: 'domcontentloaded' })
+  await page.setViewportSize({ width: 1440, height: 960 })
+
+  await expect(page.getByRole('heading', { name: '最近工作区暂时没有连上' })).toBeVisible({ timeout: 11_000 })
+  await expect(page.locator('.workspace-restore-error-copy')).not.toBeEmpty()
+  await expect(page.getByText('游客模式')).toHaveCount(0)
+  await expect(page.getByText('只读示例模式')).toHaveCount(0)
+
+  await page.getByRole('button', { name: '进入工作区入口' }).click()
+  await expectWorkspaceAccessDialog(page)
+})
+
+test('phase 2 启动恢复失败后可重试，并在恢复为空时打开工作区入口', async ({ page, baseURL }) => {
+  await stallPlantickDbOpen(page)
+  await page.goto(baseURL!, { waitUntil: 'domcontentloaded' })
+  await page.setViewportSize({ width: 1440, height: 960 })
+
+  await expect(page.getByRole('heading', { name: '最近工作区暂时没有连上' })).toBeVisible({ timeout: 11_000 })
+
+  await resumePlantickDbOpen(page)
+  await page.getByRole('button', { name: '重试恢复' }).click()
+
+  await expectWorkspaceAccessDialog(page)
 })
 
 test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情并刷新恢复', async ({
