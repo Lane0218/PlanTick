@@ -5522,10 +5522,18 @@ function isTodoInMyDay(
 }
 
 function isTodoVisibleInMyDayView(
-  todo: Pick<TodoRecord, 'dueDate' | 'myDayDate'>,
+  todo: Pick<TodoRecord, 'dueDate' | 'myDayDate' | 'status' | 'completedOn'>,
   targetDate = todayDate(),
 ) {
-  return getMyDayMembership(todo, targetDate) !== 'none'
+  if (getMyDayMembership(todo, targetDate) === 'none') {
+    return false
+  }
+
+  if (!isTodoTerminalStatus(todo.status)) {
+    return true
+  }
+
+  return Boolean(todo.completedOn) && todo.completedOn! >= targetDate
 }
 
 function isIncompleteTodoInMyDay(

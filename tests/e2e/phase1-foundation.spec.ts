@@ -237,6 +237,34 @@ async function resumePlantickDbOpen(page: Page) {
   })
 }
 
+async function waitForSeededWorkspace(page: Page, expectedMyDayCount: string) {
+  const retryButton = page.getByRole('button', { name: '重试恢复' })
+  const myDayButton = page.locator('.sidebar-nav').getByRole('button', { name: /^我的一天/ })
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (await retryButton.isVisible().catch(() => false)) {
+      await retryButton.click()
+    }
+
+    await expect(page.locator('.workspace-restore-overlay')).toHaveCount(0, { timeout: 15_000 })
+
+    if (await retryButton.isVisible().catch(() => false)) {
+      continue
+    }
+
+    try {
+      await expect(myDayButton).toContainText(expectedMyDayCount, { timeout: 15_000 })
+      return
+    } catch (error) {
+      if (attempt === 2) {
+        throw error
+      }
+
+      await page.reload()
+    }
+  }
+}
+
 async function seedLocalWorkspace(
   page: Page,
   seed: {
@@ -689,7 +717,9 @@ test('phase 3 我的一天支持按日期切换查看并让计数跟随当前查
   const manualTitle = '昨天手动加入我的一天'
   const completedYesterdayTitle = '昨天完成的昨天任务'
   const completedTodayTitle = '昨天事项今天完成'
+  const completedEarlierTitle = '更早完成的旧任务'
   const now = new Date()
+  const earlier = formatDateInputValue(addDays(now, -2))
   const yesterday = formatDateInputValue(addDays(now, -1))
   const today = formatDateInputValue(now)
 
@@ -768,10 +798,25 @@ test('phase 3 我的一天支持按日期切换查看并让计数跟随当前查
         updatedAt: `${today}T08:40:00.000Z`,
         deleted: false,
       },
+      {
+        id: `${workspaceId}-completed-earlier`,
+        workspaceId,
+        title: completedEarlierTitle,
+        categoryId: null,
+        dueDate: earlier,
+        myDayDate: null,
+        status: 'completed',
+        completedOn: earlier,
+        note: '',
+        recurrenceType: 'none',
+        updatedAt: `${today}T08:50:00.000Z`,
+        deleted: false,
+      },
     ],
   })
 
   await page.reload()
+  await waitForSeededWorkspace(page, '3')
 
   const myDayButton = page.locator('.sidebar-nav').getByRole('button', { name: /^我的一天/ })
   await expect(myDayButton).toContainText('3')
@@ -783,8 +828,9 @@ test('phase 3 我的一天支持按日期切换查看并让计数跟随当前查
     todayTitle,
     manualTitle,
     completedTodayTitle,
-    completedYesterdayTitle,
   ])
+  await expect(page.getByRole('button', { name: `查看任务 ${completedYesterdayTitle}` })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: `查看任务 ${completedEarlierTitle}` })).toHaveCount(0)
 
   await page.getByRole('button', { name: '查看前一天' }).click()
   await expect(page.locator('.myday-date-label')).toHaveText(formatDateLabel(yesterday))
@@ -796,6 +842,7 @@ test('phase 3 我的一天支持按日期切换查看并让计数跟随当前查
     completedYesterdayTitle,
   ])
   await expect(page.getByRole('button', { name: `查看任务 ${todayTitle}` })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: `查看任务 ${completedEarlierTitle}` })).toHaveCount(0)
 
   await page.getByRole('button', { name: '查看后一天' }).click()
   await expect(page.locator('.myday-date-label')).toHaveText(formatDateLabel(today))
@@ -805,8 +852,9 @@ test('phase 3 我的一天支持按日期切换查看并让计数跟随当前查
     todayTitle,
     manualTitle,
     completedTodayTitle,
-    completedYesterdayTitle,
   ])
+  await expect(page.getByRole('button', { name: `查看任务 ${completedYesterdayTitle}` })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: `查看任务 ${completedEarlierTitle}` })).toHaveCount(0)
 
   await page.locator('.sidebar-nav').getByRole('button', { name: /^待办箱/ }).click()
   await myDayButton.click()
@@ -819,13 +867,15 @@ test('phase 3 我的一天支持按日期切换查看并让计数跟随当前查
   await expect(overdueTask.locator('.todo-due')).toHaveClass(/is-alert/)
 })
 
-test('phase 3 我的一天在查看某一天时会展示该天所属的全部已完成任务', async ({ page, baseURL }) => {
+test('phase 3 我的一天在查看某一天时会展示该天所属且在当天或之后完成的任务', async ({ page, baseURL }) => {
   const workspaceId = `local-myday-history-${Date.now()}`
   const overdueTitle = '昨天未完成任务'
   const completedYesterdayTitle = '昨天完成的昨天任务'
   const completedTodayTitle = '今天完成的昨天任务'
+  const completedEarlierTitle = '前天完成的更早任务'
   const todayTitle = '今天截止的任务'
   const now = new Date()
+  const earlier = formatDateInputValue(addDays(now, -2))
   const yesterday = formatDateInputValue(addDays(now, -1))
   const today = formatDateInputValue(now)
 
@@ -890,10 +940,25 @@ test('phase 3 我的一天在查看某一天时会展示该天所属的全部已
         updatedAt: `${today}T08:30:00.000Z`,
         deleted: false,
       },
+      {
+        id: `${workspaceId}-completed-earlier`,
+        workspaceId,
+        title: completedEarlierTitle,
+        categoryId: null,
+        dueDate: earlier,
+        myDayDate: null,
+        status: 'completed',
+        completedOn: earlier,
+        note: '',
+        recurrenceType: 'none',
+        updatedAt: `${today}T08:40:00.000Z`,
+        deleted: false,
+      },
     ],
   })
 
   await page.reload()
+  await waitForSeededWorkspace(page, '1')
 
   const myDayButton = page.locator('.sidebar-nav').getByRole('button', { name: /^我的一天/ })
   await myDayButton.click()
@@ -906,6 +971,7 @@ test('phase 3 我的一天在查看某一天时会展示该天所属的全部已
     completedYesterdayTitle,
   ])
   await expect(page.getByRole('button', { name: `查看任务 ${todayTitle}` })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: `查看任务 ${completedEarlierTitle}` })).toHaveCount(0)
 })
 
 test('phase 3 阻塞状态任务会在刷新后保持', async ({ page, baseURL }) => {
