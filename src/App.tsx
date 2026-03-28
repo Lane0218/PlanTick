@@ -91,6 +91,7 @@ type WorkspacePrimaryNavProps = {
   setSelectedTodoId: (value: string | null) => void
   setSelectedEventId: (value: string | null) => void
   sidebarCounts: Record<TaskFilter, number>
+  openTodayMyDay: () => void
   className?: string
   onNavigate?: () => void
 }
@@ -200,7 +201,6 @@ const filterLabels: Record<TaskFilter, string> = {
   overdue: '逾期',
   completed: '已完成',
 }
-const myDayCutoffHour = 2
 
 const todoStatusMeta: Record<TodoStatus, { label: string; tone: string; accent: string }> = {
   not_started: {
@@ -410,6 +410,7 @@ function App() {
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null)
   const [calendarMonth, setCalendarMonth] = useState(() => startOfMonthIso(todayDate()))
   const [selectedCalendarDate, setSelectedCalendarDate] = useState(() => todayDate())
+  const [selectedMyDayDate, setSelectedMyDayDate] = useState(() => todayDate())
   const [quickTodoTitle, setQuickTodoTitle] = useState('')
   const [quickEventTitle, setQuickEventTitle] = useState('')
   const [newCategoryName, setNewCategoryName] = useState('')
@@ -420,7 +421,6 @@ function App() {
   const [eventDraft, setEventDraft] = useState<EventDraft | null>(null)
   const [confirmDeleteTodo, setConfirmDeleteTodo] = useState(false)
   const [confirmDeleteEvent, setConfirmDeleteEvent] = useState(false)
-  const [currentTime, setCurrentTime] = useState(() => Date.now())
   const [isMobileViewport, setIsMobileViewport] = useState(() =>
     typeof window !== 'undefined' ? window.matchMedia('(max-width: 980px)').matches : false,
   )
@@ -479,8 +479,9 @@ function App() {
 
   const selectedCategory =
     activeCategories.find((category) => category.id === selectedCategoryId) ?? null
-  const myDayTargetDate = useMemo(() => getMyDayTargetDate(new Date(currentTime)), [currentTime])
-  const myDayHint = useMemo(() => getMyDayHint(new Date(currentTime)), [currentTime])
+  const isBrowsingMyDay = activeView === 'todos' && activeFilter === 'today' && !selectedCategoryId && !selectedUncategorized
+  const myDaySidebarDate = isBrowsingMyDay ? selectedMyDayDate : todayDate()
+  const myDayReferenceDate = isBrowsingMyDay ? selectedMyDayDate : todayDate()
 
   const visibleTodos = useMemo(
     () => {
@@ -495,7 +496,7 @@ function App() {
 
         switch (activeFilter) {
           case 'today':
-            return isTodoInMyDay(todo, myDayTargetDate)
+            return isTodoVisibleInMyDayView(todo, selectedMyDayDate)
           case 'overdue':
             return isTodoOverdue(todo)
           case 'completed':
@@ -509,9 +510,9 @@ function App() {
         return filteredTodos
       }
 
-      return filteredTodos.slice().sort((left, right) => compareMyDayTodos(left, right, myDayTargetDate))
+      return filteredTodos.slice().sort((left, right) => compareMyDayTodos(left, right, selectedMyDayDate))
     },
-    [activeFilter, activeTodos, myDayTargetDate, selectedCategoryId, selectedUncategorized],
+    [activeFilter, activeTodos, selectedCategoryId, selectedMyDayDate, selectedUncategorized],
   )
 
   const selectedTodo = activeTodos.find((todo) => todo.id === selectedTodoId) ?? null
@@ -531,16 +532,13 @@ function App() {
   const sidebarCounts = useMemo(
     () => ({
       all: activeTodos.filter((todo) => todo.status !== 'completed').length,
-      today: activeTodos.filter((todo) => isIncompleteTodoInMyDay(todo, myDayTargetDate)).length,
+      today: activeTodos.filter((todo) => isIncompleteTodoInMyDay(todo, myDaySidebarDate)).length,
       overdue: activeTodos.filter((todo) => isTodoOverdue(todo)).length,
       completed: activeTodos.filter((todo) => todo.status === 'completed').length,
     }),
-    [activeTodos, myDayTargetDate],
+    [activeTodos, myDaySidebarDate],
   )
-  const statsSummary = useMemo(
-    () => buildStatsSummary(activeTodos, activeEvents, myDayTargetDate),
-    [activeEvents, activeTodos, myDayTargetDate],
-  )
+  const statsSummary = useMemo(() => buildStatsSummary(activeTodos, activeEvents), [activeEvents, activeTodos])
   const statsMetricCards = useMemo<StatsMetricCard[]>(
     () => [
       {
@@ -592,25 +590,6 @@ function App() {
     workspaceSettingsInfo?.syncStatus.status === 'error'
   const isWorkspaceSyncing =
     workspaceSyncSnapshot?.status === 'pushing' || workspaceSyncSnapshot?.status === 'pulling'
-
-  useEffect(() => {
-    let timer = 0
-
-    const scheduleTick = () => {
-      const now = Date.now()
-      const nextMinuteDelay = 60_000 - (now % 60_000)
-      timer = window.setTimeout(() => {
-        setCurrentTime(Date.now())
-        scheduleTick()
-      }, nextMinuteDelay)
-    }
-
-    scheduleTick()
-
-    return () => {
-      window.clearTimeout(timer)
-    }
-  }, [])
 
   useEffect(() => {
     if (!toast) {
@@ -1757,6 +1736,7 @@ function App() {
     setSelectedTodoId(null)
     setSelectedEventId(null)
     setActiveView('todos')
+    setSelectedMyDayDate(todayDate())
     setCalendarMonth(startOfMonthIso(todayDate()))
     setSelectedCalendarDate(todayDate())
     setQuickTodoTitle('')
@@ -1790,6 +1770,13 @@ function App() {
             : selectedCategory
               ? selectedCategory.name
               : filterLabels[activeFilter]
+  const isViewingTodayMyDay = selectedMyDayDate === todayDate()
+  const openTodayMyDay = () => {
+    setSelectedMyDayDate(todayDate())
+  }
+  const shiftMyDayViewDate = (delta: number) => {
+    setSelectedMyDayDate((current) => shiftDate(current, delta))
+  }
 
   const sidebarProps = {
     workspaceId,
@@ -1806,6 +1793,7 @@ function App() {
     setSelectedTodoId,
     setSelectedEventId,
     sidebarCounts,
+    openTodayMyDay,
     categories: activeCategories,
     newCategoryName,
     setNewCategoryName,
@@ -1875,8 +1863,18 @@ function App() {
               </button>
               <div className="mobile-board-toolbar-copy">
                 <h1>{boardTitle}</h1>
-                {activeView === 'todos' && activeFilter === 'today' && !selectedCategoryId && !selectedUncategorized && myDayHint ? (
-                  <p className="board-subtitle">{myDayHint}</p>
+                {isBrowsingMyDay ? (
+                  <>
+                    <p className="board-subtitle">{formatCalendarFullDate(selectedMyDayDate)}</p>
+                    <MyDayDateNavigator
+                      selectedDate={selectedMyDayDate}
+                      onPreviousDay={() => shiftMyDayViewDate(-1)}
+                      onNextDay={() => shiftMyDayViewDate(1)}
+                      onToday={openTodayMyDay}
+                      isViewingToday={isViewingTodayMyDay}
+                      compact
+                    />
+                  </>
                 ) : null}
               </div>
             </header>
@@ -1895,16 +1893,24 @@ function App() {
             setSelectedTodoId={setSelectedTodoId}
             setSelectedEventId={setSelectedEventId}
             sidebarCounts={sidebarCounts}
+            openTodayMyDay={openTodayMyDay}
           />
 
           {isMobileViewport || activeView === 'calendar' ? null : (
             <header className="board-header">
               <div className="board-heading">
                 <h1>{boardTitle}</h1>
-                {activeView === 'todos' && activeFilter === 'today' && !selectedCategoryId && !selectedUncategorized && myDayHint ? (
-                  <p className="board-subtitle">{myDayHint}</p>
-                ) : null}
+                {isBrowsingMyDay ? <p className="board-subtitle">{formatCalendarFullDate(selectedMyDayDate)}</p> : null}
               </div>
+              {isBrowsingMyDay ? (
+                <MyDayDateNavigator
+                  selectedDate={selectedMyDayDate}
+                  onPreviousDay={() => shiftMyDayViewDate(-1)}
+                  onNextDay={() => shiftMyDayViewDate(1)}
+                  onToday={openTodayMyDay}
+                  isViewingToday={isViewingTodayMyDay}
+                />
+              ) : null}
             </header>
           )}
 
@@ -1994,7 +2000,7 @@ function App() {
                     busy={busy}
                     className="detail-pane detail-pane-sheet"
                     showCloseButton={false}
-                    myDayTargetDate={myDayTargetDate}
+                    myDayReferenceDate={myDayReferenceDate}
                     readOnly={isReadOnly}
                   />
                 ) : (
@@ -2027,7 +2033,7 @@ function App() {
               setConfirmDeleteTodo={setConfirmDeleteTodo}
               closeDetail={() => closeDetail(false)}
               busy={busy}
-              myDayTargetDate={myDayTargetDate}
+              myDayReferenceDate={myDayReferenceDate}
               readOnly={isReadOnly}
             />
           ) : selectedEvent ? (
@@ -2054,7 +2060,7 @@ function App() {
             setConfirmDeleteTodo={setConfirmDeleteTodo}
             closeDetail={() => closeDetail(false)}
             busy={busy}
-            myDayTargetDate={myDayTargetDate}
+            myDayReferenceDate={myDayReferenceDate}
             readOnly={isReadOnly}
           />
         )}
@@ -2441,6 +2447,7 @@ function WorkspacePrimaryNav({
   setSelectedTodoId,
   setSelectedEventId,
   sidebarCounts,
+  openTodayMyDay,
   className,
   onNavigate,
 }: WorkspacePrimaryNavProps) {
@@ -2466,6 +2473,9 @@ function WorkspacePrimaryNav({
             setSelectedCategoryId(null)
             setSelectedUncategorized(false)
             setActiveFilter(item.id)
+            if (item.id === 'today') {
+              openTodayMyDay()
+            }
             setSelectedTodoId(null)
             setSelectedEventId(null)
             onNavigate?.()
@@ -2547,6 +2557,42 @@ function WorkspacePrimaryNav({
   )
 }
 
+function MyDayDateNavigator({
+  selectedDate,
+  onPreviousDay,
+  onNextDay,
+  onToday,
+  isViewingToday,
+  compact = false,
+}: {
+  selectedDate: string
+  onPreviousDay: () => void
+  onNextDay: () => void
+  onToday: () => void
+  isViewingToday: boolean
+  compact?: boolean
+}) {
+  return (
+    <div className={compact ? 'myday-date-nav compact' : 'myday-date-nav'} aria-label={`切换我的一天日期，当前 ${formatCalendarFullDate(selectedDate)}`}>
+      <button type="button" className="myday-date-nav-button" aria-label="查看前一天" onClick={onPreviousDay}>
+        <ChevronLeft size={18} strokeWidth={2.2} />
+      </button>
+      <button
+        type="button"
+        className={isViewingToday ? 'myday-date-today is-active' : 'myday-date-today'}
+        aria-label="回到今天"
+        onClick={onToday}
+        disabled={isViewingToday}
+      >
+        今天
+      </button>
+      <button type="button" className="myday-date-nav-button" aria-label="查看后一天" onClick={onNextDay}>
+        <ChevronRight size={18} strokeWidth={2.2} />
+      </button>
+    </div>
+  )
+}
+
 type SidebarProps = {
   workspaceId: string
   sessionLabel: string
@@ -2602,6 +2648,7 @@ function SidebarContent({
   setSelectedTodoId,
   setSelectedEventId,
   sidebarCounts,
+  openTodayMyDay,
   categories,
   newCategoryName,
   setNewCategoryName,
@@ -2817,6 +2864,7 @@ function SidebarContent({
         setSelectedTodoId={setSelectedTodoId}
         setSelectedEventId={setSelectedEventId}
         sidebarCounts={sidebarCounts}
+        openTodayMyDay={openTodayMyDay}
         onNavigate={onNavigate}
       />
 
@@ -3734,7 +3782,7 @@ function TodoDetailPane({
   busy,
   className,
   showCloseButton = true,
-  myDayTargetDate,
+  myDayReferenceDate,
   readOnly,
 }: {
   selectedTodo: TodoRecord | null
@@ -3748,7 +3796,7 @@ function TodoDetailPane({
   busy: boolean
   className?: string
   showCloseButton?: boolean
-  myDayTargetDate: string
+  myDayReferenceDate: string
   readOnly: boolean
 }) {
   const selectedCategory = categories.find((category) => category.id === detailDraft?.categoryId) ?? null
@@ -3883,7 +3931,7 @@ function TodoDetailPane({
     ? getMyDayMembership({
         dueDate: detailDraft.dueDate || null,
         myDayDate: detailDraft.myDayDate || null,
-      }, myDayTargetDate)
+      }, myDayReferenceDate)
     : 'none'
   const recurrenceOptions = detailDraft
     ? [
@@ -3916,7 +3964,7 @@ function TodoDetailPane({
       ? getMyDayMembership({
           dueDate: selectedTodo.dueDate,
           myDayDate: selectedTodo.myDayDate,
-        }, myDayTargetDate)
+        }, myDayReferenceDate)
       : 'none'
 
     return (
@@ -4075,7 +4123,7 @@ function TodoDetailPane({
                 onClick={() =>
                   setDetailDraft({
                     ...detailDraft,
-                    myDayDate: myDayMembership === 'manual' ? '' : todayDate(),
+                    myDayDate: myDayMembership === 'manual' ? '' : myDayReferenceDate,
                   })
                 }
                 disabled={busy || (isTodoTerminalStatus(detailDraft.status) && myDayMembership === 'none')}
@@ -5263,24 +5311,6 @@ function todayDate() {
   return formatDateInputValue(new Date())
 }
 
-function getMyDayTargetDate(now = new Date(), cutoffHour = myDayCutoffHour) {
-  const target = new Date(now)
-
-  if (now.getHours() < cutoffHour) {
-    target.setDate(target.getDate() - 1)
-  }
-
-  return formatDateInputValue(target)
-}
-
-function getMyDayHint(now = new Date(), cutoffHour = myDayCutoffHour) {
-  if (now.getHours() >= cutoffHour) {
-    return ''
-  }
-
-  return `当前按昨日视角展示，${String(cutoffHour).padStart(2, '0')}:00 后切换到今天`
-}
-
 function groupCalendarEntriesByDate(todos: TodoRecord[], events: EventRecord[]) {
   const grouped = new Map<string, CalendarEntry[]>()
 
@@ -5375,6 +5405,13 @@ function isTodoInMyDay(
   }
 
   return todo.completedOn === targetDate
+}
+
+function isTodoVisibleInMyDayView(
+  todo: Pick<TodoRecord, 'dueDate' | 'myDayDate'>,
+  targetDate = todayDate(),
+) {
+  return getMyDayMembership(todo, targetDate) !== 'none'
 }
 
 function isIncompleteTodoInMyDay(
@@ -5747,7 +5784,7 @@ function formatReadonlyRecurrenceLabel(recurrenceType: TodoRecurrenceType, dueDa
   return formatRecurrenceOptionLabel(recurrenceType, dueDate)
 }
 
-function buildStatsSummary(todos: TodoRecord[], events: EventRecord[], myDayDate = todayDate()) {
+function buildStatsSummary(todos: TodoRecord[], events: EventRecord[]) {
   const today = todayDate()
   const nextSevenDaysEnd = nextDate(6)
   const statusCounts: Record<TodoStatus, number> = {
@@ -5768,7 +5805,7 @@ function buildStatsSummary(todos: TodoRecord[], events: EventRecord[], myDayDate
       overdueTodos += 1
     }
 
-    if (isTodoInMyDay(todo, myDayDate)) {
+    if (isTodoInMyDay(todo, today)) {
       todayFocusTodos += 1
     }
 
@@ -5977,6 +6014,12 @@ function getNextRecurringDueDate(
 
 function nextDate(days: number) {
   const next = new Date()
+  next.setDate(next.getDate() + days)
+  return formatDateInputValue(next)
+}
+
+function shiftDate(value: string, days: number) {
+  const next = new Date(`${value}T00:00:00`)
   next.setDate(next.getDate() + days)
   return formatDateInputValue(next)
 }
