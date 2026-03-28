@@ -754,7 +754,7 @@ test('phase 3 我的一天支持按日期切换查看并让计数跟随当前查
   await expect(myDayButton).toContainText('3')
   await myDayButton.click()
   await expect(page.getByRole('heading', { name: '我的一天' })).toBeVisible()
-  await expect(page.locator('.board-subtitle')).toHaveText(formatDateLabel(today))
+  await expect(page.locator('.myday-date-label')).toHaveText(formatDateLabel(today))
   await expect(page.locator('.todo-list .todo-main strong')).toHaveText([
     overdueTitle,
     todayTitle,
@@ -764,7 +764,7 @@ test('phase 3 我的一天支持按日期切换查看并让计数跟随当前查
   ])
 
   await page.getByRole('button', { name: '查看前一天' }).click()
-  await expect(page.locator('.board-subtitle')).toHaveText(formatDateLabel(yesterday))
+  await expect(page.locator('.myday-date-label')).toHaveText(formatDateLabel(yesterday))
   await expect(myDayButton).toContainText('2')
   await expect(page.locator('.todo-list .todo-main strong')).toHaveText([
     overdueTitle,
@@ -775,7 +775,7 @@ test('phase 3 我的一天支持按日期切换查看并让计数跟随当前查
   await expect(page.getByRole('button', { name: `查看任务 ${todayTitle}` })).toHaveCount(0)
 
   await page.getByRole('button', { name: '查看后一天' }).click()
-  await expect(page.locator('.board-subtitle')).toHaveText(formatDateLabel(today))
+  await expect(page.locator('.myday-date-label')).toHaveText(formatDateLabel(today))
   await expect(myDayButton).toContainText('3')
   await expect(page.locator('.todo-list .todo-main strong')).toHaveText([
     overdueTitle,
@@ -787,7 +787,7 @@ test('phase 3 我的一天支持按日期切换查看并让计数跟随当前查
 
   await page.locator('.sidebar-nav').getByRole('button', { name: /^待办箱/ }).click()
   await myDayButton.click()
-  await expect(page.locator('.board-subtitle')).toHaveText(formatDateLabel(today))
+  await expect(page.locator('.myday-date-label')).toHaveText(formatDateLabel(today))
 
   const overdueTask = page.locator('article', {
     has: page.getByRole('button', { name: `查看任务 ${overdueTitle}` }),
@@ -875,7 +875,7 @@ test('phase 3 我的一天在查看某一天时会展示该天所属的全部已
   const myDayButton = page.locator('.sidebar-nav').getByRole('button', { name: /^我的一天/ })
   await myDayButton.click()
   await page.getByRole('button', { name: '查看前一天' }).click()
-  await expect(page.locator('.board-subtitle')).toHaveText(formatDateLabel(yesterday))
+  await expect(page.locator('.myday-date-label')).toHaveText(formatDateLabel(yesterday))
   await expect(myDayButton).toContainText('1')
   await expect(page.locator('.todo-list .todo-main strong')).toHaveText([
     overdueTitle,

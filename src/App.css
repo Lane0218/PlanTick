@@ -1306,7 +1306,7 @@
 }
 
 .myday-date-nav-button,
-.myday-date-today {
+.myday-date-label {
   border: 0;
   background: transparent;
   display: inline-flex;
@@ -1322,29 +1322,17 @@
   border-radius: 12px;
 }
 
-.myday-date-today {
-  padding: 0 12px;
-  border-radius: 12px;
+.myday-date-label {
+  padding: 0 14px;
   font-size: 0.92rem;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .myday-date-nav-button:hover,
-.myday-date-nav-button:focus-visible,
-.myday-date-today:hover,
-.myday-date-today:focus-visible {
+.myday-date-nav-button:focus-visible {
   background: #eceeef;
   outline: none;
-}
-
-.myday-date-today.is-active {
-  background: #dff4f6;
-  color: #0b7285;
-}
-
-.myday-date-today:disabled {
-  cursor: default;
-  opacity: 1;
 }
 
 .mobile-board-toolbar {

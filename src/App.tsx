@@ -1770,7 +1770,6 @@ function App() {
             : selectedCategory
               ? selectedCategory.name
               : filterLabels[activeFilter]
-  const isViewingTodayMyDay = selectedMyDayDate === todayDate()
   const openTodayMyDay = () => {
     setSelectedMyDayDate(todayDate())
   }
@@ -1865,13 +1864,10 @@ function App() {
                 <h1>{boardTitle}</h1>
                 {isBrowsingMyDay ? (
                   <>
-                    <p className="board-subtitle">{formatCalendarFullDate(selectedMyDayDate)}</p>
                     <MyDayDateNavigator
                       selectedDate={selectedMyDayDate}
                       onPreviousDay={() => shiftMyDayViewDate(-1)}
                       onNextDay={() => shiftMyDayViewDate(1)}
-                      onToday={openTodayMyDay}
-                      isViewingToday={isViewingTodayMyDay}
                       compact
                     />
                   </>
@@ -1900,15 +1896,12 @@ function App() {
             <header className="board-header">
               <div className="board-heading">
                 <h1>{boardTitle}</h1>
-                {isBrowsingMyDay ? <p className="board-subtitle">{formatCalendarFullDate(selectedMyDayDate)}</p> : null}
               </div>
               {isBrowsingMyDay ? (
                 <MyDayDateNavigator
                   selectedDate={selectedMyDayDate}
                   onPreviousDay={() => shiftMyDayViewDate(-1)}
                   onNextDay={() => shiftMyDayViewDate(1)}
-                  onToday={openTodayMyDay}
-                  isViewingToday={isViewingTodayMyDay}
                 />
               ) : null}
             </header>
@@ -2561,15 +2554,11 @@ function MyDayDateNavigator({
   selectedDate,
   onPreviousDay,
   onNextDay,
-  onToday,
-  isViewingToday,
   compact = false,
 }: {
   selectedDate: string
   onPreviousDay: () => void
   onNextDay: () => void
-  onToday: () => void
-  isViewingToday: boolean
   compact?: boolean
 }) {
   return (
@@ -2577,15 +2566,7 @@ function MyDayDateNavigator({
       <button type="button" className="myday-date-nav-button" aria-label="查看前一天" onClick={onPreviousDay}>
         <ChevronLeft size={18} strokeWidth={2.2} />
       </button>
-      <button
-        type="button"
-        className={isViewingToday ? 'myday-date-today is-active' : 'myday-date-today'}
-        aria-label="回到今天"
-        onClick={onToday}
-        disabled={isViewingToday}
-      >
-        今天
-      </button>
+      <span className="myday-date-label" aria-live="polite">{formatCalendarFullDate(selectedDate)}</span>
       <button type="button" className="myday-date-nav-button" aria-label="查看后一天" onClick={onNextDay}>
         <ChevronRight size={18} strokeWidth={2.2} />
       </button>
