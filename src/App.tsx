@@ -2187,14 +2187,10 @@ function App() {
 function WorkspaceRestoreOverlay() {
   return (
     <div className="workspace-restore-overlay" role="status" aria-live="polite" aria-label="正在恢复最近工作区">
-      <section className="workspace-restore-card">
-        <div className="workspace-restore-mark" aria-hidden="true">
-          <LoaderCircle size={28} strokeWidth={2.2} />
-        </div>
-        <p className="eyebrow">恢复最近工作区</p>
-        <h2>正在连接最近的工作区…</h2>
-        <p>启动流程尚未完成，先等待本地数据与工作区上下文恢复，再进入任务工作台。</p>
-      </section>
+      <div className="workspace-restore-loader" aria-hidden="true">
+        <LoaderCircle size={30} strokeWidth={2.2} />
+      </div>
+      <p className="workspace-restore-label">正在连接工作区...</p>
     </div>
   )
 }
