@@ -530,7 +530,7 @@ function App() {
     (activeFilter === 'all' || activeFilter === 'today') && !selectedCategoryId && !selectedUncategorized
   const sidebarCounts = useMemo(
     () => ({
-      all: activeTodos.length,
+      all: activeTodos.filter((todo) => todo.status !== 'completed').length,
       today: activeTodos.filter((todo) => isIncompleteTodoInMyDay(todo, myDayTargetDate)).length,
       overdue: activeTodos.filter((todo) => isTodoOverdue(todo)).length,
       completed: activeTodos.filter((todo) => todo.status === 'completed').length,

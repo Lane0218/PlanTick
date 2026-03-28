@@ -361,6 +361,8 @@ test('phase 2 首次进入直接展示工作台并支持游客模式', async ({ 
   await expect(page.getByRole('button', { name: '查看任务 补完上周遗留的发布检查' })).toBeVisible()
   await expect(page.getByLabel('快速新建任务')).toBeEnabled()
   await expect(page.getByText('点开一条任务，右侧会展示示例详情。')).toHaveCount(0)
+  const guestInboxButton = page.locator('.sidebar-nav').getByRole('button', { name: /^待办箱/ })
+  await expect(guestInboxButton).toContainText('4')
 
   await page.getByRole('button', { name: '查看任务 整理今天的优先事项' }).click()
   await expect(page.getByLabel('任务标题')).toHaveValue('整理今天的优先事项')
@@ -381,6 +383,7 @@ test('phase 2 首次进入直接展示工作台并支持游客模式', async ({ 
 
   await page.getByLabel('快速新建任务').fill('游客模式新任务')
   await page.getByLabel('快速新建任务').press('Enter')
+  await expect(guestInboxButton).toContainText('5')
   await expect(page.getByLabel('任务标题')).toHaveValue('游客模式新任务')
   await page.getByLabel('备注').fill('仅保存在本次会话')
 
@@ -389,6 +392,14 @@ test('phase 2 首次进入直接展示工作台并支持游客模式', async ({ 
   })
   await guestTask.getByRole('button', { name: '切换任务状态，当前未开始' }).click()
   await expect(guestTask.getByRole('button', { name: '切换任务状态，当前进行中' })).toBeVisible()
+  await guestTask.getByRole('button', { name: '切换任务状态，当前进行中' }).click()
+  await expect(guestTask.getByRole('button', { name: '切换任务状态，当前已完成' })).toBeVisible()
+  await expect(guestInboxButton).toContainText('4')
+  await guestInboxButton.click()
+  await expect(page.getByRole('button', { name: '查看任务 游客模式新任务' })).toBeVisible()
+  await guestTask.getByRole('button', { name: '切换任务状态，当前已完成' }).click()
+  await expect(guestTask.getByRole('button', { name: '切换任务状态，当前阻塞' })).toBeVisible()
+  await expect(guestInboxButton).toContainText('5')
 
   await page.getByRole('button', { name: '看板', exact: true }).click()
   await expect(page.getByRole('region', { name: '状态看板', exact: true })).toBeVisible()
@@ -468,10 +479,13 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   await createCategory('乙')
   await createCategory('丙')
 
-  await page.getByRole('button', { name: '待办箱' }).click()
+  const inboxButton = page.locator('.sidebar-nav').getByRole('button', { name: /^待办箱/ })
+  await inboxButton.click()
+  await expect(inboxButton).toContainText('0')
 
   await page.getByLabel('快速新建任务').fill('123')
   await page.getByLabel('快速新建任务').press('Enter')
+  await expect(inboxButton).toContainText('1')
   await page.getByRole('button', { name: '查看任务 123' }).click()
   await expect(page.getByLabel('任务分类').getByRole('button', { name: '未分类' })).toBeVisible()
   await expect(page.locator('.detail-repeat-options').getByRole('button', { name: '每天', exact: true })).toBeDisabled()
@@ -491,14 +505,16 @@ test('phase 3 主链路：创建工作区、创建分类与任务、编辑详情
   await expect(page.getByRole('heading', { name: '我的一天' })).toBeVisible()
   await expect(page.getByRole('button', { name: '查看任务 123' })).toBeVisible()
   await expect(myDayButton).toContainText('0')
+  await expect(inboxButton).toContainText('0')
   await page.getByRole('button', { name: '数据统计' }).click()
   await expect(
     page.locator('.stats-metric-card', { has: page.getByText('今日聚焦', { exact: true }) }).getByText('1', { exact: true }),
   ).toBeVisible()
-  await page.locator('.sidebar-nav').getByRole('button', { name: /^待办箱/ }).click()
+  await inboxButton.click()
   const noNoteTask = page.locator('article', {
     has: page.getByRole('button', { name: '查看任务 123' }),
   })
+  await expect(noNoteTask).toBeVisible()
   await noNoteTask.getByRole('button', { name: '查看任务 123' }).click()
   const sidebarPaneBox = await page.locator('.sidebar-pane').boundingBox()
   const noNoteTaskBox = await noNoteTask.boundingBox()
