@@ -1449,13 +1449,12 @@
   box-shadow: 0 1px 0 rgba(15, 23, 42, 0.02);
 }
 
+.mobile-board-toolbar-main,
 .mobile-board-toolbar-copy {
-  display: grid;
-  gap: 8px;
   min-width: 0;
-  flex: 1;
 }
 
+.mobile-board-toolbar-main h1,
 .mobile-board-toolbar-copy h1 {
   margin: 0;
   font-size: 1.18rem;
@@ -4497,7 +4496,7 @@
     position: sticky;
     top: 0;
     z-index: 5;
-    align-items: flex-start;
+    align-items: center;
     gap: 10px;
     margin: -12px -14px 0;
     padding: 10px 14px 8px;
@@ -4518,18 +4517,32 @@
   }
 
   .mobile-board-toolbar-copy {
-    gap: 6px;
-    padding-top: 1px;
+    display: none;
   }
 
-  .mobile-board-toolbar-copy h1 {
+  .mobile-board-toolbar-main {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .mobile-board-toolbar-main.is-myday {
+    justify-content: space-between;
+  }
+
+  .mobile-board-toolbar-main h1 {
+    flex: 0 0 auto;
     font-size: 1.12rem;
     line-height: 1.08;
     letter-spacing: -0.03em;
   }
 
-  .mobile-board-toolbar-copy .myday-date-nav.compact {
-    width: min(100%, 304px);
+  .mobile-board-toolbar-main .myday-date-nav.compact {
+    min-width: 0;
+    max-width: min(100%, 192px);
+    flex: 1 1 auto;
   }
 
   .myday-date-nav {
@@ -4550,8 +4563,8 @@
 
   .myday-date-label {
     min-height: 30px;
-    padding: 0 10px;
-    font-size: 0.9rem;
+    padding: 0 8px;
+    font-size: 0.86rem;
   }
 
   .mobile-detail-sheet {

@@ -1949,7 +1949,7 @@ function App() {
                 >
                   <Menu size={20} strokeWidth={2.2} />
                 </button>
-                <div className="mobile-board-toolbar-copy">
+                <div className={isBrowsingMyDay ? 'mobile-board-toolbar-main is-myday' : 'mobile-board-toolbar-main'}>
                   <h1>{boardTitle}</h1>
                   {isBrowsingMyDay ? (
                     <MyDayDateNavigator
@@ -2694,12 +2694,14 @@ function MyDayDateNavigator({
   onNextDay: () => void
   compact?: boolean
 }) {
+  const label = formatCompactMyDayDate(selectedDate)
+
   return (
     <div className={compact ? 'myday-date-nav compact' : 'myday-date-nav'} aria-label={`切换我的一天日期，当前 ${formatCalendarFullDate(selectedDate)}`}>
       <button type="button" className="myday-date-nav-button" aria-label="查看前一天" onClick={onPreviousDay}>
         <ChevronLeft size={18} strokeWidth={2.2} />
       </button>
-      <span className="myday-date-label" aria-live="polite">{formatCalendarFullDate(selectedDate)}</span>
+      <span className="myday-date-label" aria-live="polite">{label}</span>
       <button type="button" className="myday-date-nav-button" aria-label="查看后一天" onClick={onNextDay}>
         <ChevronRight size={18} strokeWidth={2.2} />
       </button>
@@ -5785,6 +5787,11 @@ function formatCalendarMonthIso(year: number, month: number) {
 function formatCalendarFullDate(value: string) {
   const date = new Date(`${value}T00:00:00`)
   return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`
+}
+
+function formatCompactMyDayDate(value: string) {
+  const date = new Date(`${value}T00:00:00`)
+  return `${date.getMonth() + 1}月${date.getDate()}日`
 }
 
 function formatDayOfMonth(value: string) {

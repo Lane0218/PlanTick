@@ -16,7 +16,7 @@ function formatDateInputValue(date: Date) {
 
 function formatDateLabel(value: string) {
   const date = new Date(`${value}T00:00:00`)
-  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`
+  return `${date.getMonth() + 1}月${date.getDate()}日`
 }
 
 function weekdayLabel(date: Date) {
