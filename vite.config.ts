@@ -14,7 +14,7 @@ export default defineConfig({
         short_name: 'PlanTick',
         description: '本地优先的待办与日历 PWA 验证应用。',
         theme_color: '#1e293b',
-        background_color: '#f3efe6',
+        background_color: '#1F352F',
         display: 'standalone',
         start_url: '/',
         icons: [
